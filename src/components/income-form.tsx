@@ -69,7 +69,10 @@ export default function IncomeForm({
   }
 
   return (
-    <section className="mx-auto w-full max-w-5xl px-6 pb-20">
+    <section
+      className="mx-auto w-full max-w-5xl px-5 pb-20 sm:px-6"
+      id="income-form"
+    >
       <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
         <div className="mb-8 max-w-2xl">
           <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
@@ -85,7 +88,7 @@ export default function IncomeForm({
 
         <form className="grid gap-5 sm:grid-cols-2" onSubmit={handleSubmit}>
           <label className={labelClassName}>
-            Amount
+            Jumlah
             <input
               className={inputClassName}
               name="incomeAmount"
@@ -99,7 +102,7 @@ export default function IncomeForm({
           </label>
 
           <label className={labelClassName}>
-            Source
+            Sumber
             <input
               className={inputClassName}
               name="source"
@@ -111,7 +114,7 @@ export default function IncomeForm({
           </label>
 
           <label className={`${labelClassName} sm:col-span-2`}>
-            Note
+            Catatan
             <input
               className={inputClassName}
               name="incomeNote"
@@ -133,7 +136,7 @@ export default function IncomeForm({
               className="w-full rounded-full bg-emerald-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-slate-900 sm:w-auto"
               type="submit"
             >
-              Save income
+              Simpan Pemasukan
             </button>
           </div>
         </form>
@@ -184,7 +187,7 @@ export default function IncomeForm({
                   type="button"
                   onClick={() => onDeleteIncome(income.id)}
                 >
-                  Delete
+                  Hapus
                 </button>
               </article>
             ))
