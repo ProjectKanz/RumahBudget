@@ -3,6 +3,7 @@
 import AuthForm from "@/src/components/auth-form";
 import ExpenseForm from "@/src/components/expense-form";
 import IncomeForm from "@/src/components/income-form";
+import ReportPreview from "@/src/components/report-preview";
 import SupabaseTestPanel from "@/src/components/supabase-test-panel";
 import TransactionHistory from "@/src/components/transaction-history";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
@@ -631,6 +632,8 @@ export default function Home() {
       <AuthForm userEmail={authUser.email} />
 
       <SupabaseTestPanel />
+
+      <ReportPreview expenses={activeExpenses} incomes={activeIncomes} />
 
       <TransactionHistory
         activeUser={activeUser}
