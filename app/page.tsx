@@ -18,7 +18,6 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 
 const activeUsers: ActiveUser[] = ["Ibu", "Bapak", "Kanzan", "Guest"];
 const activeUserStorageKey = "rumahbudget.activeUser";
-const incomesStorageKey = "rumahbudget.incomes";
 
 type MonthlyStatus = {
   label: "Aman" | "Waspada" | "Bahaya";
@@ -32,6 +31,15 @@ type SupabaseExpenseRow = {
   amount?: number | string;
   category?: string;
   payment_method?: string;
+  note?: string | null;
+  created_at?: string | null;
+};
+
+type SupabaseIncomeRow = {
+  id?: string | number;
+  owner?: ActiveUser;
+  amount?: number | string;
+  source?: string;
   note?: string | null;
   created_at?: string | null;
 };
@@ -58,27 +66,14 @@ function isActiveUser(value: unknown): value is ActiveUser {
   return activeUsers.includes(value as ActiveUser);
 }
 
-function readStoredArray<T>(key: string): T[] {
-  const storedValue = window.localStorage.getItem(key);
-
-  if (!storedValue) {
-    return [];
-  }
-
-  try {
-    const parsedValue = JSON.parse(storedValue);
-    return Array.isArray(parsedValue) ? parsedValue : [];
-  } catch {
-    return [];
-  }
-}
-
 export default function Home() {
   const [activeUser, setActiveUser] = useState<ActiveUser>("Ibu");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [expenseError, setExpenseError] = useState("");
+  const [incomeError, setIncomeError] = useState("");
   const [isExpenseLoading, setIsExpenseLoading] = useState(false);
+  const [isIncomeLoading, setIsIncomeLoading] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
 
   async function loadExpensesFromSupabase() {
@@ -130,16 +125,60 @@ export default function Home() {
     }
   }
 
+  async function loadIncomesFromSupabase() {
+    setIsIncomeLoading(true);
+
+    if (!supabase) {
+      setIncomeError(missingSupabaseEnvMessage);
+      setIsIncomeLoading(false);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { data, error } = await supabase
+        .from("incomes")
+        .select("*")
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setIncomeError(error.message);
+        return;
+      }
+
+      const nextIncomes = (data as SupabaseIncomeRow[]).map((income) => ({
+        id: String(income.id ?? crypto.randomUUID()),
+        owner: isActiveUser(income.owner) ? income.owner : "Guest",
+        createdAt: income.created_at ? new Date(income.created_at).getTime() : 0,
+        amount: Number(income.amount ?? 0),
+        source: income.source ?? "Tidak diketahui",
+        note: income.note ?? "",
+      }));
+
+      setIncomes(nextIncomes);
+      setIncomeError("");
+    } catch (error) {
+      setIncomeError(
+        getSupabaseErrorMessage(
+          error,
+          "Gagal memuat pemasukan dari Supabase.",
+        ),
+      );
+    } finally {
+      timeout.clear();
+      setIsIncomeLoading(false);
+    }
+  }
+
   useEffect(() => {
     const storedActiveUser = window.localStorage.getItem(activeUserStorageKey);
     const nextActiveUser = isActiveUser(storedActiveUser)
       ? storedActiveUser
       : "Ibu";
-    const storedIncomes = readStoredArray<Income>(incomesStorageKey);
 
     queueMicrotask(() => {
       setActiveUser(nextActiveUser);
-      setIncomes(storedIncomes);
       setIsHydrated(true);
     });
   }, []);
@@ -147,6 +186,7 @@ export default function Home() {
   useEffect(() => {
     queueMicrotask(() => {
       void loadExpensesFromSupabase();
+      void loadIncomesFromSupabase();
     });
   }, []);
 
@@ -157,14 +197,6 @@ export default function Home() {
 
     window.localStorage.setItem(activeUserStorageKey, activeUser);
   }, [activeUser, isHydrated]);
-
-  useEffect(() => {
-    if (!isHydrated) {
-      return;
-    }
-
-    window.localStorage.setItem(incomesStorageKey, JSON.stringify(incomes));
-  }, [incomes, isHydrated]);
 
   const activeExpenses = useMemo(
     () => expenses.filter((expense) => expense.owner === activeUser),
@@ -280,14 +312,76 @@ export default function Home() {
     }
   }
 
-  function addIncome(income: Income) {
-    setIncomes((currentIncomes) => [income, ...currentIncomes]);
+  async function addIncome(income: Income) {
+    if (!supabase) {
+      setIncomeError(missingSupabaseEnvMessage);
+      return false;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { error } = await supabase
+        .from("incomes")
+        .insert({
+          owner: income.owner,
+          amount: income.amount,
+          source: income.source,
+          note: income.note,
+        })
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setIncomeError(error.message);
+        return false;
+      }
+
+      await loadIncomesFromSupabase();
+      return true;
+    } catch (error) {
+      setIncomeError(
+        getSupabaseErrorMessage(
+          error,
+          "Gagal menyimpan pemasukan ke Supabase.",
+        ),
+      );
+      return false;
+    } finally {
+      timeout.clear();
+    }
   }
 
-  function deleteIncome(id: string) {
-    setIncomes((currentIncomes) =>
-      currentIncomes.filter((income) => income.id !== id),
-    );
+  async function deleteIncome(id: string) {
+    if (!supabase) {
+      setIncomeError(missingSupabaseEnvMessage);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { error } = await supabase
+        .from("incomes")
+        .delete()
+        .eq("id", id)
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setIncomeError(error.message);
+        return;
+      }
+
+      await loadIncomesFromSupabase();
+    } catch (error) {
+      setIncomeError(
+        getSupabaseErrorMessage(
+          error,
+          "Gagal menghapus pemasukan dari Supabase.",
+        ),
+      );
+    } finally {
+      timeout.clear();
+    }
   }
 
   return (
@@ -424,6 +518,8 @@ export default function Home() {
         incomes={activeIncomes}
         onAddIncome={addIncome}
         onDeleteIncome={deleteIncome}
+        supabaseError={incomeError}
+        isLoadingIncomes={isIncomeLoading}
       />
 
       <ExpenseForm

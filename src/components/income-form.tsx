@@ -18,8 +18,10 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 type IncomeFormProps = {
   activeUser: ActiveUser;
   incomes: Income[];
-  onAddIncome: (income: Income) => void;
+  onAddIncome: (income: Income) => Promise<boolean>;
   onDeleteIncome: (id: string) => void;
+  supabaseError: string;
+  isLoadingIncomes: boolean;
 };
 
 export default function IncomeForm({
@@ -27,18 +29,21 @@ export default function IncomeForm({
   incomes,
   onAddIncome,
   onDeleteIncome,
+  supabaseError,
+  isLoadingIncomes,
 }: IncomeFormProps) {
   const [amount, setAmount] = useState("");
   const [source, setSource] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const totalIncome = useMemo(
     () => incomes.reduce((total, income) => total + income.amount, 0),
     [incomes],
   );
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const numericAmount = Number(amount);
@@ -54,14 +59,29 @@ export default function IncomeForm({
       return;
     }
 
-    onAddIncome({
+    const income: Income = {
       id: crypto.randomUUID(),
       owner: activeUser,
       createdAt: Date.now(),
       amount: numericAmount,
       source: trimmedSource,
       note: note.trim(),
-    });
+    };
+
+    let didSave = false;
+
+    try {
+      setIsSaving(true);
+      didSave = await onAddIncome(income);
+    } catch {
+      didSave = false;
+    } finally {
+      setIsSaving(false);
+    }
+
+    if (!didSave) {
+      return;
+    }
 
     setAmount("");
     setSource("");
@@ -132,12 +152,19 @@ export default function IncomeForm({
             </p>
           ) : null}
 
+          {supabaseError ? (
+            <p className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200 sm:col-span-2">
+              {supabaseError}
+            </p>
+          ) : null}
+
           <div className="sm:col-span-2">
             <button
-              className="w-full rounded-full bg-emerald-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-slate-900 sm:w-auto"
+              className="w-full rounded-full bg-emerald-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               type="submit"
+              disabled={isSaving}
             >
-              Simpan Pemasukan
+              {isSaving ? "Menyimpan..." : "Simpan Pemasukan"}
             </button>
           </div>
         </form>
@@ -154,12 +181,18 @@ export default function IncomeForm({
             </h2>
           </div>
           <p className="text-sm text-slate-400">
-            {incomes.length} transaksi tersimpan
+            {isLoadingIncomes
+              ? "Memuat data dari Supabase..."
+              : `${incomes.length} transaksi tersimpan`}
           </p>
         </div>
 
         <div className="mt-6 space-y-4">
-          {incomes.length === 0 ? (
+          {isLoadingIncomes ? (
+            <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
+              Memuat pemasukan dari Supabase...
+            </div>
+          ) : incomes.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
               Belum ada pemasukan. Tambahkan dana masuk dari form di atas.
             </div>

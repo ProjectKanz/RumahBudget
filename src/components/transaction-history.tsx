@@ -41,7 +41,7 @@ type TransactionHistoryProps = {
   expenses: Expense[];
   incomes: Income[];
   onDeleteExpense: (id: string) => void | Promise<void>;
-  onDeleteIncome: (id: string) => void;
+  onDeleteIncome: (id: string) => void | Promise<void>;
 };
 
 export default function TransactionHistory({
