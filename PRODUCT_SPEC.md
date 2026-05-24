@@ -102,12 +102,22 @@ Status: Completed
 - `REPORT_TEST_RECIPIENT_EMAIL` testing mode
 - Email report can be sent manually from the app
 - Email sending currently goes only to the verified Resend testing email
+- Next.js app deployed to Vercel
+- Supabase and Resend environment variables configured in Vercel
+- Production URL is available for testing outside localhost
 
 Limitations:
 
 - Email sending is still in testing mode
 - Sending reports to other users or family members requires a verified sender domain in Resend
 - Automatic weekly/monthly sending is not implemented yet
+
+Deployment environment variables:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `RESEND_API_KEY`
+- `REPORT_TEST_RECIPIENT_EMAIL`
 
 ### V0.4-C Automatic Weekly / Monthly Email Scheduling
 

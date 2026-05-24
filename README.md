@@ -35,6 +35,8 @@ Completed features:
 - `REPORT_TEST_RECIPIENT_EMAIL` testing mode
 - Email report can be sent manually from the app
 - Email sending currently goes only to the verified Resend testing email
+- Deployed to Vercel with Supabase and Resend environment variables configured
+- Production URL is available for testing outside localhost
 
 Current limitations:
 
@@ -47,6 +49,19 @@ Current limitations:
 Note: the old Active User prototype has been replaced by real authenticated accounts.
 
 Next milestone: **V0.4-C Automatic Weekly / Monthly Email Scheduling**
+
+## Deployment
+
+Status: Deployed to Vercel.
+
+Required environment variables:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `RESEND_API_KEY`
+- `REPORT_TEST_RECIPIENT_EMAIL`
+
+Email sending is still in Resend testing mode, so reports are sent only to the verified testing recipient until a sender domain is verified.
 
 ## Development
 
