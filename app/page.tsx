@@ -1,6 +1,33 @@
+"use client";
+
 import ExpenseForm from "@/src/components/expense-form";
+import type { Expense } from "@/src/types/expense";
+import { useMemo, useState } from "react";
+
+const rupiahFormatter = new Intl.NumberFormat("id-ID", {
+  style: "currency",
+  currency: "IDR",
+  maximumFractionDigits: 0,
+});
 
 export default function Home() {
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+
+  const totalExpense = useMemo(
+    () => expenses.reduce((total, expense) => total + expense.amount, 0),
+    [expenses],
+  );
+
+  function addExpense(expense: Expense) {
+    setExpenses((currentExpenses) => [expense, ...currentExpenses]);
+  }
+
+  function deleteExpense(id: string) {
+    setExpenses((currentExpenses) =>
+      currentExpenses.filter((expense) => expense.id !== id),
+    );
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-white">
       <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-6 py-12">
@@ -26,7 +53,9 @@ export default function Home() {
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
               <p className="text-sm text-slate-400">Pengeluaran</p>
-              <p className="mt-2 text-2xl font-bold">Rp0</p>
+              <p className="mt-2 text-2xl font-bold">
+                {rupiahFormatter.format(totalExpense)}
+              </p>
             </div>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
@@ -47,7 +76,11 @@ export default function Home() {
         </div>
       </section>
 
-      <ExpenseForm />
+      <ExpenseForm
+        expenses={expenses}
+        onAddExpense={addExpense}
+        onDeleteExpense={deleteExpense}
+      />
     </main>
   );
 }

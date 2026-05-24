@@ -1,15 +1,7 @@
 "use client";
 
+import type { Expense } from "@/src/types/expense";
 import { FormEvent, useMemo, useState } from "react";
-
-type Expense = {
-  id: string;
-  amount: number;
-  category: string;
-  paidBy: string;
-  paymentMethod: string;
-  note: string;
-};
 
 const categories = [
   { label: "Belanja Dapur", value: "Belanja Dapur" },
@@ -44,8 +36,17 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
-export default function ExpenseForm() {
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+type ExpenseFormProps = {
+  expenses: Expense[];
+  onAddExpense: (expense: Expense) => void;
+  onDeleteExpense: (id: string) => void;
+};
+
+export default function ExpenseForm({
+  expenses,
+  onAddExpense,
+  onDeleteExpense,
+}: ExpenseFormProps) {
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState(categories[0].value);
   const [paidBy, setPaidBy] = useState(paidByOptions[0].value);
@@ -77,16 +78,10 @@ export default function ExpenseForm() {
       note: note.trim(),
     };
 
-    setExpenses((currentExpenses) => [expense, ...currentExpenses]);
+    onAddExpense(expense);
     setAmount("");
     setNote("");
     setError("");
-  }
-
-  function deleteExpense(id: string) {
-    setExpenses((currentExpenses) =>
-      currentExpenses.filter((expense) => expense.id !== id),
-    );
   }
 
   return (
@@ -242,7 +237,7 @@ export default function ExpenseForm() {
                 <button
                   className="rounded-full border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-200 transition hover:border-red-400 hover:bg-red-500/10"
                   type="button"
-                  onClick={() => deleteExpense(expense.id)}
+                  onClick={() => onDeleteExpense(expense.id)}
                 >
                   Delete
                 </button>
