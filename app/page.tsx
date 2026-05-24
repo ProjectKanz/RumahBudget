@@ -5,7 +5,7 @@ import IncomeForm from "@/src/components/income-form";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
 import type { ActiveUser } from "@/src/types/user";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   style: "currency",
@@ -14,11 +14,74 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 });
 
 const activeUsers: ActiveUser[] = ["Ibu", "Bapak", "Kanzan", "Guest"];
+const activeUserStorageKey = "rumahbudget.activeUser";
+const expensesStorageKey = "rumahbudget.expenses";
+const incomesStorageKey = "rumahbudget.incomes";
+
+function isActiveUser(value: unknown): value is ActiveUser {
+  return activeUsers.includes(value as ActiveUser);
+}
+
+function readStoredArray<T>(key: string): T[] {
+  const storedValue = window.localStorage.getItem(key);
+
+  if (!storedValue) {
+    return [];
+  }
+
+  try {
+    const parsedValue = JSON.parse(storedValue);
+    return Array.isArray(parsedValue) ? parsedValue : [];
+  } catch {
+    return [];
+  }
+}
 
 export default function Home() {
   const [activeUser, setActiveUser] = useState<ActiveUser>("Ibu");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    const storedActiveUser = window.localStorage.getItem(activeUserStorageKey);
+    const nextActiveUser = isActiveUser(storedActiveUser)
+      ? storedActiveUser
+      : "Ibu";
+    const storedExpenses = readStoredArray<Expense>(expensesStorageKey);
+    const storedIncomes = readStoredArray<Income>(incomesStorageKey);
+
+    queueMicrotask(() => {
+      setActiveUser(nextActiveUser);
+      setExpenses(storedExpenses);
+      setIncomes(storedIncomes);
+      setIsHydrated(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    window.localStorage.setItem(activeUserStorageKey, activeUser);
+  }, [activeUser, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    window.localStorage.setItem(expensesStorageKey, JSON.stringify(expenses));
+  }, [expenses, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    window.localStorage.setItem(incomesStorageKey, JSON.stringify(incomes));
+  }, [incomes, isHydrated]);
 
   const activeExpenses = useMemo(
     () => expenses.filter((expense) => expense.owner === activeUser),
@@ -99,6 +162,10 @@ export default function Home() {
             <p className="mt-3 text-sm leading-6 text-slate-400">
               Prototype mode: data is separated by selected user locally. Real
               privacy will be added with login/auth later.
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Prototype storage: data is saved in this browser only. Login and
+              cloud sync will be added later.
             </p>
           </div>
 
