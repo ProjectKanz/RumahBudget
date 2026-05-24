@@ -2,6 +2,7 @@
 
 import ExpenseForm from "@/src/components/expense-form";
 import IncomeForm from "@/src/components/income-form";
+import SupabaseTestPanel from "@/src/components/supabase-test-panel";
 import TransactionHistory from "@/src/components/transaction-history";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
@@ -269,6 +270,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <SupabaseTestPanel />
 
       <TransactionHistory
         activeUser={activeUser}
