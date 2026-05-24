@@ -1,5 +1,6 @@
 "use client";
 
+import AuthForm from "@/src/components/auth-form";
 import ExpenseForm from "@/src/components/expense-form";
 import IncomeForm from "@/src/components/income-form";
 import SupabaseTestPanel from "@/src/components/supabase-test-panel";
@@ -8,6 +9,7 @@ import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
 import type { ActiveUser } from "@/src/types/user";
+import type { User } from "@supabase/supabase-js";
 import { useEffect, useMemo, useState } from "react";
 
 const rupiahFormatter = new Intl.NumberFormat("id-ID", {
@@ -67,6 +69,8 @@ function isActiveUser(value: unknown): value is ActiveUser {
 }
 
 export default function Home() {
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [activeUser, setActiveUser] = useState<ActiveUser>("Ibu");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
@@ -184,11 +188,47 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+
+    queueMicrotask(() => {
+      if (!supabase) {
+        setIsAuthLoading(false);
+        return;
+      }
+
+      void supabase.auth.getSession().then(({ data }) => {
+        setAuthUser(data.session?.user ?? null);
+        setIsAuthLoading(false);
+      });
+
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((_event, session) => {
+        setAuthUser(session?.user ?? null);
+      });
+
+      unsubscribe = () => subscription.unsubscribe();
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!authUser) {
+      queueMicrotask(() => {
+        setExpenses([]);
+        setIncomes([]);
+      });
+      return;
+    }
+
     queueMicrotask(() => {
       void loadExpensesFromSupabase();
       void loadIncomesFromSupabase();
     });
-  }, []);
+  }, [authUser]);
 
   useEffect(() => {
     if (!isHydrated) {
@@ -386,6 +426,18 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">
+      {isAuthLoading ? (
+        <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-5 py-8 sm:px-6">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 text-sm text-slate-300">
+            Memeriksa sesi login...
+          </div>
+        </section>
+      ) : null}
+
+      {!isAuthLoading && !authUser ? <AuthForm /> : null}
+
+      {!isAuthLoading && authUser ? (
+        <>
       <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-5 py-8 sm:px-6 sm:py-12">
         <div>
           <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-emerald-400">
@@ -400,6 +452,13 @@ export default function Home() {
             Catat pemasukan dan pengeluaran pribadi dengan mudah. Berbagi data
             keluarga bisa ditambahkan nanti setelah login dan privasi siap.
           </p>
+
+          <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <p className="text-sm text-slate-400">Login sebagai</p>
+            <p className="mt-2 text-lg font-semibold text-white">
+              {authUser.email}
+            </p>
+          </div>
 
           <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900 p-5">
             <label className="text-sm font-medium text-slate-300">
@@ -419,8 +478,9 @@ export default function Home() {
               </select>
             </label>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Mode prototipe: data dipisahkan sesuai pengguna yang dipilih di
-              perangkat ini. Privasi asli akan ditambahkan dengan login nanti.
+              Mode sementara: pilihan ini masih dipakai sebagai owner
+              prototipe. Akun login sudah aktif, tetapi data belum dikaitkan ke
+              user_id.
             </p>
             <p className="mt-2 text-sm leading-6 text-slate-500">
               Penyimpanan prototipe: data tersimpan hanya di browser ini. Login
@@ -503,6 +563,8 @@ export default function Home() {
         </div>
       </section>
 
+      <AuthForm userEmail={authUser.email} />
+
       <SupabaseTestPanel />
 
       <TransactionHistory
@@ -530,6 +592,8 @@ export default function Home() {
         supabaseError={expenseError}
         isLoadingExpenses={isExpenseLoading}
       />
+        </>
+      ) : null}
     </main>
   );
 }
