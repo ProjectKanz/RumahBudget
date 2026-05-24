@@ -20,7 +20,37 @@ Record expenses quickly, understand monthly financial condition, and receive sim
 
 ## MVP Features
 
-### V0.1 Core Tracker
+### V0.1 Local Personal Tracker
+
+Status: Completed
+
+- Next.js + TypeScript + Tailwind setup
+- Active user selector
+- Personal-first local privacy prototype
+- Expense tracking
+- Income tracking
+- Dashboard totals
+- Monthly status: Aman / Waspada / Bahaya
+- localStorage persistence
+- Combined transaction history
+- Transaction filters
+
+Limitations:
+
+- Data is saved only in the current browser
+- Real privacy is not implemented yet
+- No login/authentication yet
+- No cloud database yet
+
+### V0.2 Supabase Database Foundation
+
+Next milestone:
+
+- Add database schema for users, incomes, expenses, and transactions
+- Prepare authentication-ready data ownership
+- Move local records toward cloud persistence
+
+### Earlier V0.1 Core Tracker Scope
 
 - Add expense
 - Add income
@@ -30,13 +60,13 @@ Record expenses quickly, understand monthly financial condition, and receive sim
 - Track category
 - Track payment method
 
-### V0.2 Budget Control
+### V0.3 Budget Control
 
 - Set monthly budget per category
 - Show budget usage percentage
 - Show status: Safe, Warning, Over Budget
 
-### V0.3 Email Report
+### V0.4 Email Report
 
 - Generate weekly spending report
 - Generate monthly spending report
