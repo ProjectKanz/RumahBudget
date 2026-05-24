@@ -62,6 +62,7 @@ export default function IncomeForm({
     const income: Income = {
       id: crypto.randomUUID(),
       owner: activeUser,
+      userId: "",
       createdAt: Date.now(),
       amount: numericAmount,
       source: trimmedSource,

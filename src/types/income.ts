@@ -1,8 +1,7 @@
-import type { ActiveUser } from "@/src/types/user";
-
 export type Income = {
   id: string;
-  owner: ActiveUser;
+  owner: string;
+  userId: string;
   createdAt: number;
   amount: number;
   source: string;

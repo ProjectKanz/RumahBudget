@@ -10,7 +10,7 @@ type TransactionFilter = "Semua" | "Pemasukan" | "Pengeluaran";
 type CombinedTransaction =
   | {
       id: string;
-      owner: ActiveUser;
+      owner: string;
       createdAt: number;
       type: "Pemasukan";
       amount: number;
@@ -19,7 +19,7 @@ type CombinedTransaction =
     }
   | {
       id: string;
-      owner: ActiveUser;
+      owner: string;
       createdAt: number;
       type: "Pengeluaran";
       amount: number;

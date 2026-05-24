@@ -1,8 +1,7 @@
-import type { ActiveUser } from "@/src/types/user";
-
 export type Expense = {
   id: string;
-  owner: ActiveUser;
+  owner: string;
+  userId: string;
   createdAt: number;
   amount: number;
   category: string;

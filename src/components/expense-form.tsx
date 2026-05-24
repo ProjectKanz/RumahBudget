@@ -73,6 +73,7 @@ export default function ExpenseForm({
     const expense: Expense = {
       id: crypto.randomUUID(),
       owner: activeUser,
+      userId: "",
       createdAt: Date.now(),
       amount: numericAmount,
       category,

@@ -10,7 +10,7 @@ import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
 import type { ActiveUser } from "@/src/types/user";
 import type { User } from "@supabase/supabase-js";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   style: "currency",
@@ -29,7 +29,8 @@ type MonthlyStatus = {
 
 type SupabaseExpenseRow = {
   id?: string | number;
-  owner?: ActiveUser;
+  owner?: string | null;
+  user_id?: string | null;
   amount?: number | string;
   category?: string;
   payment_method?: string;
@@ -39,7 +40,8 @@ type SupabaseExpenseRow = {
 
 type SupabaseIncomeRow = {
   id?: string | number;
-  owner?: ActiveUser;
+  owner?: string | null;
+  user_id?: string | null;
   amount?: number | string;
   source?: string;
   note?: string | null;
@@ -80,8 +82,14 @@ export default function Home() {
   const [isIncomeLoading, setIsIncomeLoading] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
 
-  async function loadExpensesFromSupabase() {
+  const loadExpensesFromSupabase = useCallback(async () => {
     setIsExpenseLoading(true);
+
+    if (!authUser) {
+      setExpenses([]);
+      setIsExpenseLoading(false);
+      return;
+    }
 
     if (!supabase) {
       setExpenseError(missingSupabaseEnvMessage);
@@ -95,6 +103,7 @@ export default function Home() {
       const { data, error } = await supabase
         .from("expenses")
         .select("*")
+        .eq("user_id", authUser.id)
         .abortSignal(timeout.signal);
 
       if (error) {
@@ -104,7 +113,8 @@ export default function Home() {
 
       const nextExpenses = (data as SupabaseExpenseRow[]).map((expense) => ({
         id: String(expense.id ?? crypto.randomUUID()),
-        owner: isActiveUser(expense.owner) ? expense.owner : "Guest",
+        owner: expense.owner ?? authUser.email ?? "Unknown",
+        userId: expense.user_id ?? authUser.id,
         createdAt: expense.created_at
           ? new Date(expense.created_at).getTime()
           : 0,
@@ -127,10 +137,16 @@ export default function Home() {
       timeout.clear();
       setIsExpenseLoading(false);
     }
-  }
+  }, [authUser]);
 
-  async function loadIncomesFromSupabase() {
+  const loadIncomesFromSupabase = useCallback(async () => {
     setIsIncomeLoading(true);
+
+    if (!authUser) {
+      setIncomes([]);
+      setIsIncomeLoading(false);
+      return;
+    }
 
     if (!supabase) {
       setIncomeError(missingSupabaseEnvMessage);
@@ -144,6 +160,7 @@ export default function Home() {
       const { data, error } = await supabase
         .from("incomes")
         .select("*")
+        .eq("user_id", authUser.id)
         .abortSignal(timeout.signal);
 
       if (error) {
@@ -153,7 +170,8 @@ export default function Home() {
 
       const nextIncomes = (data as SupabaseIncomeRow[]).map((income) => ({
         id: String(income.id ?? crypto.randomUUID()),
-        owner: isActiveUser(income.owner) ? income.owner : "Guest",
+        owner: income.owner ?? authUser.email ?? "Unknown",
+        userId: income.user_id ?? authUser.id,
         createdAt: income.created_at ? new Date(income.created_at).getTime() : 0,
         amount: Number(income.amount ?? 0),
         source: income.source ?? "Tidak diketahui",
@@ -173,7 +191,7 @@ export default function Home() {
       timeout.clear();
       setIsIncomeLoading(false);
     }
-  }
+  }, [authUser]);
 
   useEffect(() => {
     const storedActiveUser = window.localStorage.getItem(activeUserStorageKey);
@@ -228,7 +246,7 @@ export default function Home() {
       void loadExpensesFromSupabase();
       void loadIncomesFromSupabase();
     });
-  }, [authUser]);
+  }, [authUser, loadExpensesFromSupabase, loadIncomesFromSupabase]);
 
   useEffect(() => {
     if (!isHydrated) {
@@ -238,15 +256,9 @@ export default function Home() {
     window.localStorage.setItem(activeUserStorageKey, activeUser);
   }, [activeUser, isHydrated]);
 
-  const activeExpenses = useMemo(
-    () => expenses.filter((expense) => expense.owner === activeUser),
-    [activeUser, expenses],
-  );
+  const activeExpenses = expenses;
 
-  const activeIncomes = useMemo(
-    () => incomes.filter((income) => income.owner === activeUser),
-    [activeUser, incomes],
-  );
+  const activeIncomes = incomes;
 
   const totalExpense = useMemo(
     () => activeExpenses.reduce((total, expense) => total + expense.amount, 0),
@@ -285,13 +297,19 @@ export default function Home() {
       return false;
     }
 
+    if (!authUser) {
+      setExpenseError("Login diperlukan sebelum menyimpan pengeluaran.");
+      return false;
+    }
+
     const timeout = createSupabaseTimeout();
 
     try {
       const { error } = await supabase
         .from("expenses")
         .insert({
-          owner: expense.owner,
+          user_id: authUser.id,
+          owner: authUser.email,
           amount: expense.amount,
           category: expense.category,
           payment_method: expense.paymentMethod,
@@ -325,6 +343,11 @@ export default function Home() {
       return;
     }
 
+    if (!authUser) {
+      setExpenseError("Login diperlukan sebelum menghapus pengeluaran.");
+      return;
+    }
+
     const timeout = createSupabaseTimeout();
 
     try {
@@ -332,6 +355,7 @@ export default function Home() {
         .from("expenses")
         .delete()
         .eq("id", id)
+        .eq("user_id", authUser.id)
         .abortSignal(timeout.signal);
 
       if (error) {
@@ -358,13 +382,19 @@ export default function Home() {
       return false;
     }
 
+    if (!authUser) {
+      setIncomeError("Login diperlukan sebelum menyimpan pemasukan.");
+      return false;
+    }
+
     const timeout = createSupabaseTimeout();
 
     try {
       const { error } = await supabase
         .from("incomes")
         .insert({
-          owner: income.owner,
+          user_id: authUser.id,
+          owner: authUser.email,
           amount: income.amount,
           source: income.source,
           note: income.note,
@@ -397,6 +427,11 @@ export default function Home() {
       return;
     }
 
+    if (!authUser) {
+      setIncomeError("Login diperlukan sebelum menghapus pemasukan.");
+      return;
+    }
+
     const timeout = createSupabaseTimeout();
 
     try {
@@ -404,6 +439,7 @@ export default function Home() {
         .from("incomes")
         .delete()
         .eq("id", id)
+        .eq("user_id", authUser.id)
         .abortSignal(timeout.signal);
 
       if (error) {
@@ -460,9 +496,9 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/50 p-5 opacity-80">
             <label className="text-sm font-medium text-slate-300">
-              Pengguna Aktif
+              Pengguna Aktif Sementara
               <select
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-4 text-base font-semibold text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20"
                 value={activeUser}
@@ -478,13 +514,12 @@ export default function Home() {
               </select>
             </label>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Mode sementara: pilihan ini masih dipakai sebagai owner
-              prototipe. Akun login sudah aktif, tetapi data belum dikaitkan ke
-              user_id.
+              Mode sementara: pilihan ini disimpan untuk kompatibilitas
+              prototipe, tetapi data sekarang dimiliki oleh akun Supabase yang
+              sedang login.
             </p>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              Penyimpanan prototipe: data tersimpan hanya di browser ini. Login
-              dan sinkronisasi cloud akan ditambahkan nanti.
+              Data yang tampil hanya milik akun yang sedang login.
             </p>
           </div>
 
