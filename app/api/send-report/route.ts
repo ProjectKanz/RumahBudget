@@ -15,6 +15,24 @@ type ReportPayload = {
   recommendation: string;
 };
 
+type EmailReportStatus = "success" | "failed";
+
+type EmailReportInsert = {
+  user_id: string;
+  recipient_email: string;
+  report_type: string;
+  period_label: string;
+  status: EmailReportStatus;
+  error_message: string;
+  sent_at: string;
+};
+
+type EmailReportLogger = {
+  from: (table: "email_reports") => {
+    insert: (values: EmailReportInsert) => PromiseLike<unknown>;
+  };
+};
+
 const requiredFields: (keyof ReportPayload)[] = [
   "reportType",
   "periodLabel",
@@ -115,31 +133,43 @@ function buildReportEmail(
   return { html, text };
 }
 
+async function saveEmailReportLog({
+  errorMessage,
+  periodLabel,
+  recipientEmail,
+  reportType,
+  status,
+  supabase,
+  userId,
+}: {
+  errorMessage: string;
+  periodLabel: string;
+  recipientEmail: string;
+  reportType: string;
+  status: EmailReportStatus;
+  supabase: EmailReportLogger;
+  userId: string;
+}) {
+  try {
+    await supabase.from("email_reports").insert({
+      user_id: userId,
+      recipient_email: recipientEmail,
+      report_type: reportType,
+      period_label: periodLabel,
+      status,
+      error_message: errorMessage,
+      sent_at: new Date().toISOString(),
+    });
+  } catch {
+    // The email send result should still be returned even if history logging fails.
+  }
+}
+
 export async function POST(request: Request) {
   const resendApiKey = process.env.RESEND_API_KEY;
   const reportTestRecipientEmail = process.env.REPORT_TEST_RECIPIENT_EMAIL;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!resendApiKey) {
-    return Response.json(
-      {
-        error:
-          "Missing RESEND_API_KEY. Tambahkan ke .env.local lalu restart npm run dev.",
-      },
-      { status: 500 },
-    );
-  }
-
-  if (!reportTestRecipientEmail) {
-    return Response.json(
-      {
-        error:
-          "Missing REPORT_TEST_RECIPIENT_EMAIL. Tambahkan email Resend yang terverifikasi ke .env.local lalu restart npm run dev.",
-      },
-      { status: 500 },
-    );
-  }
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return Response.json(
@@ -172,7 +202,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  });
   const {
     data: { user },
     error: authError,
@@ -183,6 +219,40 @@ export async function POST(request: Request) {
       { error: authError?.message ?? "Sesi login tidak valid." },
       { status: 401 },
     );
+  }
+
+  if (!reportTestRecipientEmail) {
+    const message =
+      "Missing REPORT_TEST_RECIPIENT_EMAIL. Tambahkan email Resend yang terverifikasi ke .env.local lalu restart npm run dev.";
+
+    await saveEmailReportLog({
+      errorMessage: message,
+      periodLabel: body.periodLabel,
+      recipientEmail: "",
+      reportType: body.reportType,
+      status: "failed",
+      supabase,
+      userId: user.id,
+    });
+
+    return Response.json({ error: message }, { status: 500 });
+  }
+
+  if (!resendApiKey) {
+    const message =
+      "Missing RESEND_API_KEY. Tambahkan ke .env.local lalu restart npm run dev.";
+
+    await saveEmailReportLog({
+      errorMessage: message,
+      periodLabel: body.periodLabel,
+      recipientEmail: reportTestRecipientEmail,
+      reportType: body.reportType,
+      status: "failed",
+      supabase,
+      userId: user.id,
+    });
+
+    return Response.json({ error: message }, { status: 500 });
   }
 
   const resend = new Resend(resendApiKey);
@@ -200,11 +270,45 @@ export async function POST(request: Request) {
     });
 
     if (error) {
-      return Response.json({ error: getErrorMessage(error) }, { status: 400 });
+      const message = getErrorMessage(error);
+
+      await saveEmailReportLog({
+        errorMessage: message,
+        periodLabel: body.periodLabel,
+        recipientEmail: reportTestRecipientEmail,
+        reportType: body.reportType,
+        status: "failed",
+        supabase,
+        userId: user.id,
+      });
+
+      return Response.json({ error: message }, { status: 400 });
     }
+
+    await saveEmailReportLog({
+      errorMessage: "",
+      periodLabel: body.periodLabel,
+      recipientEmail: reportTestRecipientEmail,
+      reportType: body.reportType,
+      status: "success",
+      supabase,
+      userId: user.id,
+    });
 
     return Response.json({ id: data?.id ?? null });
   } catch (error) {
-    return Response.json({ error: getErrorMessage(error) }, { status: 500 });
+    const message = getErrorMessage(error);
+
+    await saveEmailReportLog({
+      errorMessage: message,
+      periodLabel: body.periodLabel,
+      recipientEmail: reportTestRecipientEmail,
+      reportType: body.reportType,
+      status: "failed",
+      supabase,
+      userId: user.id,
+    });
+
+    return Response.json({ error: message }, { status: 500 });
   }
 }

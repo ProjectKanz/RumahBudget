@@ -1,12 +1,14 @@
 "use client";
 
 import AuthForm from "@/src/components/auth-form";
+import EmailReportHistory from "@/src/components/email-report-history";
 import ExpenseForm from "@/src/components/expense-form";
 import IncomeForm from "@/src/components/income-form";
 import ReportPreview from "@/src/components/report-preview";
 import SupabaseTestPanel from "@/src/components/supabase-test-panel";
 import TransactionHistory from "@/src/components/transaction-history";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
+import type { EmailReport } from "@/src/types/email-report";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
 import type { ActiveUser } from "@/src/types/user";
@@ -49,6 +51,17 @@ type SupabaseIncomeRow = {
   created_at?: string | null;
 };
 
+type SupabaseEmailReportRow = {
+  id?: string | number;
+  user_id?: string | null;
+  recipient_email?: string | null;
+  report_type?: string | null;
+  period_label?: string | null;
+  status?: string | null;
+  error_message?: string | null;
+  sent_at?: string | null;
+};
+
 function createSupabaseTimeout() {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 10000);
@@ -77,10 +90,13 @@ export default function Home() {
   const [activeUser, setActiveUser] = useState<ActiveUser>("Ibu");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
+  const [emailReports, setEmailReports] = useState<EmailReport[]>([]);
   const [expenseError, setExpenseError] = useState("");
   const [incomeError, setIncomeError] = useState("");
+  const [emailReportError, setEmailReportError] = useState("");
   const [isExpenseLoading, setIsExpenseLoading] = useState(false);
   const [isIncomeLoading, setIsIncomeLoading] = useState(false);
+  const [isEmailReportLoading, setIsEmailReportLoading] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
 
   const loadExpensesFromSupabase = useCallback(async () => {
@@ -194,6 +210,65 @@ export default function Home() {
     }
   }, [authUser]);
 
+  const loadEmailReportsFromSupabase = useCallback(async () => {
+    setIsEmailReportLoading(true);
+
+    if (!authUser) {
+      setEmailReports([]);
+      setIsEmailReportLoading(false);
+      return;
+    }
+
+    if (!supabase) {
+      setEmailReportError(missingSupabaseEnvMessage);
+      setIsEmailReportLoading(false);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { data, error } = await supabase
+        .from("email_reports")
+        .select("*")
+        .eq("user_id", authUser.id)
+        .order("sent_at", { ascending: false })
+        .limit(10)
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setEmailReportError(error.message);
+        return;
+      }
+
+      const nextEmailReports = (data as SupabaseEmailReportRow[]).map(
+        (report): EmailReport => ({
+          id: String(report.id ?? crypto.randomUUID()),
+          userId: report.user_id ?? authUser.id,
+          recipientEmail: report.recipient_email ?? "Tidak diketahui",
+          reportType: report.report_type ?? "Laporan",
+          periodLabel: report.period_label ?? "Periode tidak diketahui",
+          status: report.status === "success" ? "success" : "failed",
+          errorMessage: report.error_message ?? "",
+          sentAt: report.sent_at ? new Date(report.sent_at).getTime() : 0,
+        }),
+      );
+
+      setEmailReports(nextEmailReports);
+      setEmailReportError("");
+    } catch (error) {
+      setEmailReportError(
+        getSupabaseErrorMessage(
+          error,
+          "Gagal memuat riwayat email laporan dari Supabase.",
+        ),
+      );
+    } finally {
+      timeout.clear();
+      setIsEmailReportLoading(false);
+    }
+  }, [authUser]);
+
   useEffect(() => {
     const storedActiveUser = window.localStorage.getItem(activeUserStorageKey);
     const nextActiveUser = isActiveUser(storedActiveUser)
@@ -269,6 +344,7 @@ export default function Home() {
       queueMicrotask(() => {
         setExpenses([]);
         setIncomes([]);
+        setEmailReports([]);
       });
       return;
     }
@@ -276,8 +352,14 @@ export default function Home() {
     queueMicrotask(() => {
       void loadExpensesFromSupabase();
       void loadIncomesFromSupabase();
+      void loadEmailReportsFromSupabase();
     });
-  }, [authUser, loadExpensesFromSupabase, loadIncomesFromSupabase]);
+  }, [
+    authUser,
+    loadEmailReportsFromSupabase,
+    loadExpensesFromSupabase,
+    loadIncomesFromSupabase,
+  ]);
 
   useEffect(() => {
     if (!isHydrated) {
@@ -633,7 +715,17 @@ export default function Home() {
 
       <SupabaseTestPanel />
 
-      <ReportPreview expenses={activeExpenses} incomes={activeIncomes} />
+      <ReportPreview
+        expenses={activeExpenses}
+        incomes={activeIncomes}
+        onReportSent={loadEmailReportsFromSupabase}
+      />
+
+      <EmailReportHistory
+        emailReports={emailReports}
+        error={emailReportError}
+        isLoading={isEmailReportLoading}
+      />
 
       <TransactionHistory
         activeUser={activeUser}

@@ -16,6 +16,7 @@ type FinancialStatus = {
 type ReportPreviewProps = {
   expenses: Expense[];
   incomes: Income[];
+  onReportSent?: () => void | Promise<void>;
 };
 
 const rupiahFormatter = new Intl.NumberFormat("id-ID", {
@@ -127,6 +128,7 @@ function getResponseError(data: unknown) {
 export default function ReportPreview({
   expenses,
   incomes,
+  onReportSent,
 }: ReportPreviewProps) {
   const [reportType, setReportType] = useState<ReportType>("weekly");
   const [isSending, setIsSending] = useState(false);
@@ -233,12 +235,14 @@ export default function ReportPreview({
 
       if (!response.ok) {
         setSendError(getResponseError(data));
+        await onReportSent?.();
         return;
       }
 
       setSendMessage(
         "Laporan berhasil dikirim ke email testing Resend yang terverifikasi.",
       );
+      await onReportSent?.();
     } catch (error) {
       setSendError(
         error instanceof Error
