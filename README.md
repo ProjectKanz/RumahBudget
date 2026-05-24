@@ -4,7 +4,7 @@ RumahBudget is a mobile-first personal expense tracker with optional future fami
 
 ## Current Milestone
 
-### V0.1 Local Personal Tracker
+### V0.2 Supabase Database Foundation
 
 Completed features:
 
@@ -15,18 +15,26 @@ Completed features:
 - Income tracking
 - Dashboard totals
 - Monthly status: Aman / Waspada / Bahaya
-- localStorage persistence
 - Combined transaction history
 - Transaction filters
+- Supabase project connected
+- `expenses` table created
+- `incomes` table created
+- Expenses saved to Supabase
+- Incomes saved to Supabase
+- Data persists after refresh
+- Active user filtering still works locally
 
 Current limitations:
 
-- Data is saved only in the current browser
-- Real privacy is not implemented yet
+- Selected active user may still be saved in localStorage
+- Active user filtering is a local prototype, not real account privacy
 - No login/authentication yet
-- No cloud database yet
+- Current RLS policies are development-only because anon users can select, insert, and delete rows
 
-Next milestone: **V0.2 Supabase Database Foundation**
+Security warning: **Development RLS policies must be replaced before public deployment.**
+
+Next milestone: **V0.3 Supabase Auth + Real Private Accounts**
 
 ## Development
 

@@ -44,11 +44,33 @@ Limitations:
 
 ### V0.2 Supabase Database Foundation
 
+Status: Completed
+
+- Supabase project connected
+- `expenses` table created
+- `incomes` table created
+- Expenses saved to Supabase
+- Incomes saved to Supabase
+- Data persists after refresh
+- Active user filtering still works locally
+- Selected active user may still be saved in localStorage
+
+Limitations:
+
+- No login/authentication yet
+- Active user filtering is still local and not real account privacy
+- Current RLS policies are development-only because anon users can select, insert, and delete rows
+
+Security warning: Development RLS policies must be replaced before public deployment.
+
+### V0.3 Supabase Auth + Real Private Accounts
+
 Next milestone:
 
-- Add database schema for users, incomes, expenses, and transactions
-- Prepare authentication-ready data ownership
-- Move local records toward cloud persistence
+- Add Supabase Auth
+- Replace local active user mode with real accounts
+- Restrict database rows by authenticated user
+- Replace development RLS policies with production-safe policies
 
 ### Earlier V0.1 Core Tracker Scope
 
@@ -60,13 +82,13 @@ Next milestone:
 - Track category
 - Track payment method
 
-### V0.3 Budget Control
+### V0.4 Budget Control
 
 - Set monthly budget per category
 - Show budget usage percentage
 - Show status: Safe, Warning, Over Budget
 
-### V0.4 Email Report
+### V0.5 Email Report
 
 - Generate weekly spending report
 - Generate monthly spending report
