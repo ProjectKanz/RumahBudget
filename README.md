@@ -1,16 +1,17 @@
 # RumahBudget
 
-RumahBudget is a mobile-first personal expense tracker with optional future family sharing. The current prototype focuses on quick daily tracking, simple monthly totals, and privacy-first local records per selected user.
+RumahBudget is a mobile-first personal expense tracker with optional future family sharing. The current version focuses on quick daily tracking, simple monthly totals, and private records per authenticated account.
 
 ## Current Milestone
 
-### V0.2 Supabase Database Foundation
+### V0.3 Supabase Auth + Real Private Accounts
 
 Completed features:
 
 - Next.js + TypeScript + Tailwind setup
-- Active user selector
-- Personal-first local privacy prototype
+- Basic Supabase Auth
+- Sign up, login, and logout
+- Auth session restore after refresh
 - Expense tracking
 - Income tracking
 - Dashboard totals
@@ -20,21 +21,23 @@ Completed features:
 - Supabase project connected
 - `expenses` table created
 - `incomes` table created
-- Expenses saved to Supabase
-- Incomes saved to Supabase
+- Expenses linked to authenticated `user_id`
+- Incomes linked to authenticated `user_id`
 - Data persists after refresh
-- Active user filtering still works locally
+- Dashboard totals only show the logged-in user's data
+- Transaction history only shows the logged-in user's data
+- RLS policies restrict users to their own rows
+- Account A and Account B data separation tested successfully
 
 Current limitations:
 
-- Selected active user may still be saved in localStorage
-- Active user filtering is a local prototype, not real account privacy
-- No login/authentication yet
-- Current RLS policies are development-only because anon users can select, insert, and delete rows
+- Email reports are not implemented yet
+- Family sharing is planned for later
+- Budget controls and category limits are not implemented yet
 
-Security warning: **Development RLS policies must be replaced before public deployment.**
+Note: the old Active User prototype has been replaced by real authenticated accounts.
 
-Next milestone: **V0.3 Supabase Auth + Real Private Accounts**
+Next milestone: **V0.4 Email Reports**
 
 ## Development
 

@@ -2,7 +2,7 @@
 
 ## Product Goal
 
-RumahBudget is a mobile-first family expense tracker designed for non-technical household users. The goal is to help family members record daily expenses quickly, monitor monthly spending, and receive weekly or monthly spending summaries by email.
+RumahBudget is a mobile-first personal expense tracker with optional future family sharing. The goal is to help household users record daily expenses quickly, monitor monthly spending, and receive weekly or monthly spending summaries by email.
 
 ## Target Users
 
@@ -59,18 +59,39 @@ Limitations:
 
 - No login/authentication yet
 - Active user filtering is still local and not real account privacy
-- Current RLS policies are development-only because anon users can select, insert, and delete rows
+- RLS policies were still development-only at this milestone
 
-Security warning: Development RLS policies must be replaced before public deployment.
+Security note: This limitation was addressed in V0.3 with authenticated user rows and user-specific RLS policies.
 
 ### V0.3 Supabase Auth + Real Private Accounts
 
+Status: Completed
+
+- Basic Supabase Auth
+- Sign up, login, and logout
+- Auth session restore after refresh
+- Expenses linked to authenticated `user_id`
+- Incomes linked to authenticated `user_id`
+- Dashboard totals only show the logged-in user's data
+- Transaction history only shows the logged-in user's data
+- RLS policies restrict users to their own rows
+- Account A and Account B data separation tested successfully
+
+Limitations:
+
+- Email reports are not implemented yet
+- Family sharing is planned for later
+- Budget controls and category limits are not implemented yet
+- The old Active User prototype concept has been replaced by real authenticated accounts
+
+### V0.4 Email Reports
+
 Next milestone:
 
-- Add Supabase Auth
-- Replace local active user mode with real accounts
-- Restrict database rows by authenticated user
-- Replace development RLS policies with production-safe policies
+- Generate weekly spending reports
+- Generate monthly spending reports
+- Send reports to the logged-in user's email
+- Save email report history
 
 ### Earlier V0.1 Core Tracker Scope
 
@@ -82,18 +103,11 @@ Next milestone:
 - Track category
 - Track payment method
 
-### V0.4 Budget Control
+### V0.5 Budget Control
 
 - Set monthly budget per category
 - Show budget usage percentage
 - Show status: Safe, Warning, Over Budget
-
-### V0.5 Email Report
-
-- Generate weekly spending report
-- Generate monthly spending report
-- Send report to selected family emails
-- Save email report history
 
 ## Non-Goals for MVP
 
