@@ -1,6 +1,7 @@
 "use client";
 
 import type { Expense } from "@/src/types/expense";
+import type { ActiveUser } from "@/src/types/user";
 import { FormEvent, useMemo, useState } from "react";
 
 const categories = [
@@ -10,12 +11,6 @@ const categories = [
   { label: "Pendidikan", value: "Pendidikan" },
   { label: "Kesehatan", value: "Kesehatan" },
   { label: "Lainnya", value: "Lainnya" },
-];
-
-const paidByOptions = [
-  { label: "Ayah", value: "Ayah" },
-  { label: "Ibu", value: "Ibu" },
-  { label: "Keluarga", value: "Keluarga" },
 ];
 
 const paymentMethods = [
@@ -37,19 +32,20 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 });
 
 type ExpenseFormProps = {
+  activeUser: ActiveUser;
   expenses: Expense[];
   onAddExpense: (expense: Expense) => void;
   onDeleteExpense: (id: string) => void;
 };
 
 export default function ExpenseForm({
+  activeUser,
   expenses,
   onAddExpense,
   onDeleteExpense,
 }: ExpenseFormProps) {
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState(categories[0].value);
-  const [paidBy, setPaidBy] = useState(paidByOptions[0].value);
   const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0].value);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -71,9 +67,9 @@ export default function ExpenseForm({
 
     const expense: Expense = {
       id: crypto.randomUUID(),
+      owner: activeUser,
       amount: numericAmount,
       category,
-      paidBy,
       paymentMethod,
       note: note.trim(),
     };
@@ -92,11 +88,10 @@ export default function ExpenseForm({
             Catat Pengeluaran
           </p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Tambah transaksi keluarga
+            Tambah transaksi pribadi
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Simpan detail pengeluaran harian. Data masih tersimpan sementara di
-            halaman ini.
+            Tersimpan untuk {activeUser} di prototype lokal ini.
           </p>
         </div>
 
@@ -124,22 +119,6 @@ export default function ExpenseForm({
               onChange={(event) => setCategory(event.target.value)}
             >
               {categories.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={labelClassName}>
-            Paid by
-            <select
-              className={inputClassName}
-              name="paidBy"
-              value={paidBy}
-              onChange={(event) => setPaidBy(event.target.value)}
-            >
-              {paidByOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -224,8 +203,7 @@ export default function ExpenseForm({
                     {rupiahFormatter.format(expense.amount)}
                   </p>
                   <p className="mt-1 text-sm text-slate-300">
-                    {expense.category} / {expense.paidBy} /{" "}
-                    {expense.paymentMethod}
+                    {expense.category} / {expense.paymentMethod}
                   </p>
                   {expense.note ? (
                     <p className="mt-2 text-sm text-slate-500">

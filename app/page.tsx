@@ -4,6 +4,7 @@ import ExpenseForm from "@/src/components/expense-form";
 import IncomeForm from "@/src/components/income-form";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
+import type { ActiveUser } from "@/src/types/user";
 import { useMemo, useState } from "react";
 
 const rupiahFormatter = new Intl.NumberFormat("id-ID", {
@@ -12,18 +13,31 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
+const activeUsers: ActiveUser[] = ["Ibu", "Bapak", "Kanzan", "Guest"];
+
 export default function Home() {
+  const [activeUser, setActiveUser] = useState<ActiveUser>("Ibu");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
 
+  const activeExpenses = useMemo(
+    () => expenses.filter((expense) => expense.owner === activeUser),
+    [activeUser, expenses],
+  );
+
+  const activeIncomes = useMemo(
+    () => incomes.filter((income) => income.owner === activeUser),
+    [activeUser, incomes],
+  );
+
   const totalExpense = useMemo(
-    () => expenses.reduce((total, expense) => total + expense.amount, 0),
-    [expenses],
+    () => activeExpenses.reduce((total, expense) => total + expense.amount, 0),
+    [activeExpenses],
   );
 
   const totalIncome = useMemo(
-    () => incomes.reduce((total, income) => total + income.amount, 0),
-    [incomes],
+    () => activeIncomes.reduce((total, income) => total + income.amount, 0),
+    [activeIncomes],
   );
 
   const remainingBalance = totalIncome - totalExpense;
@@ -61,9 +75,32 @@ export default function Home() {
           </h1>
 
           <p className="mt-6 text-lg leading-8 text-slate-300">
-            Catat pengeluaran keluarga dengan mudah, lihat kondisi keuangan
-            bulanan, dan siapkan laporan mingguan atau bulanan untuk keluarga.
+            Catat pemasukan dan pengeluaran pribadi dengan mudah. Berbagi data
+            keluarga bisa ditambahkan nanti setelah login dan privasi siap.
           </p>
+
+          <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+            <label className="text-sm font-medium text-slate-300">
+              Active User
+              <select
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20"
+                value={activeUser}
+                onChange={(event) =>
+                  setActiveUser(event.target.value as ActiveUser)
+                }
+              >
+                {activeUsers.map((user) => (
+                  <option key={user} value={user}>
+                    {user}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Prototype mode: data is separated by selected user locally. Real
+              privacy will be added with login/auth later.
+            </p>
+          </div>
 
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
@@ -116,13 +153,15 @@ export default function Home() {
       </section>
 
       <IncomeForm
-        incomes={incomes}
+        activeUser={activeUser}
+        incomes={activeIncomes}
         onAddIncome={addIncome}
         onDeleteIncome={deleteIncome}
       />
 
       <ExpenseForm
-        expenses={expenses}
+        activeUser={activeUser}
+        expenses={activeExpenses}
         onAddExpense={addExpense}
         onDeleteExpense={deleteExpense}
       />

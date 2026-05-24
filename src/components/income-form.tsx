@@ -1,9 +1,8 @@
 "use client";
 
 import type { Income } from "@/src/types/income";
+import type { ActiveUser } from "@/src/types/user";
 import { FormEvent, useMemo, useState } from "react";
-
-const receivedByOptions = ["Ibu", "Bapak", "Kanzan", "Keluarga"];
 
 const inputClassName =
   "mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20";
@@ -17,19 +16,20 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 });
 
 type IncomeFormProps = {
+  activeUser: ActiveUser;
   incomes: Income[];
   onAddIncome: (income: Income) => void;
   onDeleteIncome: (id: string) => void;
 };
 
 export default function IncomeForm({
+  activeUser,
   incomes,
   onAddIncome,
   onDeleteIncome,
 }: IncomeFormProps) {
   const [amount, setAmount] = useState("");
   const [source, setSource] = useState("");
-  const [receivedBy, setReceivedBy] = useState(receivedByOptions[0]);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
 
@@ -56,9 +56,9 @@ export default function IncomeForm({
 
     onAddIncome({
       id: crypto.randomUUID(),
+      owner: activeUser,
       amount: numericAmount,
       source: trimmedSource,
-      receivedBy,
       note: note.trim(),
     });
 
@@ -79,7 +79,7 @@ export default function IncomeForm({
             Tambah dana masuk
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Simpan pemasukan keluarga untuk menghitung sisa bulan ini.
+            Tersimpan untuk {activeUser} dan dipakai menghitung saldo pribadi.
           </p>
         </div>
 
@@ -110,23 +110,7 @@ export default function IncomeForm({
             />
           </label>
 
-          <label className={labelClassName}>
-            Received by
-            <select
-              className={inputClassName}
-              name="receivedBy"
-              value={receivedBy}
-              onChange={(event) => setReceivedBy(event.target.value)}
-            >
-              {receivedByOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={labelClassName}>
+          <label className={`${labelClassName} sm:col-span-2`}>
             Note
             <input
               className={inputClassName}
@@ -186,7 +170,7 @@ export default function IncomeForm({
                     {rupiahFormatter.format(income.amount)}
                   </p>
                   <p className="mt-1 text-sm text-slate-300">
-                    {income.source} / {income.receivedBy}
+                    {income.source}
                   </p>
                   {income.note ? (
                     <p className="mt-2 text-sm text-slate-500">
