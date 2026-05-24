@@ -57,6 +57,7 @@ export default function IncomeForm({
     onAddIncome({
       id: crypto.randomUUID(),
       owner: activeUser,
+      createdAt: Date.now(),
       amount: numericAmount,
       source: trimmedSource,
       note: note.trim(),

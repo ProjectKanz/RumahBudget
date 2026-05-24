@@ -2,6 +2,7 @@
 
 import ExpenseForm from "@/src/components/expense-form";
 import IncomeForm from "@/src/components/income-form";
+import TransactionHistory from "@/src/components/transaction-history";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
 import type { ActiveUser } from "@/src/types/user";
@@ -268,6 +269,14 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <TransactionHistory
+        activeUser={activeUser}
+        expenses={activeExpenses}
+        incomes={activeIncomes}
+        onDeleteExpense={deleteExpense}
+        onDeleteIncome={deleteIncome}
+      />
 
       <IncomeForm
         activeUser={activeUser}
