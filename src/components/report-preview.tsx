@@ -2,6 +2,7 @@
 
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
+import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import { useMemo, useState } from "react";
 
 type ReportType = "weekly" | "monthly";
@@ -111,11 +112,26 @@ function getRecommendation(
   return "Pertahankan kebiasaan mencatat dan sisihkan sebagian pemasukan jika memungkinkan.";
 }
 
+function getResponseError(data: unknown) {
+  if (data && typeof data === "object" && "error" in data) {
+    const error = (data as { error?: unknown }).error;
+
+    if (typeof error === "string") {
+      return error;
+    }
+  }
+
+  return "Gagal mengirim laporan email.";
+}
+
 export default function ReportPreview({
   expenses,
   incomes,
 }: ReportPreviewProps) {
   const [reportType, setReportType] = useState<ReportType>("weekly");
+  const [isSending, setIsSending] = useState(false);
+  const [sendMessage, setSendMessage] = useState("");
+  const [sendError, setSendError] = useState("");
 
   const report = useMemo(() => {
     const today = new Date();
@@ -155,12 +171,14 @@ export default function ReportPreview({
 
     const status = getFinancialStatus(totalIncome, totalExpense);
     const topCategory = topCategoryEntry?.[0] ?? "Belum ada";
+    const reportName =
+      reportType === "weekly" ? "Weekly Report" : "Monthly Report";
+    const periodLabel = `${dateFormatter.format(startDate)} - ${dateFormatter.format(endDate)}`;
 
     return {
-      label:
-        reportType === "weekly"
-          ? `Weekly Report: ${dateFormatter.format(startDate)} - ${dateFormatter.format(endDate)}`
-          : `Monthly Report: ${dateFormatter.format(startDate)} - ${dateFormatter.format(endDate)}`,
+      reportName,
+      periodLabel,
+      label: `${reportName}: ${periodLabel}`,
       totalIncome,
       totalExpense,
       remainingBalance,
@@ -169,6 +187,68 @@ export default function ReportPreview({
       recommendation: getRecommendation(status.label, topCategory, totalIncome),
     };
   }, [expenses, incomes, reportType]);
+
+  async function sendReport() {
+    setIsSending(true);
+    setSendMessage("");
+    setSendError("");
+
+    if (!supabase) {
+      setSendError(missingSupabaseEnvMessage);
+      setIsSending(false);
+      return;
+    }
+
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+
+    if (error || !session?.access_token) {
+      setSendError(error?.message ?? "Login diperlukan sebelum mengirim laporan.");
+      setIsSending(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/send-report", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reportType: report.reportName,
+          periodLabel: report.periodLabel,
+          totalIncome: rupiahFormatter.format(report.totalIncome),
+          totalExpense: rupiahFormatter.format(report.totalExpense),
+          remainingBalance: rupiahFormatter.format(report.remainingBalance),
+          financialStatus: report.status.label,
+          topExpenseCategory: report.topCategory,
+          explanation: report.status.explanation,
+          recommendation: report.recommendation,
+        }),
+      });
+      const data = (await response.json()) as unknown;
+
+      if (!response.ok) {
+        setSendError(getResponseError(data));
+        return;
+      }
+
+      setSendMessage(
+        "Laporan berhasil dikirim ke email testing Resend yang terverifikasi.",
+      );
+    } catch (error) {
+      setSendError(
+        error instanceof Error
+          ? error.message
+          : "Gagal mengirim laporan email.",
+      );
+    } finally {
+      setIsSending(false);
+    }
+  }
 
   return (
     <section
@@ -185,8 +265,12 @@ export default function ReportPreview({
               Preview laporan pribadi
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Ringkasan ini dibuat dari data akun yang sedang login. Email
-              belum dikirim pada tahap ini.
+              Ringkasan ini dibuat dari data akun yang sedang login.
+            </p>
+            <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
+              Mode testing: laporan email dikirim ke email Resend yang
+              terverifikasi. Pengiriman ke email lain membutuhkan domain
+              terverifikasi.
             </p>
           </div>
 
@@ -263,6 +347,29 @@ export default function ReportPreview({
                 {report.recommendation}
               </p>
             </div>
+          </div>
+
+          <div className="mt-6 border-t border-slate-800 pt-5">
+            <button
+              className="w-full rounded-full bg-emerald-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              type="button"
+              disabled={isSending}
+              onClick={sendReport}
+            >
+              {isSending ? "Mengirim laporan..." : "Kirim Laporan ke Email"}
+            </button>
+
+            {sendMessage ? (
+              <p className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
+                {sendMessage}
+              </p>
+            ) : null}
+
+            {sendError ? (
+              <p className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {sendError}
+              </p>
+            ) : null}
           </div>
         </div>
       </div>
