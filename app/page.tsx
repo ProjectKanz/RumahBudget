@@ -1,3 +1,5 @@
+import ExpenseForm from "@/src/components/expense-form";
+
 export default function Home() {
   return (
     <main className="min-h-screen bg-slate-950 text-white">
@@ -44,6 +46,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <ExpenseForm />
     </main>
   );
 }
