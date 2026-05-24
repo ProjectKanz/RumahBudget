@@ -1,7 +1,9 @@
 "use client";
 
 import ExpenseForm from "@/src/components/expense-form";
+import IncomeForm from "@/src/components/income-form";
 import type { Expense } from "@/src/types/expense";
+import type { Income } from "@/src/types/income";
 import { useMemo, useState } from "react";
 
 const rupiahFormatter = new Intl.NumberFormat("id-ID", {
@@ -12,11 +14,19 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 
 export default function Home() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [incomes, setIncomes] = useState<Income[]>([]);
 
   const totalExpense = useMemo(
     () => expenses.reduce((total, expense) => total + expense.amount, 0),
     [expenses],
   );
+
+  const totalIncome = useMemo(
+    () => incomes.reduce((total, income) => total + income.amount, 0),
+    [incomes],
+  );
+
+  const remainingBalance = totalIncome - totalExpense;
 
   function addExpense(expense: Expense) {
     setExpenses((currentExpenses) => [expense, ...currentExpenses]);
@@ -25,6 +35,16 @@ export default function Home() {
   function deleteExpense(id: string) {
     setExpenses((currentExpenses) =>
       currentExpenses.filter((expense) => expense.id !== id),
+    );
+  }
+
+  function addIncome(income: Income) {
+    setIncomes((currentIncomes) => [income, ...currentIncomes]);
+  }
+
+  function deleteIncome(id: string) {
+    setIncomes((currentIncomes) =>
+      currentIncomes.filter((income) => income.id !== id),
     );
   }
 
@@ -45,10 +65,23 @@ export default function Home() {
             bulanan, dan siapkan laporan mingguan atau bulanan untuk keluarga.
           </p>
 
-          <div className="mt-10 grid gap-4 sm:grid-cols-3">
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
               <p className="text-sm text-slate-400">Sisa Bulan Ini</p>
-              <p className="mt-2 text-2xl font-bold">Rp0</p>
+              <p
+                className={`mt-2 text-2xl font-bold ${
+                  remainingBalance < 0 ? "text-red-300" : ""
+                }`}
+              >
+                {rupiahFormatter.format(remainingBalance)}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
+              <p className="text-sm text-slate-400">Pemasukan</p>
+              <p className="mt-2 text-2xl font-bold text-emerald-400">
+                {rupiahFormatter.format(totalIncome)}
+              </p>
             </div>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
@@ -60,7 +93,13 @@ export default function Home() {
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
               <p className="text-sm text-slate-400">Status</p>
-              <p className="mt-2 text-2xl font-bold text-emerald-400">Aman</p>
+              <p
+                className={`mt-2 text-2xl font-bold ${
+                  remainingBalance < 0 ? "text-red-300" : "text-emerald-400"
+                }`}
+              >
+                {remainingBalance < 0 ? "Minus" : "Aman"}
+              </p>
             </div>
           </div>
 
@@ -75,6 +114,12 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <IncomeForm
+        incomes={incomes}
+        onAddIncome={addIncome}
+        onDeleteIncome={deleteIncome}
+      />
 
       <ExpenseForm
         expenses={expenses}
