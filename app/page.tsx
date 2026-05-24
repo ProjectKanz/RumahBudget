@@ -4,6 +4,7 @@ import ExpenseForm from "@/src/components/expense-form";
 import IncomeForm from "@/src/components/income-form";
 import SupabaseTestPanel from "@/src/components/supabase-test-panel";
 import TransactionHistory from "@/src/components/transaction-history";
+import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
 import type { ActiveUser } from "@/src/types/user";
@@ -17,7 +18,6 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 
 const activeUsers: ActiveUser[] = ["Ibu", "Bapak", "Kanzan", "Guest"];
 const activeUserStorageKey = "rumahbudget.activeUser";
-const expensesStorageKey = "rumahbudget.expenses";
 const incomesStorageKey = "rumahbudget.incomes";
 
 type MonthlyStatus = {
@@ -25,6 +25,34 @@ type MonthlyStatus = {
   explanation: string;
   className: string;
 };
+
+type SupabaseExpenseRow = {
+  id?: string | number;
+  owner?: ActiveUser;
+  amount?: number | string;
+  category?: string;
+  payment_method?: string;
+  note?: string | null;
+  created_at?: string | null;
+};
+
+function createSupabaseTimeout() {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+
+  return {
+    signal: controller.signal,
+    clear: () => window.clearTimeout(timeoutId),
+  };
+}
+
+function getSupabaseErrorMessage(error: unknown, fallbackMessage: string) {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return "Koneksi Supabase terlalu lama. Coba lagi atau periksa koneksi internet.";
+  }
+
+  return error instanceof Error ? error.message : fallbackMessage;
+}
 
 function isActiveUser(value: unknown): value is ActiveUser {
   return activeUsers.includes(value as ActiveUser);
@@ -49,21 +77,76 @@ export default function Home() {
   const [activeUser, setActiveUser] = useState<ActiveUser>("Ibu");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
+  const [expenseError, setExpenseError] = useState("");
+  const [isExpenseLoading, setIsExpenseLoading] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
+
+  async function loadExpensesFromSupabase() {
+    setIsExpenseLoading(true);
+
+    if (!supabase) {
+      setExpenseError(missingSupabaseEnvMessage);
+      setIsExpenseLoading(false);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { data, error } = await supabase
+        .from("expenses")
+        .select("*")
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setExpenseError(error.message);
+        return;
+      }
+
+      const nextExpenses = (data as SupabaseExpenseRow[]).map((expense) => ({
+        id: String(expense.id ?? crypto.randomUUID()),
+        owner: isActiveUser(expense.owner) ? expense.owner : "Guest",
+        createdAt: expense.created_at
+          ? new Date(expense.created_at).getTime()
+          : 0,
+        amount: Number(expense.amount ?? 0),
+        category: expense.category ?? "Lainnya",
+        paymentMethod: expense.payment_method ?? "Tidak diketahui",
+        note: expense.note ?? "",
+      }));
+
+      setExpenses(nextExpenses);
+      setExpenseError("");
+    } catch (error) {
+      setExpenseError(
+        getSupabaseErrorMessage(
+          error,
+          "Gagal memuat pengeluaran dari Supabase.",
+        ),
+      );
+    } finally {
+      timeout.clear();
+      setIsExpenseLoading(false);
+    }
+  }
 
   useEffect(() => {
     const storedActiveUser = window.localStorage.getItem(activeUserStorageKey);
     const nextActiveUser = isActiveUser(storedActiveUser)
       ? storedActiveUser
       : "Ibu";
-    const storedExpenses = readStoredArray<Expense>(expensesStorageKey);
     const storedIncomes = readStoredArray<Income>(incomesStorageKey);
 
     queueMicrotask(() => {
       setActiveUser(nextActiveUser);
-      setExpenses(storedExpenses);
       setIncomes(storedIncomes);
       setIsHydrated(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      void loadExpensesFromSupabase();
     });
   }, []);
 
@@ -74,14 +157,6 @@ export default function Home() {
 
     window.localStorage.setItem(activeUserStorageKey, activeUser);
   }, [activeUser, isHydrated]);
-
-  useEffect(() => {
-    if (!isHydrated) {
-      return;
-    }
-
-    window.localStorage.setItem(expensesStorageKey, JSON.stringify(expenses));
-  }, [expenses, isHydrated]);
 
   useEffect(() => {
     if (!isHydrated) {
@@ -132,14 +207,77 @@ export default function Home() {
             className: "text-emerald-400",
           };
 
-  function addExpense(expense: Expense) {
-    setExpenses((currentExpenses) => [expense, ...currentExpenses]);
+  async function addExpense(expense: Expense) {
+    if (!supabase) {
+      setExpenseError(missingSupabaseEnvMessage);
+      return false;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { error } = await supabase
+        .from("expenses")
+        .insert({
+          owner: expense.owner,
+          amount: expense.amount,
+          category: expense.category,
+          payment_method: expense.paymentMethod,
+          note: expense.note,
+        })
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setExpenseError(error.message);
+        return false;
+      }
+
+      await loadExpensesFromSupabase();
+      return true;
+    } catch (error) {
+      setExpenseError(
+        getSupabaseErrorMessage(
+          error,
+          "Gagal menyimpan pengeluaran ke Supabase.",
+        ),
+      );
+      return false;
+    } finally {
+      timeout.clear();
+    }
   }
 
-  function deleteExpense(id: string) {
-    setExpenses((currentExpenses) =>
-      currentExpenses.filter((expense) => expense.id !== id),
-    );
+  async function deleteExpense(id: string) {
+    if (!supabase) {
+      setExpenseError(missingSupabaseEnvMessage);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { error } = await supabase
+        .from("expenses")
+        .delete()
+        .eq("id", id)
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setExpenseError(error.message);
+        return;
+      }
+
+      await loadExpensesFromSupabase();
+    } catch (error) {
+      setExpenseError(
+        getSupabaseErrorMessage(
+          error,
+          "Gagal menghapus pengeluaran dari Supabase.",
+        ),
+      );
+    } finally {
+      timeout.clear();
+    }
   }
 
   function addIncome(income: Income) {
@@ -293,6 +431,8 @@ export default function Home() {
         expenses={activeExpenses}
         onAddExpense={addExpense}
         onDeleteExpense={deleteExpense}
+        supabaseError={expenseError}
+        isLoadingExpenses={isExpenseLoading}
       />
     </main>
   );

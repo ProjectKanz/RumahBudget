@@ -40,7 +40,7 @@ type TransactionHistoryProps = {
   activeUser: ActiveUser;
   expenses: Expense[];
   incomes: Income[];
-  onDeleteExpense: (id: string) => void;
+  onDeleteExpense: (id: string) => void | Promise<void>;
   onDeleteIncome: (id: string) => void;
 };
 

@@ -34,8 +34,10 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 type ExpenseFormProps = {
   activeUser: ActiveUser;
   expenses: Expense[];
-  onAddExpense: (expense: Expense) => void;
+  onAddExpense: (expense: Expense) => Promise<boolean>;
   onDeleteExpense: (id: string) => void;
+  supabaseError: string;
+  isLoadingExpenses: boolean;
 };
 
 export default function ExpenseForm({
@@ -43,19 +45,22 @@ export default function ExpenseForm({
   expenses,
   onAddExpense,
   onDeleteExpense,
+  supabaseError,
+  isLoadingExpenses,
 }: ExpenseFormProps) {
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState(categories[0].value);
   const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0].value);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const totalExpense = useMemo(
     () => expenses.reduce((total, expense) => total + expense.amount, 0),
     [expenses],
   );
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const numericAmount = Number(amount);
@@ -75,7 +80,21 @@ export default function ExpenseForm({
       note: note.trim(),
     };
 
-    onAddExpense(expense);
+    let didSave = false;
+
+    try {
+      setIsSaving(true);
+      didSave = await onAddExpense(expense);
+    } catch {
+      didSave = false;
+    } finally {
+      setIsSaving(false);
+    }
+
+    if (!didSave) {
+      return;
+    }
+
     setAmount("");
     setNote("");
     setError("");
@@ -164,12 +183,19 @@ export default function ExpenseForm({
             </p>
           ) : null}
 
+          {supabaseError ? (
+            <p className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200 sm:col-span-2">
+              {supabaseError}
+            </p>
+          ) : null}
+
           <div className="sm:col-span-2">
             <button
-              className="w-full rounded-full bg-emerald-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-slate-900 sm:w-auto"
+              className="w-full rounded-full bg-emerald-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               type="submit"
+              disabled={isSaving}
             >
-              Simpan Pengeluaran
+              {isSaving ? "Menyimpan..." : "Simpan Pengeluaran"}
             </button>
           </div>
         </form>
@@ -186,12 +212,18 @@ export default function ExpenseForm({
             </h2>
           </div>
           <p className="text-sm text-slate-400">
-            {expenses.length} transaksi tersimpan
+            {isLoadingExpenses
+              ? "Memuat data dari Supabase..."
+              : `${expenses.length} transaksi tersimpan`}
           </p>
         </div>
 
         <div className="mt-6 space-y-4">
-          {expenses.length === 0 ? (
+          {isLoadingExpenses ? (
+            <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
+              Memuat pengeluaran dari Supabase...
+            </div>
+          ) : expenses.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
               Belum ada pengeluaran. Tambahkan transaksi pertama dari form di
               atas.
