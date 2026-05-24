@@ -206,29 +206,59 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
     let unsubscribe: (() => void) | undefined;
 
     queueMicrotask(() => {
+      if (!isMounted) {
+        return;
+      }
+
       if (!supabase) {
         setIsAuthLoading(false);
         return;
       }
 
-      void supabase.auth.getSession().then(({ data }) => {
-        setAuthUser(data.session?.user ?? null);
-        setIsAuthLoading(false);
-      });
-
       const {
         data: { subscription },
       } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (!isMounted) {
+          return;
+        }
+
         setAuthUser(session?.user ?? null);
+        setIsAuthLoading(false);
       });
 
       unsubscribe = () => subscription.unsubscribe();
+
+      void supabase.auth
+        .getSession()
+        .then(({ data }) => {
+          if (!isMounted) {
+            return;
+          }
+
+          setAuthUser(data.session?.user ?? null);
+        })
+        .catch(() => {
+          if (!isMounted) {
+            return;
+          }
+
+          setAuthUser(null);
+        })
+        .finally(() => {
+          if (!isMounted) {
+            return;
+          }
+
+          setIsAuthLoading(false);
+        });
     });
 
     return () => {
+      isMounted = false;
       unsubscribe?.();
     };
   }, []);
