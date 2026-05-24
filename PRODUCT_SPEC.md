@@ -84,13 +84,38 @@ Limitations:
 - Budget controls and category limits are not implemented yet
 - The old Active User prototype concept has been replaced by real authenticated accounts
 
-### V0.4 Email Reports
+### V0.4-A Email Report Preview
+
+Status: Completed
+
+- Generate weekly spending report preview
+- Generate monthly spending report preview
+- Show total income, expense, remaining balance, status, top category, explanation, and recommendation
+
+### V0.4-B Manual Email Report Testing Mode
+
+Status: Completed
+
+- Manual email sending with Resend
+- Server-side email API route
+- `RESEND_API_KEY` stored server-side
+- `REPORT_TEST_RECIPIENT_EMAIL` testing mode
+- Email report can be sent manually from the app
+- Email sending currently goes only to the verified Resend testing email
+
+Limitations:
+
+- Email sending is still in testing mode
+- Sending reports to other users or family members requires a verified sender domain in Resend
+- Automatic weekly/monthly sending is not implemented yet
+
+### V0.4-C Automatic Weekly / Monthly Email Scheduling
 
 Next milestone:
 
-- Generate weekly spending reports
-- Generate monthly spending reports
-- Send reports to the logged-in user's email
+- Schedule weekly email reports
+- Schedule monthly email reports
+- Keep manual sending available for testing
 - Save email report history
 
 ### Earlier V0.1 Core Tracker Scope
