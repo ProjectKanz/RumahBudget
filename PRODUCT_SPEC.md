@@ -119,14 +119,67 @@ Deployment environment variables:
 - `RESEND_API_KEY`
 - `REPORT_TEST_RECIPIENT_EMAIL`
 
-### V0.4-C Automatic Weekly / Monthly Email Scheduling
+### V0.4-C Cron Endpoint Foundation
 
-Next milestone:
+Status: Completed
 
-- Schedule weekly email reports
-- Schedule monthly email reports
-- Keep manual sending available for testing
-- Save email report history
+- Protected cron endpoint created at `/api/cron/send-scheduled-reports`
+- `CRON_SECRET` protects manual cron calls
+- Endpoint verifies Supabase readiness
+- No real scheduled sending at this stage
+
+### V0.4-D Email Report Preferences
+
+Status: Completed
+
+- `report_preferences` table added
+- Users can enable or disable weekly reports
+- Users can enable or disable monthly reports
+- Users can save a recipient email preference
+- Preferences are loaded per authenticated account
+- Preferences are saved with user-specific RLS protection
+
+### V0.4-E Cron Reads Report Preferences
+
+Status: Completed
+
+- Cron endpoint reads `report_preferences`
+- Endpoint counts total preferences, weekly-enabled users, and monthly-enabled users
+- Real scheduled sending remains disabled
+
+### V0.4-F Scheduled Email Dry Run
+
+Status: Completed
+
+- Cron endpoint processes weekly-enabled users
+- Endpoint loads each user's incomes and expenses for the weekly period
+- Endpoint generates a simple weekly report summary
+- Dry-run email sends only to `REPORT_TEST_RECIPIENT_EMAIL`
+- Each scheduled attempt is logged to `email_reports`
+- Saved recipient email preferences are not used for real delivery yet
+
+### V0.4-G Vercel Cron Schedule
+
+Status: Completed
+
+- `vercel.json` added
+- Vercel Cron configured for `/api/cron/send-scheduled-reports`
+- Schedule: `0 0 * * 1`
+- Runs Monday 00:00 UTC / around Monday 07:00 WIB
+- Cron Jobs enabled in Vercel
+- Production cron endpoint tested successfully
+- Manual calls still support `Authorization: Bearer <CRON_SECRET>`
+- Vercel Cron calls are supported
+
+Current limitations:
+
+- Scheduled email behavior is still dry-run testing mode
+- Email is sent only to `REPORT_TEST_RECIPIENT_EMAIL`
+- Sending to real saved recipient emails requires a verified Resend domain
+- Monthly scheduled report sending is not enabled yet
+- Family sharing is planned for later
+
+Next milestone: **V0.5 Production Email Readiness / Verified Domain or Family Sharing**
 
 ### Earlier V0.1 Core Tracker Scope
 
