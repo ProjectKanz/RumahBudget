@@ -40,6 +40,7 @@ type SupabaseExpenseRow = {
   id?: string | number;
   owner?: string | null;
   user_id?: string | null;
+  account_id?: string | null;
   amount?: number | string;
   category?: string;
   payment_method?: string;
@@ -51,6 +52,7 @@ type SupabaseIncomeRow = {
   id?: string | number;
   owner?: string | null;
   user_id?: string | null;
+  account_id?: string | null;
   amount?: number | string;
   source?: string;
   note?: string | null;
@@ -161,6 +163,7 @@ export default function Home() {
         id: String(expense.id ?? crypto.randomUUID()),
         owner: expense.owner ?? authUser.email ?? "Unknown",
         userId: expense.user_id ?? authUser.id,
+        accountId: expense.account_id ?? "",
         createdAt: expense.created_at
           ? new Date(expense.created_at).getTime()
           : 0,
@@ -218,6 +221,7 @@ export default function Home() {
         id: String(income.id ?? crypto.randomUUID()),
         owner: income.owner ?? authUser.email ?? "Unknown",
         userId: income.user_id ?? authUser.id,
+        accountId: income.account_id ?? "",
         createdAt: income.created_at ? new Date(income.created_at).getTime() : 0,
         amount: Number(income.amount ?? 0),
         source: income.source ?? "Unknown",
@@ -477,6 +481,34 @@ export default function Home() {
     [activeIncomes],
   );
 
+  const moneyAccountBalances = useMemo(() => {
+    const balances = moneyAccounts.reduce<Record<string, number>>(
+      (nextBalances, account) => ({
+        ...nextBalances,
+        [account.id]: account.initialBalance,
+      }),
+      {},
+    );
+
+    activeIncomes.forEach((income) => {
+      if (!income.accountId || !(income.accountId in balances)) {
+        return;
+      }
+
+      balances[income.accountId] += income.amount;
+    });
+
+    activeExpenses.forEach((expense) => {
+      if (!expense.accountId || !(expense.accountId in balances)) {
+        return;
+      }
+
+      balances[expense.accountId] -= expense.amount;
+    });
+
+    return balances;
+  }, [activeExpenses, activeIncomes, moneyAccounts]);
+
   const remainingBalance = totalIncome - totalExpense;
   const expenseRatio = totalIncome > 0 ? totalExpense / totalIncome : 0;
   const monthlyStatus: MonthlyStatus =
@@ -517,6 +549,7 @@ export default function Home() {
         .insert({
           user_id: authUser.id,
           owner: authUser.email,
+          account_id: expense.accountId,
           amount: expense.amount,
           category: expense.category,
           payment_method: expense.paymentMethod,
@@ -602,6 +635,7 @@ export default function Home() {
         .insert({
           user_id: authUser.id,
           owner: authUser.email,
+          account_id: income.accountId,
           amount: income.amount,
           source: income.source,
           note: income.note,
@@ -914,6 +948,7 @@ export default function Home() {
 
       <MoneyAccounts
         accounts={moneyAccounts}
+        accountBalances={moneyAccountBalances}
         error={moneyAccountError}
         isLoading={isMoneyAccountLoading}
         onAddAccount={addMoneyAccount}
@@ -936,6 +971,7 @@ export default function Home() {
 
       <TransactionHistory
         activeUser={activeUser}
+        moneyAccounts={moneyAccounts}
         expenses={activeExpenses}
         incomes={activeIncomes}
         onDeleteExpense={deleteExpense}
@@ -944,6 +980,7 @@ export default function Home() {
 
       <IncomeForm
         activeUser={activeUser}
+        moneyAccounts={moneyAccounts}
         incomes={activeIncomes}
         onAddIncome={addIncome}
         onDeleteIncome={deleteIncome}
@@ -953,6 +990,7 @@ export default function Home() {
 
       <ExpenseForm
         activeUser={activeUser}
+        moneyAccounts={moneyAccounts}
         expenses={activeExpenses}
         onAddExpense={addExpense}
         onDeleteExpense={deleteExpense}

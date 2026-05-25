@@ -1,6 +1,7 @@
 "use client";
 
 import type { Income } from "@/src/types/income";
+import type { MoneyAccount } from "@/src/types/money-account";
 import type { ActiveUser } from "@/src/types/user";
 import { FormEvent, useMemo, useState } from "react";
 
@@ -17,6 +18,7 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 
 type IncomeFormProps = {
   activeUser: ActiveUser;
+  moneyAccounts: MoneyAccount[];
   incomes: Income[];
   onAddIncome: (income: Income) => Promise<boolean>;
   onDeleteIncome: (id: string) => void;
@@ -26,6 +28,7 @@ type IncomeFormProps = {
 
 export default function IncomeForm({
   activeUser,
+  moneyAccounts,
   incomes,
   onAddIncome,
   onDeleteIncome,
@@ -34,6 +37,7 @@ export default function IncomeForm({
 }: IncomeFormProps) {
   const [amount, setAmount] = useState("");
   const [source, setSource] = useState("");
+  const [accountId, setAccountId] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -42,6 +46,11 @@ export default function IncomeForm({
     () => incomes.reduce((total, income) => total + income.amount, 0),
     [incomes],
   );
+  const selectedAccountId = moneyAccounts.some(
+    (account) => account.id === accountId,
+  )
+    ? accountId
+    : (moneyAccounts[0]?.id ?? "");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -59,10 +68,16 @@ export default function IncomeForm({
       return;
     }
 
+    if (!selectedAccountId) {
+      setError("Create a money account first before adding income or expenses.");
+      return;
+    }
+
     const income: Income = {
       id: crypto.randomUUID(),
       owner: activeUser,
       userId: "",
+      accountId: selectedAccountId,
       createdAt: Date.now(),
       amount: numericAmount,
       source: trimmedSource,
@@ -106,6 +121,11 @@ export default function IncomeForm({
           <p className="mt-3 text-sm leading-6 text-slate-400">
             Saved for {activeUser} and included in your private balance.
           </p>
+          {moneyAccounts.length === 0 ? (
+            <p className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
+              Create a money account first before adding income or expenses.
+            </p>
+          ) : null}
         </div>
 
         <form className="grid gap-5 sm:grid-cols-2" onSubmit={handleSubmit}>
@@ -121,6 +141,26 @@ export default function IncomeForm({
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
             />
+          </label>
+
+          <label className={labelClassName}>
+            To Account
+            <select
+              className={inputClassName}
+              value={selectedAccountId}
+              onChange={(event) => setAccountId(event.target.value)}
+              disabled={moneyAccounts.length === 0}
+            >
+              {moneyAccounts.length === 0 ? (
+                <option value="">Create an account first</option>
+              ) : (
+                moneyAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))
+              )}
+            </select>
           </label>
 
           <label className={labelClassName}>
@@ -163,7 +203,7 @@ export default function IncomeForm({
             <button
               className="w-full rounded-full bg-emerald-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               type="submit"
-              disabled={isSaving}
+              disabled={isSaving || moneyAccounts.length === 0}
             >
               {isSaving ? "Saving..." : "Save Income"}
             </button>

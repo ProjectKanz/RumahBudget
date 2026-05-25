@@ -27,6 +27,7 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 
 type MoneyAccountsProps = {
   accounts: MoneyAccount[];
+  accountBalances: Record<string, number>;
   error: string;
   isLoading: boolean;
   onAddAccount: (account: {
@@ -39,6 +40,7 @@ type MoneyAccountsProps = {
 
 export default function MoneyAccounts({
   accounts,
+  accountBalances,
   error,
   isLoading,
   onAddAccount,
@@ -51,13 +53,14 @@ export default function MoneyAccounts({
   const [isSaving, setIsSaving] = useState(false);
   const [archivingAccountId, setArchivingAccountId] = useState("");
 
-  const totalInitialBalance = useMemo(
+  const totalCurrentBalance = useMemo(
     () =>
       accounts.reduce(
-        (total, account) => total + account.initialBalance,
+        (total, account) =>
+          total + (accountBalances[account.id] ?? account.initialBalance),
         0,
       ),
-    [accounts],
+    [accountBalances, accounts],
   );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -117,7 +120,7 @@ export default function MoneyAccounts({
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
             Add wallets, bank accounts, cash, or investments. Transactions are
-            not linked to accounts yet.
+            linked to these accounts for balance tracking.
           </p>
         </div>
 
@@ -193,7 +196,7 @@ export default function MoneyAccounts({
               Account List
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
-              Total starting balance {rupiahFormatter.format(totalInitialBalance)}
+              Total balance {rupiahFormatter.format(totalCurrentBalance)}
             </h2>
           </div>
           <p className="text-sm text-slate-400">
@@ -227,10 +230,18 @@ export default function MoneyAccounts({
                       {account.accountType}
                     </p>
                     <p className="mt-4 text-2xl font-bold text-emerald-300">
-                      {rupiahFormatter.format(account.initialBalance)}
+                      {rupiahFormatter.format(
+                        accountBalances[account.id] ?? account.initialBalance,
+                      )}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">
-                      Initial balance
+                      Current balance
+                    </p>
+                    <p className="mt-3 text-sm text-slate-500">
+                      Initial balance:{" "}
+                      <span className="text-slate-300">
+                        {rupiahFormatter.format(account.initialBalance)}
+                      </span>
                     </p>
                   </div>
 

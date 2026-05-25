@@ -2,6 +2,7 @@
 
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
+import type { MoneyAccount } from "@/src/types/money-account";
 import type { ActiveUser } from "@/src/types/user";
 import { useMemo, useState } from "react";
 
@@ -14,6 +15,7 @@ type CombinedTransaction =
       createdAt: number;
       type: "Income";
       amount: number;
+      accountName: string;
       title: string;
       note: string;
     }
@@ -23,6 +25,7 @@ type CombinedTransaction =
       createdAt: number;
       type: "Expenses";
       amount: number;
+      accountName: string;
       title: string;
       paymentMethod: string;
       note: string;
@@ -52,6 +55,7 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 
 type TransactionHistoryProps = {
   activeUser: ActiveUser;
+  moneyAccounts: MoneyAccount[];
   expenses: Expense[];
   incomes: Income[];
   onDeleteExpense: (id: string) => void | Promise<void>;
@@ -60,6 +64,7 @@ type TransactionHistoryProps = {
 
 export default function TransactionHistory({
   activeUser,
+  moneyAccounts,
   expenses,
   incomes,
   onDeleteExpense,
@@ -68,12 +73,16 @@ export default function TransactionHistory({
   const [filter, setFilter] = useState<TransactionFilter>("All");
 
   const transactions = useMemo(() => {
+    const accountNames = new Map(
+      moneyAccounts.map((account) => [account.id, account.name]),
+    );
     const incomeTransactions: CombinedTransaction[] = incomes.map((income) => ({
       id: income.id,
       owner: income.owner,
       createdAt: income.createdAt ?? 0,
       type: "Income",
       amount: income.amount,
+      accountName: accountNames.get(income.accountId) ?? "Unassigned",
       title: income.source,
       note: income.note,
     }));
@@ -85,6 +94,7 @@ export default function TransactionHistory({
         createdAt: expense.createdAt ?? 0,
         type: "Expenses",
         amount: expense.amount,
+        accountName: accountNames.get(expense.accountId) ?? "Unassigned",
         title: categoryLabels.get(expense.category) ?? expense.category,
         paymentMethod: expense.paymentMethod,
         note: expense.note,
@@ -95,7 +105,7 @@ export default function TransactionHistory({
       (firstTransaction, secondTransaction) =>
         secondTransaction.createdAt - firstTransaction.createdAt,
     );
-  }, [expenses, incomes]);
+  }, [expenses, incomes, moneyAccounts]);
 
   const filteredTransactions = useMemo(
     () =>
@@ -190,6 +200,9 @@ export default function TransactionHistory({
                           }`
                         : ""}
                     </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Account: {transaction.accountName}
+                    </p>
 
                     {transaction.note ? (
                       <p className="mt-2 text-sm text-slate-500">
@@ -207,7 +220,7 @@ export default function TransactionHistory({
                         : onDeleteExpense(transaction.id)
                     }
                   >
-                  Delete
+                    Delete
                   </button>
                 </article>
               );
