@@ -40,7 +40,7 @@ function SimpleBarList({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
+      <div className="rounded-2xl border border-dashed border-cyan-300/20 bg-cyan-300/5 px-4 py-8 text-center text-sm text-slate-400">
         {emptyMessage}
       </div>
     );
@@ -61,9 +61,9 @@ function SimpleBarList({
                   : formatCurrency(item.value)}
               </span>
             </div>
-            <div className="h-3 overflow-hidden rounded-full bg-slate-800">
+            <div className="h-3 overflow-hidden rounded-full bg-slate-900">
               <div
-                className="h-full rounded-full bg-emerald-400"
+                className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-lime-300 to-fuchsia-300 shadow-[0_0_18px_rgba(34,211,238,0.35)] transition-all duration-700"
                 style={{ width: isBalanceHidden ? "48%" : `${width}%` }}
               />
             </div>
@@ -106,17 +106,17 @@ export default function DashboardCharts({
 
   return (
     <section
-      className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
+      className="mx-auto w-full max-w-6xl px-5 pb-12 sm:px-6"
       id="dashboard-charts"
     >
       <div
-        className={`rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 transition sm:p-8 ${highlightClassName}`}
+        className={`rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-6 shadow-[0_0_46px_rgba(34,211,238,0.1)] backdrop-blur-xl transition sm:p-8 ${highlightClassName}`}
       >
-        <div className="border-b border-slate-800 pb-6">
-          <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
+        <div className="border-b border-cyan-300/10 pb-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
             Dashboard Charts
           </p>
-          <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+          <h2 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl">
             Balance and expense overview
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
@@ -126,8 +126,8 @@ export default function DashboardCharts({
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-5">
-            <h3 className="text-lg font-bold text-white">
+          <div className="rounded-[1.4rem] border border-cyan-300/15 bg-black/25 p-5 transition hover:border-cyan-300/35 hover:shadow-[0_0_28px_rgba(34,211,238,0.12)]">
+            <h3 className="text-lg font-black text-white">
               Account Balance Overview
             </h3>
             <div className="mt-5">
@@ -139,8 +139,8 @@ export default function DashboardCharts({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-5">
-            <h3 className="text-lg font-bold text-white">
+          <div className="rounded-[1.4rem] border border-fuchsia-300/15 bg-black/25 p-5 transition hover:border-fuchsia-300/35 hover:shadow-[0_0_28px_rgba(217,70,239,0.12)]">
+            <h3 className="text-lg font-black text-white">
               All-time Expense Breakdown
             </h3>
             <div className="mt-5">

@@ -39,20 +39,27 @@ type MonthlyStatus = {
 };
 
 type QuickAddTab = "income" | "expense" | "transfer";
+type AppView =
+  | "overview"
+  | "accounts"
+  | "add"
+  | "transactions"
+  | "reports"
+  | "settings";
 
 type OnboardingStepTarget = {
+  view: AppView;
   sectionId: string;
   quickAddTab?: QuickAddTab;
 };
 
-const sectionNavItems = [
-  { id: "overview", label: "Overview" },
-  { id: "money-accounts", label: "Accounts" },
-  { id: "quick-add", label: "Quick Add" },
-  { id: "dashboard-charts", label: "Charts" },
-  { id: "transaction-history", label: "Transactions" },
-  { id: "report-preview", label: "Reports" },
-  { id: "email-settings", label: "Settings" },
+const appViews: { label: string; value: AppView }[] = [
+  { label: "Overview", value: "overview" },
+  { label: "Accounts", value: "accounts" },
+  { label: "Add", value: "add" },
+  { label: "Transactions", value: "transactions" },
+  { label: "Reports", value: "reports" },
+  { label: "Settings", value: "settings" },
 ];
 
 const quickAddTabs: { label: string; value: QuickAddTab }[] = [
@@ -62,13 +69,13 @@ const quickAddTabs: { label: string; value: QuickAddTab }[] = [
 ];
 
 const onboardingStepTargets: OnboardingStepTarget[] = [
-  { sectionId: "overview" },
-  { sectionId: "money-accounts" },
-  { quickAddTab: "income", sectionId: "quick-add" },
-  { quickAddTab: "expense", sectionId: "quick-add" },
-  { quickAddTab: "transfer", sectionId: "quick-add" },
-  { sectionId: "dashboard-charts" },
-  { sectionId: "report-preview" },
+  { sectionId: "overview", view: "overview" },
+  { sectionId: "money-accounts", view: "accounts" },
+  { quickAddTab: "income", sectionId: "quick-add", view: "add" },
+  { quickAddTab: "expense", sectionId: "quick-add", view: "add" },
+  { quickAddTab: "transfer", sectionId: "quick-add", view: "add" },
+  { sectionId: "dashboard-charts", view: "overview" },
+  { sectionId: "report-preview", view: "reports" },
 ];
 
 type SupabaseExpenseRow = {
@@ -124,6 +131,20 @@ type SupabaseTransferRow = {
   note?: string | null;
   created_at?: string | null;
 };
+
+type RecentActivityItem = {
+  id: string;
+  accountLabel: string;
+  amount: number;
+  createdAt: number;
+  title: string;
+  tone: "income" | "expense" | "transfer";
+};
+
+const activityDateFormatter = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 function isMoneyAccountType(value: unknown): value is MoneyAccountType {
   return (
@@ -188,6 +209,7 @@ export default function Home() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
+  const [activeView, setActiveView] = useState<AppView>("overview");
   const [quickAddTab, setQuickAddTab] = useState<QuickAddTab>("income");
   const [highlightedSectionId, setHighlightedSectionId] = useState("");
 
@@ -632,6 +654,8 @@ export default function Home() {
     }
 
     queueMicrotask(() => {
+      setActiveView(target.view);
+
       if (target.quickAddTab) {
         setQuickAddTab(target.quickAddTab);
       }
@@ -713,6 +737,19 @@ export default function Home() {
 
     return balances;
   }, [activeExpenses, activeIncomes, moneyAccounts, transfers]);
+
+  const accountNamesById = useMemo(
+    () =>
+      moneyAccounts.reduce<Record<string, string>>(
+        (nextNames, account) => ({
+          ...nextNames,
+          [account.id]: account.name,
+        }),
+        {},
+      ),
+    [moneyAccounts],
+  );
+
   const totalBalance = useMemo(
     () =>
       moneyAccounts.reduce(
@@ -743,6 +780,51 @@ export default function Home() {
             explanation: "Expenses are still under control.",
             className: "text-emerald-400",
           };
+
+  const monthlyStatusBadgeClass =
+    monthlyStatus.label === "Safe"
+      ? "border-lime-300/50 bg-lime-300/10 text-lime-200 shadow-[0_0_26px_rgba(190,242,100,0.18)]"
+      : monthlyStatus.label === "Warning"
+        ? "border-amber-300/50 bg-amber-300/10 text-amber-200 shadow-[0_0_26px_rgba(252,211,77,0.14)]"
+        : "border-pink-400/50 bg-pink-500/10 text-pink-200 shadow-[0_0_26px_rgba(244,114,182,0.16)]";
+
+  const recentActivity = useMemo<RecentActivityItem[]>(() => {
+    const incomeActivity = activeIncomes.map((income) => ({
+      accountLabel: accountNamesById[income.accountId] ?? "No account",
+      amount: income.amount,
+      createdAt: income.createdAt,
+      id: `income-${income.id}`,
+      title: income.source || "Income",
+      tone: "income" as const,
+    }));
+
+    const expenseActivity = activeExpenses.map((expense) => ({
+      accountLabel: accountNamesById[expense.accountId] ?? "No account",
+      amount: expense.amount,
+      createdAt: expense.createdAt,
+      id: `expense-${expense.id}`,
+      title: expense.category || "Expense",
+      tone: "expense" as const,
+    }));
+
+    const transferActivity = transfers.map((transfer) => ({
+      accountLabel: `${accountNamesById[transfer.fromAccountId] ?? "Account"} -> ${
+        accountNamesById[transfer.toAccountId] ?? "Account"
+      }`,
+      amount: transfer.amount,
+      createdAt: transfer.createdAt,
+      id: `transfer-${transfer.id}`,
+      title: "Transfer",
+      tone: "transfer" as const,
+    }));
+
+    return [...incomeActivity, ...expenseActivity, ...transferActivity]
+      .sort(
+        (firstActivity, secondActivity) =>
+          secondActivity.createdAt - firstActivity.createdAt,
+      )
+      .slice(0, 5);
+  }, [accountNamesById, activeExpenses, activeIncomes, transfers]);
 
   async function addExpense(expense: Expense) {
     if (!supabase) {
@@ -1111,14 +1193,14 @@ export default function Home() {
 
   function getSectionHighlightClass(sectionId: string) {
     return highlightedSectionId === sectionId
-      ? "ring-2 ring-emerald-300/80 ring-offset-2 ring-offset-slate-950"
+      ? "ring-2 ring-cyan-300/80 ring-offset-2 ring-offset-slate-950 shadow-[0_0_34px_rgba(34,211,238,0.22)]"
       : "";
   }
 
-  function scrollToSection(sectionId: string) {
-    document
-      .getElementById(sectionId)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  function openView(view: AppView) {
+    setActiveView(view);
+    setHighlightedSectionId("");
+    window.scrollTo({ behavior: "smooth", top: 0 });
   }
 
   async function logout() {
@@ -1130,7 +1212,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
+    <main className="min-h-screen overflow-x-hidden bg-[#020617] bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_30%),radial-gradient(circle_at_top_right,rgba(217,70,239,0.14),transparent_28%),radial-gradient(circle_at_bottom,rgba(163,230,53,0.08),transparent_30%)] text-white">
       {isAuthLoading ? (
         <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-5 py-8 sm:px-6">
           <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 text-sm text-slate-300">
@@ -1143,284 +1225,439 @@ export default function Home() {
 
       {!isAuthLoading && authUser ? (
         <>
-      <OnboardingTutorial
-        currentStep={onboardingStep}
-        isOpen={isOnboardingOpen}
-        onBack={() =>
-          setOnboardingStep((currentStep) => Math.max(0, currentStep - 1))
-        }
-        onFinish={completeOnboarding}
-        onNext={() =>
-          setOnboardingStep((currentStep) =>
-            Math.min(onboardingStepCount - 1, currentStep + 1),
-          )
-        }
-        onSkip={completeOnboarding}
-      />
+          <OnboardingTutorial
+            currentStep={onboardingStep}
+            isOpen={isOnboardingOpen}
+            onBack={() =>
+              setOnboardingStep((currentStep) => Math.max(0, currentStep - 1))
+            }
+            onFinish={completeOnboarding}
+            onNext={() =>
+              setOnboardingStep((currentStep) =>
+                Math.min(onboardingStepCount - 1, currentStep + 1),
+              )
+            }
+            onSkip={completeOnboarding}
+          />
 
-      <section
-        className="mx-auto max-w-5xl px-5 py-8 sm:px-6 sm:py-10"
-        id="overview"
-      >
-        <div>
-          <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-emerald-400">
-            Personal Finance Tracker
-          </p>
+          <section className="mx-auto max-w-6xl px-5 py-6 sm:px-6 sm:py-8">
+            <div className="rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/70 p-5 shadow-[0_0_60px_rgba(34,211,238,0.08)] backdrop-blur-xl sm:p-6">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">
+                    Neon Finance OS
+                  </p>
+                  <h1 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-5xl">
+                    RumahBudget
+                  </h1>
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
+                    Private money tracking with accounts, cashflow, transfers,
+                    reports, and test-mode email delivery in one clean cockpit.
+                  </p>
+                </div>
 
-          <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
-            RumahBudget
-          </h1>
+                <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-300 sm:min-w-72">
+                  <p>
+                    Signed in as:{" "}
+                    <span className="font-semibold text-white">
+                      {signedInEmail}
+                    </span>
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      className="flex-1 rounded-full border border-cyan-300/30 px-4 py-2 font-semibold text-cyan-100 transition hover:border-cyan-200 hover:bg-cyan-300/10"
+                      type="button"
+                      onClick={() => openView("settings")}
+                    >
+                      Settings
+                    </button>
+                    <button
+                      className="flex-1 rounded-full border border-pink-300/30 px-4 py-2 font-semibold text-pink-100 transition hover:border-pink-200 hover:bg-pink-300/10"
+                      type="button"
+                      onClick={logout}
+                    >
+                      Log out
+                    </button>
+                  </div>
+                </div>
+              </div>
 
-          <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg sm:leading-8">
-            Track personal income and expenses with a private account. Family
-            sharing can be added later when permissions are ready.
-          </p>
-
-          <div className="mt-6 flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-slate-400">
-              Signed in as:{" "}
-              <span className="font-semibold text-white">{signedInEmail}</span>
-            </p>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <button
-                className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"
-                type="button"
-                onClick={restartOnboarding}
+              <nav
+                aria-label="Primary app views"
+                className="mt-6 hidden gap-2 overflow-x-auto rounded-full border border-white/10 bg-black/30 p-2 sm:flex"
               >
-                Restart Tutorial
-              </button>
-              <button
-                className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"
-                type="button"
-                onClick={logout}
-              >
-                Log out
-              </button>
+                {appViews.map((item) => (
+                  <button
+                    className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-cyan-300/50 ${
+                      activeView === item.value
+                        ? "bg-gradient-to-r from-cyan-300 via-lime-300 to-fuchsia-300 text-slate-950 shadow-[0_0_28px_rgba(34,211,238,0.28)]"
+                        : "text-slate-300 hover:bg-white/10 hover:text-white"
+                    }`}
+                    key={item.value}
+                    type="button"
+                    onClick={() => openView(item.value)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
             </div>
-          </div>
+          </section>
 
           <nav
-            aria-label="Dashboard sections"
-            className="mt-6 flex gap-2 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/80 p-2"
+            aria-label="Mobile app views"
+            className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-6 gap-1 rounded-3xl border border-cyan-300/20 bg-slate-950/90 p-2 shadow-[0_0_36px_rgba(34,211,238,0.18)] backdrop-blur-xl sm:hidden"
           >
-            {sectionNavItems.map((item) => (
+            {appViews.map((item) => (
               <button
-                className="shrink-0 rounded-full px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-emerald-400/40"
-                key={item.id}
+                className={`rounded-2xl px-1 py-2 text-[0.68rem] font-bold transition ${
+                  activeView === item.value
+                    ? "bg-cyan-300 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.38)]"
+                    : "text-slate-400"
+                }`}
+                key={item.value}
                 type="button"
-                onClick={() => scrollToSection(item.id)}
+                onClick={() => openView(item.value)}
               >
                 {item.label}
               </button>
             ))}
           </nav>
 
-          <div className="mt-10">
-            <div className="mb-4">
-              <p className="text-sm font-semibold uppercase tracking-widest text-slate-500">
-                Dashboard Summary
-              </p>
-              <p className="mt-2 text-sm text-slate-500">
-                Monthly cards use transactions from this calendar month.
-              </p>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div
-                className={`rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-5 transition sm:col-span-2 ${getSectionHighlightClass("overview")}`}
-              >
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-sm text-emerald-100">
-                      Total Account Balance
-                    </p>
-                    <p className="mt-2 text-3xl font-bold text-white sm:text-4xl">
-                      {isBalanceHidden
-                        ? hiddenBalanceLabel
-                        : formatCurrency(totalBalance)}
-                    </p>
-                    <p className="mt-3 text-sm leading-6 text-emerald-50/80">
-                      Money currently stored across all money accounts.
+          <div className="pb-28 sm:pb-10">
+            {activeView === "overview" ? (
+              <>
+                <section
+                  className="mx-auto max-w-6xl px-5 pb-8 sm:px-6"
+                  id="overview"
+                >
+                  <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.32em] text-lime-300">
+                        Overview
+                      </p>
+                      <h2 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-4xl">
+                        Your money command center
+                      </h2>
+                    </div>
+                    <p className="max-w-xl text-sm leading-6 text-slate-400">
+                      Monthly cards use this calendar month. Total Account
+                      Balance is the sum of current balances across accounts.
                     </p>
                   </div>
-                  <button
-                    className="rounded-full border border-emerald-300/40 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-300/10"
-                    type="button"
-                    onClick={() =>
-                      setIsBalanceHidden((currentValue) => !currentValue)
-                    }
-                  >
-                    {isBalanceHidden ? "Show Balance" : "Hide Balance"}
-                  </button>
-                </div>
-              </div>
 
-              <div
-                className={`rounded-2xl border border-slate-800 bg-slate-900 p-5 transition sm:col-span-2 ${getSectionHighlightClass("overview")}`}
-              >
-                <p className="text-sm text-slate-400">Monthly Net Cashflow</p>
-                <p
-                  className={`mt-2 text-3xl font-bold sm:text-4xl ${
-                    remainingBalance < 0 ? "text-red-300" : ""
-                  }`}
-                >
-                  {isBalanceHidden
-                    ? hiddenBalanceLabel
-                    : formatCurrency(remainingBalance)}
-                </p>
-                <p className="mt-3 text-sm leading-6 text-slate-500">
-                  Monthly income minus monthly expenses.
-                </p>
-              </div>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div
+                      className={`group rounded-[1.5rem] border border-cyan-300/25 bg-cyan-300/10 p-5 shadow-[0_0_34px_rgba(34,211,238,0.12)] transition hover:-translate-y-0.5 hover:border-cyan-200/60 hover:shadow-[0_0_46px_rgba(34,211,238,0.2)] sm:col-span-2 ${getSectionHighlightClass("overview")}`}
+                    >
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm text-cyan-100">
+                            Total Account Balance
+                          </p>
+                          <p className="mt-2 text-3xl font-black text-white transition sm:text-4xl">
+                            {isBalanceHidden
+                              ? hiddenBalanceLabel
+                              : formatCurrency(totalBalance)}
+                          </p>
+                          <p className="mt-3 text-sm leading-6 text-cyan-50/75">
+                            Money currently stored across all money accounts.
+                          </p>
+                        </div>
+                        <button
+                          className="rounded-full border border-cyan-200/40 bg-black/20 px-4 py-2 text-sm font-bold text-cyan-50 transition hover:bg-cyan-300/10"
+                          type="button"
+                          onClick={() =>
+                            setIsBalanceHidden(
+                              (currentValue) => !currentValue,
+                            )
+                          }
+                        >
+                          {isBalanceHidden ? "Show Balance" : "Hide Balance"}
+                        </button>
+                      </div>
+                    </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <p className="text-sm text-slate-400">Monthly Income</p>
-              <p className="mt-2 text-2xl font-bold text-emerald-400 sm:text-3xl">
-                {formatCurrency(totalIncome)}
-              </p>
-            </div>
+                    <div className="rounded-[1.5rem] border border-fuchsia-300/20 bg-fuchsia-300/10 p-5 shadow-[0_0_34px_rgba(217,70,239,0.1)] transition hover:-translate-y-0.5 hover:border-fuchsia-200/50 sm:col-span-2">
+                      <p className="text-sm text-fuchsia-100">
+                        Monthly Net Cashflow
+                      </p>
+                      <p
+                        className={`mt-2 text-3xl font-black sm:text-4xl ${
+                          remainingBalance < 0 ? "text-pink-200" : "text-white"
+                        }`}
+                      >
+                        {isBalanceHidden
+                          ? hiddenBalanceLabel
+                          : formatCurrency(remainingBalance)}
+                      </p>
+                      <p className="mt-3 text-sm leading-6 text-fuchsia-50/70">
+                        Monthly income minus monthly expenses.
+                      </p>
+                    </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <p className="text-sm text-slate-400">Monthly Expenses</p>
-              <p className="mt-2 text-2xl font-bold sm:text-3xl">
-                {formatCurrency(totalExpense)}
-              </p>
-            </div>
+                    <div className="rounded-[1.5rem] border border-lime-300/20 bg-slate-950/70 p-5 transition hover:-translate-y-0.5 hover:border-lime-300/50 hover:shadow-[0_0_30px_rgba(190,242,100,0.12)]">
+                      <p className="text-sm text-slate-400">Monthly Income</p>
+                      <p className="mt-2 text-2xl font-black text-lime-300 sm:text-3xl">
+                        {formatCurrency(totalIncome)}
+                      </p>
+                    </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:col-span-2 lg:col-span-4">
-              <p className="text-sm text-slate-400">Monthly Status</p>
-              <p
-                className={`mt-2 text-3xl font-bold ${monthlyStatus.className}`}
-              >
-                {monthlyStatus.label}
-              </p>
-              <p className="mt-2 text-sm leading-6 text-slate-400">
-                {monthlyStatus.explanation}
-              </p>
-            </div>
-            </div>
-          </div>
+                    <div className="rounded-[1.5rem] border border-pink-300/20 bg-slate-950/70 p-5 transition hover:-translate-y-0.5 hover:border-pink-300/50 hover:shadow-[0_0_30px_rgba(244,114,182,0.12)]">
+                      <p className="text-sm text-slate-400">
+                        Monthly Expenses
+                      </p>
+                      <p className="mt-2 text-2xl font-black text-pink-200 sm:text-3xl">
+                        {formatCurrency(totalExpense)}
+                      </p>
+                    </div>
 
-        </div>
-      </section>
+                    <div
+                      className={`rounded-[1.5rem] border p-5 sm:col-span-2 ${monthlyStatusBadgeClass}`}
+                    >
+                      <p className="text-sm opacity-80">Financial Status</p>
+                      <p className="mt-2 text-3xl font-black">
+                        {monthlyStatus.label}
+                      </p>
+                      <p className="mt-2 text-sm leading-6 opacity-80">
+                        {monthlyStatus.explanation}
+                      </p>
+                    </div>
+                  </div>
+                </section>
 
-      <MoneyAccounts
-        accounts={moneyAccounts}
-        accountBalances={moneyAccountBalances}
-        highlightClassName={getSectionHighlightClass("money-accounts")}
-        isBalanceHidden={isBalanceHidden}
-        error={moneyAccountError}
-        isLoading={isMoneyAccountLoading}
-        onAddAccount={addMoneyAccount}
-        onArchiveAccount={archiveMoneyAccount}
-      />
+                <DashboardCharts
+                  accountBalances={moneyAccountBalances}
+                  expenses={activeExpenses}
+                  highlightClassName={getSectionHighlightClass(
+                    "dashboard-charts",
+                  )}
+                  isBalanceHidden={isBalanceHidden}
+                  moneyAccounts={moneyAccounts}
+                />
 
-      <section
-        className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
-        id="quick-add"
-      >
-        <div
-          className={`rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 transition sm:p-8 ${getSectionHighlightClass("quick-add")}`}
-        >
-          <div className="flex flex-col gap-5 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-                Quick Add
-              </p>
-              <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-                Record money movement
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-slate-400">
-                Add income, record an expense, or transfer money between your
-                accounts from one compact workspace.
-              </p>
-            </div>
+                <section className="mx-auto max-w-6xl px-5 pb-12 sm:px-6">
+                  <div className="rounded-[1.5rem] border border-white/10 bg-slate-950/70 p-5 shadow-[0_0_36px_rgba(34,211,238,0.08)] backdrop-blur">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300">
+                          Recent
+                        </p>
+                        <h2 className="mt-2 text-xl font-black text-white">
+                          Latest transactions
+                        </h2>
+                      </div>
+                      <button
+                        className="rounded-full border border-cyan-300/30 px-4 py-2 text-sm font-bold text-cyan-100 transition hover:bg-cyan-300/10"
+                        type="button"
+                        onClick={() => openView("transactions")}
+                      >
+                        View all
+                      </button>
+                    </div>
 
-            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-1">
-              {quickAddTabs.map((tab) => (
-                <button
-                  className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
-                    quickAddTab === tab.value
-                      ? "bg-emerald-400 text-slate-950"
-                      : "text-slate-300 hover:bg-slate-800"
-                  }`}
-                  key={tab.value}
-                  type="button"
-                  onClick={() => setQuickAddTab(tab.value)}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-6">
-            {quickAddTab === "income" ? (
-              <IncomeForm
-                accountLabel={signedInEmail}
-                isEmbedded
-                moneyAccounts={moneyAccounts}
-                onAddIncome={addIncome}
-                supabaseError={incomeError}
-              />
+                    <div className="mt-5 space-y-3">
+                      {recentActivity.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-cyan-300/20 bg-cyan-300/5 px-4 py-8 text-center text-sm text-slate-400">
+                          No transactions yet. Add income, expenses, or
+                          transfers to light up your dashboard.
+                        </div>
+                      ) : (
+                        recentActivity.map((activity) => (
+                          <article
+                            className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition hover:border-cyan-300/30 sm:flex-row sm:items-center sm:justify-between"
+                            key={activity.id}
+                          >
+                            <div>
+                              <p className="font-bold text-white">
+                                {activity.title}
+                              </p>
+                              <p className="mt-1 text-sm text-slate-400">
+                                {activity.accountLabel} -{" "}
+                                {activityDateFormatter.format(
+                                  new Date(activity.createdAt),
+                                )}
+                              </p>
+                            </div>
+                            <p
+                              className={`text-lg font-black ${
+                                activity.tone === "income"
+                                  ? "text-lime-300"
+                                  : activity.tone === "expense"
+                                    ? "text-pink-200"
+                                    : "text-cyan-200"
+                              }`}
+                            >
+                              {activity.tone === "expense" ? "-" : ""}
+                              {formatCurrency(activity.amount)}
+                            </p>
+                          </article>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </section>
+              </>
             ) : null}
 
-            {quickAddTab === "expense" ? (
-              <ExpenseForm
-                accountLabel={signedInEmail}
-                isEmbedded
-                moneyAccounts={moneyAccounts}
-                onAddExpense={addExpense}
-                supabaseError={expenseError}
-              />
-            ) : null}
-
-            {quickAddTab === "transfer" ? (
-              <TransferMoney
-                accountBalances={moneyAccountBalances}
+            {activeView === "accounts" ? (
+              <MoneyAccounts
                 accounts={moneyAccounts}
-                error={transferError}
-                isEmbedded
-                onAddTransfer={addTransfer}
+                accountBalances={moneyAccountBalances}
+                highlightClassName={getSectionHighlightClass("money-accounts")}
+                isBalanceHidden={isBalanceHidden}
+                error={moneyAccountError}
+                isLoading={isMoneyAccountLoading}
+                onAddAccount={addMoneyAccount}
+                onArchiveAccount={archiveMoneyAccount}
               />
             ) : null}
+
+            {activeView === "add" ? (
+              <section
+                className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
+                id="quick-add"
+              >
+                <div
+                  className={`rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-6 shadow-[0_0_46px_rgba(34,211,238,0.1)] backdrop-blur-xl transition sm:p-8 ${getSectionHighlightClass("quick-add")}`}
+                >
+                  <div className="flex flex-col gap-5 border-b border-cyan-300/10 pb-6 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
+                        Quick Add
+                      </p>
+                      <h2 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl">
+                        Record money movement
+                      </h2>
+                      <p className="mt-3 text-sm leading-6 text-slate-400">
+                        Add income, record an expense, or transfer money between
+                        your accounts from one compact workspace.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 rounded-full border border-white/10 bg-black/30 p-1">
+                      {quickAddTabs.map((tab) => (
+                        <button
+                          className={`rounded-full px-3 py-2 text-sm font-bold transition ${
+                            quickAddTab === tab.value
+                              ? "bg-gradient-to-r from-cyan-300 to-lime-300 text-slate-950 shadow-[0_0_22px_rgba(34,211,238,0.28)]"
+                              : "text-slate-300 hover:bg-white/10"
+                          }`}
+                          key={tab.value}
+                          type="button"
+                          onClick={() => setQuickAddTab(tab.value)}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-6">
+                    {quickAddTab === "income" ? (
+                      <IncomeForm
+                        accountLabel={signedInEmail}
+                        isEmbedded
+                        moneyAccounts={moneyAccounts}
+                        onAddIncome={addIncome}
+                        supabaseError={incomeError}
+                      />
+                    ) : null}
+
+                    {quickAddTab === "expense" ? (
+                      <ExpenseForm
+                        accountLabel={signedInEmail}
+                        isEmbedded
+                        moneyAccounts={moneyAccounts}
+                        onAddExpense={addExpense}
+                        supabaseError={expenseError}
+                      />
+                    ) : null}
+
+                    {quickAddTab === "transfer" ? (
+                      <TransferMoney
+                        accountBalances={moneyAccountBalances}
+                        accounts={moneyAccounts}
+                        error={transferError}
+                        isEmbedded
+                        onAddTransfer={addTransfer}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
+            {activeView === "transactions" ? (
+              <TransactionHistory
+                accountLabel={signedInEmail}
+                moneyAccounts={moneyAccounts}
+                expenses={activeExpenses}
+                incomes={activeIncomes}
+                transfers={transfers}
+                onDeleteExpense={deleteExpense}
+                onDeleteIncome={deleteIncome}
+                onDeleteTransfer={deleteTransfer}
+              />
+            ) : null}
+
+            {activeView === "reports" ? (
+              <>
+                <ReportPreview
+                  expenses={activeExpenses}
+                  highlightClassName={getSectionHighlightClass(
+                    "report-preview",
+                  )}
+                  incomes={activeIncomes}
+                  onReportSent={loadEmailReportsFromSupabase}
+                />
+
+                <EmailReportHistory
+                  emailReports={emailReports}
+                  error={emailReportError}
+                  isLoading={isEmailReportLoading}
+                />
+              </>
+            ) : null}
+
+            {activeView === "settings" ? (
+              <>
+                <section className="mx-auto w-full max-w-5xl px-5 pb-8 sm:px-6">
+                  <div className="rounded-[1.75rem] border border-fuchsia-300/15 bg-slate-950/75 p-6 shadow-[0_0_42px_rgba(217,70,239,0.1)] backdrop-blur-xl sm:p-8">
+                    <p className="text-xs font-semibold uppercase tracking-[0.32em] text-fuchsia-300">
+                      Settings
+                    </p>
+                    <h2 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl">
+                      Account controls
+                    </h2>
+                    <p className="mt-3 text-sm leading-6 text-slate-400">
+                      Manage your tutorial, account session, and email report
+                      preferences.
+                    </p>
+
+                    <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                      <button
+                        className="rounded-full border border-cyan-300/30 px-5 py-3 font-bold text-cyan-100 transition hover:bg-cyan-300/10 hover:shadow-[0_0_22px_rgba(34,211,238,0.16)]"
+                        type="button"
+                        onClick={restartOnboarding}
+                      >
+                        Restart Tutorial
+                      </button>
+                      <button
+                        className="rounded-full border border-pink-300/30 px-5 py-3 font-bold text-pink-100 transition hover:bg-pink-300/10 hover:shadow-[0_0_22px_rgba(244,114,182,0.16)]"
+                        type="button"
+                        onClick={logout}
+                      >
+                        Log out
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
+                <EmailReportPreferences user={authUser} />
+              </>
+            ) : null}
           </div>
-        </div>
-      </section>
-
-      <DashboardCharts
-        accountBalances={moneyAccountBalances}
-        expenses={activeExpenses}
-        highlightClassName={getSectionHighlightClass("dashboard-charts")}
-        isBalanceHidden={isBalanceHidden}
-        moneyAccounts={moneyAccounts}
-      />
-
-      <TransactionHistory
-        accountLabel={signedInEmail}
-        moneyAccounts={moneyAccounts}
-        expenses={activeExpenses}
-        incomes={activeIncomes}
-        transfers={transfers}
-        onDeleteExpense={deleteExpense}
-        onDeleteIncome={deleteIncome}
-        onDeleteTransfer={deleteTransfer}
-      />
-
-      <ReportPreview
-        expenses={activeExpenses}
-        highlightClassName={getSectionHighlightClass("report-preview")}
-        incomes={activeIncomes}
-        onReportSent={loadEmailReportsFromSupabase}
-      />
-
-      <EmailReportPreferences user={authUser} />
-
-      <EmailReportHistory
-        emailReports={emailReports}
-        error={emailReportError}
-        isLoading={isEmailReportLoading}
-      />
         </>
       ) : null}
     </main>
