@@ -72,6 +72,19 @@ function getBearerToken(request: Request) {
     : "";
 }
 
+function isAuthorizedCronRequest(request: Request) {
+  const cronSecret = process.env.CRON_SECRET;
+  const token = getBearerToken(request);
+
+  if (cronSecret && token === cronSecret) {
+    return true;
+  }
+
+  // Vercel Cron schedule is configured in vercel.json as "0 0 * * 1",
+  // which runs Monday 00:00 UTC / Monday 07:00 WIB.
+  return request.headers.get("x-vercel-cron") === "1";
+}
+
 function getWeekStart(date: Date) {
   const weekStart = new Date(date);
   const day = weekStart.getDay();
@@ -251,10 +264,7 @@ async function saveEmailReportLog({
 }
 
 export async function GET(request: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  const token = getBearerToken(request);
-
-  if (!cronSecret || token !== cronSecret) {
+  if (!isAuthorizedCronRequest(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
