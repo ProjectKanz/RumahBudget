@@ -2,6 +2,7 @@
 
 import AuthForm from "@/src/components/auth-form";
 import EmailReportHistory from "@/src/components/email-report-history";
+import EmailReportPreferences from "@/src/components/email-report-preferences";
 import ExpenseForm from "@/src/components/expense-form";
 import IncomeForm from "@/src/components/income-form";
 import ReportPreview from "@/src/components/report-preview";
@@ -720,6 +721,8 @@ export default function Home() {
         incomes={activeIncomes}
         onReportSent={loadEmailReportsFromSupabase}
       />
+
+      <EmailReportPreferences user={authUser} />
 
       <EmailReportHistory
         emailReports={emailReports}
