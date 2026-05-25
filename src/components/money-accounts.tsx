@@ -24,10 +24,12 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   currency: "IDR",
   maximumFractionDigits: 0,
 });
+const hiddenBalanceLabel = "••••••";
 
 type MoneyAccountsProps = {
   accounts: MoneyAccount[];
   accountBalances: Record<string, number>;
+  isBalanceHidden: boolean;
   error: string;
   isLoading: boolean;
   onAddAccount: (account: {
@@ -41,6 +43,7 @@ type MoneyAccountsProps = {
 export default function MoneyAccounts({
   accounts,
   accountBalances,
+  isBalanceHidden,
   error,
   isLoading,
   onAddAccount,
@@ -196,7 +199,10 @@ export default function MoneyAccounts({
               Account List
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
-              Total balance {rupiahFormatter.format(totalCurrentBalance)}
+              Total balance{" "}
+              {isBalanceHidden
+                ? hiddenBalanceLabel
+                : rupiahFormatter.format(totalCurrentBalance)}
             </h2>
           </div>
           <p className="text-sm text-slate-400">
@@ -230,9 +236,12 @@ export default function MoneyAccounts({
                       {account.accountType}
                     </p>
                     <p className="mt-4 text-2xl font-bold text-emerald-300">
-                      {rupiahFormatter.format(
-                        accountBalances[account.id] ?? account.initialBalance,
-                      )}
+                      {isBalanceHidden
+                        ? hiddenBalanceLabel
+                        : rupiahFormatter.format(
+                            accountBalances[account.id] ??
+                              account.initialBalance,
+                          )}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">
                       Current balance
@@ -240,7 +249,9 @@ export default function MoneyAccounts({
                     <p className="mt-3 text-sm text-slate-500">
                       Initial balance:{" "}
                       <span className="text-slate-300">
-                        {rupiahFormatter.format(account.initialBalance)}
+                        {isBalanceHidden
+                          ? hiddenBalanceLabel
+                          : rupiahFormatter.format(account.initialBalance)}
                       </span>
                     </p>
                   </div>

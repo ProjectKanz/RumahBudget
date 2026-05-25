@@ -1,6 +1,7 @@
 "use client";
 
 import AuthForm from "@/src/components/auth-form";
+import DashboardCharts from "@/src/components/dashboard-charts";
 import EmailReportHistory from "@/src/components/email-report-history";
 import EmailReportPreferences from "@/src/components/email-report-preferences";
 import ExpenseForm from "@/src/components/expense-form";
@@ -31,6 +32,8 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
 
 const activeUsers: ActiveUser[] = ["Ibu", "Bapak", "Kanzan", "Guest"];
 const activeUserStorageKey = "rumahbudget.activeUser";
+const balancePrivacyStorageKey = "rumahbudget.hideBalances";
+const hiddenBalanceLabel = "••••••";
 
 type MonthlyStatus = {
   label: "Safe" | "Warning" | "Critical";
@@ -142,6 +145,7 @@ export default function Home() {
   const [isIncomeLoading, setIsIncomeLoading] = useState(false);
   const [isEmailReportLoading, setIsEmailReportLoading] = useState(false);
   const [isMoneyAccountLoading, setIsMoneyAccountLoading] = useState(false);
+  const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
 
   const loadExpensesFromSupabase = useCallback(async () => {
@@ -434,12 +438,16 @@ export default function Home() {
 
   useEffect(() => {
     const storedActiveUser = window.localStorage.getItem(activeUserStorageKey);
+    const storedBalancePrivacy = window.localStorage.getItem(
+      balancePrivacyStorageKey,
+    );
     const nextActiveUser = isActiveUser(storedActiveUser)
       ? storedActiveUser
       : "Ibu";
 
     queueMicrotask(() => {
       setActiveUser(nextActiveUser);
+      setIsBalanceHidden(storedBalancePrivacy === "true");
       setIsHydrated(true);
     });
   }, []);
@@ -538,6 +546,17 @@ export default function Home() {
     window.localStorage.setItem(activeUserStorageKey, activeUser);
   }, [activeUser, isHydrated]);
 
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    window.localStorage.setItem(
+      balancePrivacyStorageKey,
+      String(isBalanceHidden),
+    );
+  }, [isBalanceHidden, isHydrated]);
+
   const activeExpenses = expenses;
 
   const activeIncomes = incomes;
@@ -589,6 +608,15 @@ export default function Home() {
 
     return balances;
   }, [activeExpenses, activeIncomes, moneyAccounts, transfers]);
+  const totalBalance = useMemo(
+    () =>
+      moneyAccounts.reduce(
+        (total, account) =>
+          total + (moneyAccountBalances[account.id] ?? account.initialBalance),
+        0,
+      ),
+    [moneyAccountBalances, moneyAccounts],
+  );
 
   const remainingBalance = totalIncome - totalExpense;
   const expenseRatio = totalIncome > 0 ? totalExpense / totalIncome : 0;
@@ -1033,6 +1061,28 @@ export default function Home() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-5 sm:col-span-2">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm text-emerald-100">Total Balance</p>
+                    <p className="mt-2 text-3xl font-bold text-white sm:text-4xl">
+                      {isBalanceHidden
+                        ? hiddenBalanceLabel
+                        : rupiahFormatter.format(totalBalance)}
+                    </p>
+                  </div>
+                  <button
+                    className="rounded-full border border-emerald-300/40 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-300/10"
+                    type="button"
+                    onClick={() =>
+                      setIsBalanceHidden((currentValue) => !currentValue)
+                    }
+                  >
+                    {isBalanceHidden ? "Show Balance" : "Hide Balance"}
+                  </button>
+                </div>
+              </div>
+
               <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:col-span-2">
                 <p className="text-sm text-slate-400">Remaining This Month</p>
                 <p
@@ -1040,7 +1090,9 @@ export default function Home() {
                     remainingBalance < 0 ? "text-red-300" : ""
                   }`}
                 >
-                  {rupiahFormatter.format(remainingBalance)}
+                  {isBalanceHidden
+                    ? hiddenBalanceLabel
+                    : rupiahFormatter.format(remainingBalance)}
                 </p>
               </div>
 
@@ -1119,10 +1171,18 @@ export default function Home() {
       <MoneyAccounts
         accounts={moneyAccounts}
         accountBalances={moneyAccountBalances}
+        isBalanceHidden={isBalanceHidden}
         error={moneyAccountError}
         isLoading={isMoneyAccountLoading}
         onAddAccount={addMoneyAccount}
         onArchiveAccount={archiveMoneyAccount}
+      />
+
+      <DashboardCharts
+        accountBalances={moneyAccountBalances}
+        expenses={activeExpenses}
+        isBalanceHidden={isBalanceHidden}
+        moneyAccounts={moneyAccounts}
       />
 
       <TransferMoney
