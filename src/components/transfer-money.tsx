@@ -12,6 +12,7 @@ type TransferMoneyProps = {
   accountBalances: Record<string, number>;
   accounts: MoneyAccount[];
   error: string;
+  isEmbedded?: boolean;
   onAddTransfer: (transfer: {
     amount: number;
     fromAccountId: string;
@@ -24,6 +25,7 @@ export default function TransferMoney({
   accountBalances,
   accounts,
   error,
+  isEmbedded = false,
   onAddTransfer,
 }: TransferMoneyProps) {
   const [fromAccountId, setFromAccountId] = useState("");
@@ -103,12 +105,8 @@ export default function TransferMoney({
     setNote("");
   }
 
-  return (
-    <section
-      className="mx-auto w-full max-w-5xl px-5 pb-20 sm:px-6"
-      id="transfer-money"
-    >
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+  const content = (
+    <>
         <div className="mb-8 max-w-2xl">
           <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
             Transfer Money
@@ -208,6 +206,20 @@ export default function TransferMoney({
             </button>
           </div>
         </form>
+    </>
+  );
+
+  if (isEmbedded) {
+    return <div id="transfer-money">{content}</div>;
+  }
+
+  return (
+    <section
+      className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
+      id="transfer-money"
+    >
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+        {content}
       </div>
     </section>
   );

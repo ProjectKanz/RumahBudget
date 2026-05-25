@@ -27,6 +27,7 @@ const labelClassName = "text-sm font-medium text-slate-300";
 
 type ExpenseFormProps = {
   accountLabel: string;
+  isEmbedded?: boolean;
   moneyAccounts: MoneyAccount[];
   onAddExpense: (expense: Expense) => Promise<boolean>;
   supabaseError: string;
@@ -34,6 +35,7 @@ type ExpenseFormProps = {
 
 export default function ExpenseForm({
   accountLabel,
+  isEmbedded = false,
   moneyAccounts,
   onAddExpense,
   supabaseError,
@@ -99,12 +101,8 @@ export default function ExpenseForm({
     setError("");
   }
 
-  return (
-    <section
-      className="mx-auto w-full max-w-5xl px-5 pb-20 sm:px-6"
-      id="expense-form"
-    >
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+  const content = (
+    <>
         <div className="mb-8 max-w-2xl">
           <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
             Add Expense
@@ -223,8 +221,21 @@ export default function ExpenseForm({
             </button>
           </div>
         </form>
-      </div>
+    </>
+  );
 
+  if (isEmbedded) {
+    return <div id="expense-form">{content}</div>;
+  }
+
+  return (
+    <section
+      className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
+      id="expense-form"
+    >
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+        {content}
+      </div>
     </section>
   );
 }

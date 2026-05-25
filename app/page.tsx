@@ -38,6 +38,24 @@ type MonthlyStatus = {
   className: string;
 };
 
+type QuickAddTab = "income" | "expense" | "transfer";
+
+const sectionNavItems = [
+  { id: "overview", label: "Overview" },
+  { id: "money-accounts", label: "Accounts" },
+  { id: "quick-add", label: "Quick Add" },
+  { id: "dashboard-charts", label: "Charts" },
+  { id: "transaction-history", label: "Transactions" },
+  { id: "report-preview", label: "Reports" },
+  { id: "email-settings", label: "Settings" },
+];
+
+const quickAddTabs: { label: string; value: QuickAddTab }[] = [
+  { label: "Income", value: "income" },
+  { label: "Expense", value: "expense" },
+  { label: "Transfer", value: "transfer" },
+];
+
 type SupabaseExpenseRow = {
   id?: string | number;
   owner?: string | null;
@@ -155,6 +173,7 @@ export default function Home() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
+  const [quickAddTab, setQuickAddTab] = useState<QuickAddTab>("income");
 
   const loadExpensesFromSupabase = useCallback(async () => {
     setIsExpenseLoading(true);
@@ -1037,6 +1056,12 @@ export default function Home() {
     setIsOnboardingOpen(true);
   }
 
+  function scrollToSection(sectionId: string) {
+    document
+      .getElementById(sectionId)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   async function logout() {
     if (!supabase) {
       return;
@@ -1074,7 +1099,10 @@ export default function Home() {
         onSkip={completeOnboarding}
       />
 
-      <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-5 py-8 sm:px-6 sm:py-12">
+      <section
+        className="mx-auto max-w-5xl px-5 py-8 sm:px-6 sm:py-10"
+        id="overview"
+      >
         <div>
           <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-emerald-400">
             Personal Finance Tracker
@@ -1111,6 +1139,22 @@ export default function Home() {
               </button>
             </div>
           </div>
+
+          <nav
+            aria-label="Dashboard sections"
+            className="mt-6 flex gap-2 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/80 p-2"
+          >
+            {sectionNavItems.map((item) => (
+              <button
+                className="shrink-0 rounded-full px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-emerald-400/40"
+                key={item.id}
+                type="button"
+                onClick={() => scrollToSection(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
 
           <div className="mt-10">
             <div className="mb-4">
@@ -1194,55 +1238,6 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="mt-10 flex flex-col gap-3 sm:flex-row">
-            <button
-              className="rounded-full bg-emerald-400 px-6 py-4 text-base font-semibold text-slate-950 transition hover:bg-emerald-300 sm:px-7"
-              type="button"
-              onClick={() =>
-                document
-                  .getElementById("income-form")
-                  ?.scrollIntoView({ behavior: "smooth" })
-              }
-            >
-              + Add Income
-            </button>
-
-            <button
-              className="rounded-full border border-slate-700 px-6 py-4 text-base font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:px-7"
-              type="button"
-              onClick={() =>
-                document
-                  .getElementById("expense-form")
-                  ?.scrollIntoView({ behavior: "smooth" })
-              }
-            >
-              + Add Expense
-            </button>
-
-            <button
-              className="rounded-full border border-slate-700 px-6 py-4 text-base font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:px-7"
-              type="button"
-              onClick={() =>
-                document
-                  .getElementById("money-accounts")
-                  ?.scrollIntoView({ behavior: "smooth" })
-              }
-            >
-              + Add Money Account
-            </button>
-
-            <button
-              className="rounded-full border border-slate-700 px-6 py-4 text-base font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:px-7"
-              type="button"
-              onClick={() =>
-                document
-                  .getElementById("transfer-money")
-                  ?.scrollIntoView({ behavior: "smooth" })
-              }
-            >
-              + Transfer Money
-            </button>
-          </div>
         </div>
       </section>
 
@@ -1256,26 +1251,76 @@ export default function Home() {
         onArchiveAccount={archiveMoneyAccount}
       />
 
-      <IncomeForm
-        accountLabel={signedInEmail}
-        moneyAccounts={moneyAccounts}
-        onAddIncome={addIncome}
-        supabaseError={incomeError}
-      />
+      <section
+        className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
+        id="quick-add"
+      >
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+          <div className="flex flex-col gap-5 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
+                Quick Add
+              </p>
+              <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+                Record money movement
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-slate-400">
+                Add income, record an expense, or transfer money between your
+                accounts from one compact workspace.
+              </p>
+            </div>
 
-      <ExpenseForm
-        accountLabel={signedInEmail}
-        moneyAccounts={moneyAccounts}
-        onAddExpense={addExpense}
-        supabaseError={expenseError}
-      />
+            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-1">
+              {quickAddTabs.map((tab) => (
+                <button
+                  className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
+                    quickAddTab === tab.value
+                      ? "bg-emerald-400 text-slate-950"
+                      : "text-slate-300 hover:bg-slate-800"
+                  }`}
+                  key={tab.value}
+                  type="button"
+                  onClick={() => setQuickAddTab(tab.value)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-      <TransferMoney
-        accountBalances={moneyAccountBalances}
-        accounts={moneyAccounts}
-        error={transferError}
-        onAddTransfer={addTransfer}
-      />
+          <div className="mt-6">
+            {quickAddTab === "income" ? (
+              <IncomeForm
+                accountLabel={signedInEmail}
+                isEmbedded
+                moneyAccounts={moneyAccounts}
+                onAddIncome={addIncome}
+                supabaseError={incomeError}
+              />
+            ) : null}
+
+            {quickAddTab === "expense" ? (
+              <ExpenseForm
+                accountLabel={signedInEmail}
+                isEmbedded
+                moneyAccounts={moneyAccounts}
+                onAddExpense={addExpense}
+                supabaseError={expenseError}
+              />
+            ) : null}
+
+            {quickAddTab === "transfer" ? (
+              <TransferMoney
+                accountBalances={moneyAccountBalances}
+                accounts={moneyAccounts}
+                error={transferError}
+                isEmbedded
+                onAddTransfer={addTransfer}
+              />
+            ) : null}
+          </div>
+        </div>
+      </section>
 
       <DashboardCharts
         accountBalances={moneyAccountBalances}

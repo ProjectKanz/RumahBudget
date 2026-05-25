@@ -6,6 +6,7 @@ import { FormEvent, useState } from "react";
 
 type IncomeFormProps = {
   accountLabel: string;
+  isEmbedded?: boolean;
   moneyAccounts: MoneyAccount[];
   onAddIncome: (income: Income) => Promise<boolean>;
   supabaseError: string;
@@ -18,6 +19,7 @@ const labelClassName = "text-sm font-medium text-slate-300";
 
 export default function IncomeForm({
   accountLabel,
+  isEmbedded = false,
   moneyAccounts,
   onAddIncome,
   supabaseError,
@@ -88,12 +90,8 @@ export default function IncomeForm({
     setError("");
   }
 
-  return (
-    <section
-      className="mx-auto w-full max-w-5xl px-5 pb-20 sm:px-6"
-      id="income-form"
-    >
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+  const content = (
+    <>
         <div className="mb-8 max-w-2xl">
           <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
             Add Income
@@ -192,8 +190,21 @@ export default function IncomeForm({
             </button>
           </div>
         </form>
-      </div>
+    </>
+  );
 
+  if (isEmbedded) {
+    return <div id="income-form">{content}</div>;
+  }
+
+  return (
+    <section
+      className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
+      id="income-form"
+    >
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+        {content}
+      </div>
     </section>
   );
 }
