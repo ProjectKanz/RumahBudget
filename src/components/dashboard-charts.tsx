@@ -22,6 +22,7 @@ type BarChartItem = {
 type DashboardChartsProps = {
   accountBalances: Record<string, number>;
   expenses: Expense[];
+  highlightClassName?: string;
   isBalanceHidden: boolean;
   moneyAccounts: MoneyAccount[];
 };
@@ -76,6 +77,7 @@ function SimpleBarList({
 export default function DashboardCharts({
   accountBalances,
   expenses,
+  highlightClassName = "",
   isBalanceHidden,
   moneyAccounts,
 }: DashboardChartsProps) {
@@ -107,7 +109,9 @@ export default function DashboardCharts({
       className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
       id="dashboard-charts"
     >
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+      <div
+        className={`rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 transition sm:p-8 ${highlightClassName}`}
+      >
         <div className="border-b border-slate-800 pb-6">
           <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
             Dashboard Charts

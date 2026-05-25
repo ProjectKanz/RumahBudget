@@ -23,6 +23,7 @@ const labelClassName = "text-sm font-medium text-slate-300";
 type MoneyAccountsProps = {
   accounts: MoneyAccount[];
   accountBalances: Record<string, number>;
+  highlightClassName?: string;
   isBalanceHidden: boolean;
   error: string;
   isLoading: boolean;
@@ -37,6 +38,7 @@ type MoneyAccountsProps = {
 export default function MoneyAccounts({
   accounts,
   accountBalances,
+  highlightClassName = "",
   isBalanceHidden,
   error,
   isLoading,
@@ -116,7 +118,9 @@ export default function MoneyAccounts({
       className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
       id="money-accounts"
     >
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+      <div
+        className={`rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 transition sm:p-8 ${highlightClassName}`}
+      >
         <div className="mb-8 max-w-2xl">
           <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
             Money Accounts

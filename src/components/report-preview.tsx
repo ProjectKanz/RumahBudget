@@ -16,6 +16,7 @@ type FinancialStatus = {
 
 type ReportPreviewProps = {
   expenses: Expense[];
+  highlightClassName?: string;
   incomes: Income[];
   onReportSent?: () => void | Promise<void>;
 };
@@ -131,6 +132,7 @@ function getResponseError(data: unknown) {
 
 export default function ReportPreview({
   expenses,
+  highlightClassName = "",
   incomes,
   onReportSent,
 }: ReportPreviewProps) {
@@ -265,7 +267,9 @@ export default function ReportPreview({
       className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
       id="report-preview"
     >
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+      <div
+        className={`rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 transition sm:p-8 ${highlightClassName}`}
+      >
         <div className="flex flex-col gap-5 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">

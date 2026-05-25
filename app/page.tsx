@@ -40,6 +40,11 @@ type MonthlyStatus = {
 
 type QuickAddTab = "income" | "expense" | "transfer";
 
+type OnboardingStepTarget = {
+  sectionId: string;
+  quickAddTab?: QuickAddTab;
+};
+
 const sectionNavItems = [
   { id: "overview", label: "Overview" },
   { id: "money-accounts", label: "Accounts" },
@@ -54,6 +59,16 @@ const quickAddTabs: { label: string; value: QuickAddTab }[] = [
   { label: "Income", value: "income" },
   { label: "Expense", value: "expense" },
   { label: "Transfer", value: "transfer" },
+];
+
+const onboardingStepTargets: OnboardingStepTarget[] = [
+  { sectionId: "overview" },
+  { sectionId: "money-accounts" },
+  { quickAddTab: "income", sectionId: "quick-add" },
+  { quickAddTab: "expense", sectionId: "quick-add" },
+  { quickAddTab: "transfer", sectionId: "quick-add" },
+  { sectionId: "dashboard-charts" },
+  { sectionId: "report-preview" },
 ];
 
 type SupabaseExpenseRow = {
@@ -174,6 +189,7 @@ export default function Home() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [quickAddTab, setQuickAddTab] = useState<QuickAddTab>("income");
+  const [highlightedSectionId, setHighlightedSectionId] = useState("");
 
   const loadExpensesFromSupabase = useCallback(async () => {
     setIsExpenseLoading(true);
@@ -591,6 +607,43 @@ export default function Home() {
       String(isBalanceHidden),
     );
   }, [isBalanceHidden, isHydrated]);
+
+  useEffect(() => {
+    if (!highlightedSectionId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setHighlightedSectionId("");
+    }, 1800);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [highlightedSectionId]);
+
+  useEffect(() => {
+    if (!isOnboardingOpen) {
+      return;
+    }
+
+    const target = onboardingStepTargets[onboardingStep];
+
+    if (!target) {
+      return;
+    }
+
+    queueMicrotask(() => {
+      if (target.quickAddTab) {
+        setQuickAddTab(target.quickAddTab);
+      }
+
+      window.setTimeout(() => {
+        document
+          .getElementById(target.sectionId)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightedSectionId(target.sectionId);
+      }, 80);
+    });
+  }, [isOnboardingOpen, onboardingStep]);
 
   const activeExpenses = expenses;
 
@@ -1056,6 +1109,12 @@ export default function Home() {
     setIsOnboardingOpen(true);
   }
 
+  function getSectionHighlightClass(sectionId: string) {
+    return highlightedSectionId === sectionId
+      ? "ring-2 ring-emerald-300/80 ring-offset-2 ring-offset-slate-950"
+      : "";
+  }
+
   function scrollToSection(sectionId: string) {
     document
       .getElementById(sectionId)
@@ -1167,7 +1226,9 @@ export default function Home() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-5 sm:col-span-2">
+              <div
+                className={`rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-5 transition sm:col-span-2 ${getSectionHighlightClass("overview")}`}
+              >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-sm text-emerald-100">
@@ -1194,7 +1255,9 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:col-span-2">
+              <div
+                className={`rounded-2xl border border-slate-800 bg-slate-900 p-5 transition sm:col-span-2 ${getSectionHighlightClass("overview")}`}
+              >
                 <p className="text-sm text-slate-400">Monthly Net Cashflow</p>
                 <p
                   className={`mt-2 text-3xl font-bold sm:text-4xl ${
@@ -1244,6 +1307,7 @@ export default function Home() {
       <MoneyAccounts
         accounts={moneyAccounts}
         accountBalances={moneyAccountBalances}
+        highlightClassName={getSectionHighlightClass("money-accounts")}
         isBalanceHidden={isBalanceHidden}
         error={moneyAccountError}
         isLoading={isMoneyAccountLoading}
@@ -1255,7 +1319,9 @@ export default function Home() {
         className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
         id="quick-add"
       >
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+        <div
+          className={`rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 transition sm:p-8 ${getSectionHighlightClass("quick-add")}`}
+        >
           <div className="flex flex-col gap-5 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
@@ -1325,6 +1391,7 @@ export default function Home() {
       <DashboardCharts
         accountBalances={moneyAccountBalances}
         expenses={activeExpenses}
+        highlightClassName={getSectionHighlightClass("dashboard-charts")}
         isBalanceHidden={isBalanceHidden}
         moneyAccounts={moneyAccounts}
       />
@@ -1342,6 +1409,7 @@ export default function Home() {
 
       <ReportPreview
         expenses={activeExpenses}
+        highlightClassName={getSectionHighlightClass("report-preview")}
         incomes={activeIncomes}
         onReportSent={loadEmailReportsFromSupabase}
       />

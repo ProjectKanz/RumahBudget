@@ -7,29 +7,39 @@ type OnboardingStep = {
 
 const onboardingSteps: OnboardingStep[] = [
   {
+    title: "Welcome to RumahBudget",
+    description:
+      "This quick tour will move through the main dashboard sections automatically as you use Next and Back.",
+  },
+  {
     title: "Create your first money account",
     description:
-      "Start with where your money lives: a bank account, e-wallet, cash, investment account, or another wallet.",
+      "Add a bank account, e-wallet, cash wallet, or investment account so every transaction has a place to live.",
   },
   {
-    title: "Add income to an account",
+    title: "Record income",
     description:
-      "Record salary, business income, bonuses, or other incoming funds and choose which account receives the money.",
+      "Use the Income tab to record salary, business income, bonuses, or other incoming funds.",
   },
   {
-    title: "Add an expense from an account",
+    title: "Record an expense",
     description:
-      "Track spending by category and select the account the money came from so balances stay accurate.",
+      "Use the Expense tab, choose the account the money came from, and categorize the spending.",
   },
   {
     title: "Transfer money between accounts",
     description:
-      "Move money between your own accounts without changing income or expense totals.",
+      "Use the Transfer tab to move money between your own accounts without changing income or expense totals.",
   },
   {
-    title: "Review charts and financial reports",
+    title: "Review dashboard charts",
     description:
-      "Use the dashboard charts and report preview to understand balances, expense patterns, and monthly cashflow.",
+      "Check account balance and expense breakdown charts to understand where your money sits and where it goes.",
+  },
+  {
+    title: "Generate a financial report",
+    description:
+      "Preview weekly or monthly summaries and send a test report email when you are ready.",
   },
 ];
 
@@ -63,11 +73,10 @@ export default function OnboardingTutorial({
   return (
     <div
       aria-labelledby="onboarding-title"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-end bg-slate-950/80 px-4 py-4 backdrop-blur-sm sm:items-center sm:justify-center sm:px-6"
+      className="fixed inset-x-0 bottom-0 z-50 px-4 py-4 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-full sm:max-w-xl sm:px-0 sm:py-0"
       role="dialog"
     >
-      <div className="w-full max-w-xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-slate-950/60 sm:p-8">
+      <div className="w-full rounded-2xl border border-slate-700 bg-slate-900/95 p-6 shadow-2xl shadow-slate-950/70 backdrop-blur sm:p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
@@ -89,7 +98,7 @@ export default function OnboardingTutorial({
           {step.description}
         </p>
 
-        <div className="mt-6 grid grid-cols-5 gap-2">
+        <div className="mt-6 grid grid-cols-7 gap-2">
           {onboardingSteps.map((item, index) => (
             <div
               aria-label={item.title}
