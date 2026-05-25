@@ -5,6 +5,7 @@ import EmailReportHistory from "@/src/components/email-report-history";
 import EmailReportPreferences from "@/src/components/email-report-preferences";
 import ExpenseForm from "@/src/components/expense-form";
 import IncomeForm from "@/src/components/income-form";
+import MoneyAccounts from "@/src/components/money-accounts";
 import ReportPreview from "@/src/components/report-preview";
 import SupabaseTestPanel from "@/src/components/supabase-test-panel";
 import TransactionHistory from "@/src/components/transaction-history";
@@ -12,6 +13,10 @@ import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import type { EmailReport } from "@/src/types/email-report";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
+import type {
+  MoneyAccount,
+  MoneyAccountType,
+} from "@/src/types/money-account";
 import type { ActiveUser } from "@/src/types/user";
 import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -63,6 +68,26 @@ type SupabaseEmailReportRow = {
   sent_at?: string | null;
 };
 
+type SupabaseMoneyAccountRow = {
+  id?: string | number;
+  user_id?: string | null;
+  name?: string | null;
+  account_type?: string | null;
+  initial_balance?: number | string | null;
+  is_archived?: boolean | null;
+  created_at?: string | null;
+};
+
+function isMoneyAccountType(value: unknown): value is MoneyAccountType {
+  return (
+    value === "Bank" ||
+    value === "E-Wallet" ||
+    value === "Cash" ||
+    value === "Investment" ||
+    value === "Other"
+  );
+}
+
 function createSupabaseTimeout() {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 10000);
@@ -92,12 +117,15 @@ export default function Home() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [emailReports, setEmailReports] = useState<EmailReport[]>([]);
+  const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccount[]>([]);
   const [expenseError, setExpenseError] = useState("");
   const [incomeError, setIncomeError] = useState("");
   const [emailReportError, setEmailReportError] = useState("");
+  const [moneyAccountError, setMoneyAccountError] = useState("");
   const [isExpenseLoading, setIsExpenseLoading] = useState(false);
   const [isIncomeLoading, setIsIncomeLoading] = useState(false);
   const [isEmailReportLoading, setIsEmailReportLoading] = useState(false);
+  const [isMoneyAccountLoading, setIsMoneyAccountLoading] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
 
   const loadExpensesFromSupabase = useCallback(async () => {
@@ -270,6 +298,68 @@ export default function Home() {
     }
   }, [authUser]);
 
+  const loadMoneyAccountsFromSupabase = useCallback(async () => {
+    setIsMoneyAccountLoading(true);
+
+    if (!authUser) {
+      setMoneyAccounts([]);
+      setIsMoneyAccountLoading(false);
+      return;
+    }
+
+    if (!supabase) {
+      setMoneyAccountError(missingSupabaseEnvMessage);
+      setIsMoneyAccountLoading(false);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { data, error } = await supabase
+        .from("money_accounts")
+        .select("*")
+        .eq("user_id", authUser.id)
+        .eq("is_archived", false)
+        .order("created_at", { ascending: false })
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setMoneyAccountError(error.message);
+        return;
+      }
+
+      const nextMoneyAccounts = (data as SupabaseMoneyAccountRow[]).map(
+        (account): MoneyAccount => ({
+          id: String(account.id ?? crypto.randomUUID()),
+          userId: account.user_id ?? authUser.id,
+          name: account.name ?? "Untitled account",
+          accountType: isMoneyAccountType(account.account_type)
+            ? account.account_type
+            : "Other",
+          initialBalance: Number(account.initial_balance ?? 0),
+          isArchived: Boolean(account.is_archived),
+          createdAt: account.created_at
+            ? new Date(account.created_at).getTime()
+            : 0,
+        }),
+      );
+
+      setMoneyAccounts(nextMoneyAccounts);
+      setMoneyAccountError("");
+    } catch (error) {
+      setMoneyAccountError(
+        getSupabaseErrorMessage(
+          error,
+          "Failed to load money accounts from Supabase.",
+        ),
+      );
+    } finally {
+      timeout.clear();
+      setIsMoneyAccountLoading(false);
+    }
+  }, [authUser]);
+
   useEffect(() => {
     const storedActiveUser = window.localStorage.getItem(activeUserStorageKey);
     const nextActiveUser = isActiveUser(storedActiveUser)
@@ -346,6 +436,7 @@ export default function Home() {
         setExpenses([]);
         setIncomes([]);
         setEmailReports([]);
+        setMoneyAccounts([]);
       });
       return;
     }
@@ -354,12 +445,14 @@ export default function Home() {
       void loadExpensesFromSupabase();
       void loadIncomesFromSupabase();
       void loadEmailReportsFromSupabase();
+      void loadMoneyAccountsFromSupabase();
     });
   }, [
     authUser,
     loadEmailReportsFromSupabase,
     loadExpensesFromSupabase,
     loadIncomesFromSupabase,
+    loadMoneyAccountsFromSupabase,
   ]);
 
   useEffect(() => {
@@ -574,6 +667,97 @@ export default function Home() {
     }
   }
 
+  async function addMoneyAccount(account: {
+    accountType: MoneyAccountType;
+    initialBalance: number;
+    name: string;
+  }) {
+    if (!supabase) {
+      setMoneyAccountError(missingSupabaseEnvMessage);
+      return false;
+    }
+
+    if (!authUser) {
+      setMoneyAccountError("Please log in before saving a money account.");
+      return false;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { error } = await supabase
+        .from("money_accounts")
+        .insert({
+          user_id: authUser.id,
+          name: account.name,
+          account_type: account.accountType,
+          initial_balance: account.initialBalance,
+          is_archived: false,
+        })
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setMoneyAccountError(error.message);
+        return false;
+      }
+
+      await loadMoneyAccountsFromSupabase();
+      return true;
+    } catch (error) {
+      setMoneyAccountError(
+        getSupabaseErrorMessage(
+          error,
+          "Failed to save money account to Supabase.",
+        ),
+      );
+      return false;
+    } finally {
+      timeout.clear();
+    }
+  }
+
+  async function archiveMoneyAccount(id: string) {
+    if (!supabase) {
+      setMoneyAccountError(missingSupabaseEnvMessage);
+      return;
+    }
+
+    if (!authUser) {
+      setMoneyAccountError("Please log in before archiving a money account.");
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { error } = await supabase
+        .from("money_accounts")
+        .update({
+          is_archived: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .eq("user_id", authUser.id)
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setMoneyAccountError(error.message);
+        return;
+      }
+
+      await loadMoneyAccountsFromSupabase();
+    } catch (error) {
+      setMoneyAccountError(
+        getSupabaseErrorMessage(
+          error,
+          "Failed to archive money account in Supabase.",
+        ),
+      );
+    } finally {
+      timeout.clear();
+    }
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-white">
       {isAuthLoading ? (
@@ -708,6 +892,18 @@ export default function Home() {
             >
               + Add Income
             </button>
+
+            <button
+              className="rounded-full border border-slate-700 px-6 py-4 text-base font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:px-7"
+              type="button"
+              onClick={() =>
+                document
+                  .getElementById("money-accounts")
+                  ?.scrollIntoView({ behavior: "smooth" })
+              }
+            >
+              + Add Money Account
+            </button>
           </div>
         </div>
       </section>
@@ -715,6 +911,14 @@ export default function Home() {
       <AuthForm userEmail={authUser.email} />
 
       <SupabaseTestPanel />
+
+      <MoneyAccounts
+        accounts={moneyAccounts}
+        error={moneyAccountError}
+        isLoading={isMoneyAccountLoading}
+        onAddAccount={addMoneyAccount}
+        onArchiveAccount={archiveMoneyAccount}
+      />
 
       <ReportPreview
         expenses={activeExpenses}
