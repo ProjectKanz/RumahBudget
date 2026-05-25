@@ -11,7 +11,7 @@ type ConnectionStatus = {
 export default function SupabaseTestPanel() {
   const [status, setStatus] = useState<ConnectionStatus>({
     tone: "idle",
-    message: "Belum dites.",
+    message: "Not tested yet.",
   });
   const [isTesting, setIsTesting] = useState(false);
 
@@ -19,7 +19,7 @@ export default function SupabaseTestPanel() {
     setIsTesting(true);
     setStatus({
       tone: "idle",
-      message: "Menghubungkan ke Supabase...",
+      message: "Connecting to Supabase...",
     });
 
     if (!supabase) {
@@ -58,11 +58,11 @@ export default function SupabaseTestPanel() {
               Supabase
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
-              Tes Koneksi Database
+              Database Connection Test
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Hanya mengetes koneksi. Penyimpanan transaksi masih memakai
-              localStorage.
+              This only checks the database connection. Transactions are saved
+              through Supabase after login.
             </p>
           </div>
 

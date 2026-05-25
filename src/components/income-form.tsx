@@ -50,12 +50,12 @@ export default function IncomeForm({
     const trimmedSource = source.trim();
 
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      setError("Masukkan amount pemasukan yang lebih besar dari 0.");
+      setError("Enter an income amount greater than 0.");
       return;
     }
 
     if (!trimmedSource) {
-      setError("Masukkan sumber pemasukan.");
+      setError("Enter an income source.");
       return;
     }
 
@@ -98,19 +98,19 @@ export default function IncomeForm({
       <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
         <div className="mb-8 max-w-2xl">
           <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-            Catat Pemasukan
+            Add Income
           </p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Tambah dana masuk
+            Add incoming funds
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Tersimpan untuk {activeUser} dan dipakai menghitung saldo pribadi.
+            Saved for {activeUser} and included in your private balance.
           </p>
         </div>
 
         <form className="grid gap-5 sm:grid-cols-2" onSubmit={handleSubmit}>
           <label className={labelClassName}>
-            Jumlah
+            Amount
             <input
               className={inputClassName}
               name="incomeAmount"
@@ -124,24 +124,24 @@ export default function IncomeForm({
           </label>
 
           <label className={labelClassName}>
-            Sumber
+            Source
             <input
               className={inputClassName}
               name="source"
               type="text"
-              placeholder="Contoh: gaji, bonus, usaha"
+              placeholder="Example: salary, bonus, business"
               value={source}
               onChange={(event) => setSource(event.target.value)}
             />
           </label>
 
           <label className={`${labelClassName} sm:col-span-2`}>
-            Catatan
+            Note
             <input
               className={inputClassName}
               name="incomeNote"
               type="text"
-              placeholder="Catatan opsional"
+              placeholder="Optional note"
               value={note}
               onChange={(event) => setNote(event.target.value)}
             />
@@ -165,7 +165,7 @@ export default function IncomeForm({
               type="submit"
               disabled={isSaving}
             >
-              {isSaving ? "Menyimpan..." : "Simpan Pemasukan"}
+              {isSaving ? "Saving..." : "Save Income"}
             </button>
           </div>
         </form>
@@ -175,7 +175,7 @@ export default function IncomeForm({
         <div className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-              Riwayat Pemasukan
+              Income History
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
               Total {rupiahFormatter.format(totalIncome)}
@@ -183,19 +183,19 @@ export default function IncomeForm({
           </div>
           <p className="text-sm text-slate-400">
             {isLoadingIncomes
-              ? "Memuat data dari Supabase..."
-              : `${incomes.length} transaksi tersimpan`}
+              ? "Loading data from Supabase..."
+              : `${incomes.length} saved transactions`}
           </p>
         </div>
 
         <div className="mt-6 space-y-4">
           {isLoadingIncomes ? (
             <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-              Memuat pemasukan dari Supabase...
+              Loading income from Supabase...
             </div>
           ) : incomes.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-              Belum ada pemasukan. Tambahkan dana masuk dari form di atas.
+              No income yet. Add incoming funds from the form above.
             </div>
           ) : (
             incomes.map((income) => (
@@ -222,7 +222,7 @@ export default function IncomeForm({
                   type="button"
                   onClick={() => onDeleteIncome(income.id)}
                 >
-                  Hapus
+                  Delete
                 </button>
               </article>
             ))

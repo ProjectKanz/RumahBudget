@@ -9,7 +9,7 @@ type ReportPayload = {
   totalIncome: string;
   totalExpense: string;
   remainingBalance: string;
-  financialStatus: "Aman" | "Waspada" | "Bahaya";
+  financialStatus: "Safe" | "Warning" | "Critical";
   topExpenseCategory: string;
   explanation: string;
   recommendation: string;
@@ -77,7 +77,7 @@ function getErrorMessage(error: unknown) {
     }
   }
 
-  return "Gagal mengirim laporan email.";
+  return "Failed to send email report.";
 }
 
 function buildReportEmail(
@@ -87,20 +87,20 @@ function buildReportEmail(
 ) {
   const rows = [
     ["Report type", report.reportType],
-    ["Periode", report.periodLabel],
-    ["Total pemasukan", report.totalIncome],
-    ["Total pengeluaran", report.totalExpense],
-    ["Sisa saldo", report.remainingBalance],
-    ["Status keuangan", report.financialStatus],
-    ["Kategori terbesar", report.topExpenseCategory],
-    ["Penjelasan", report.explanation],
-    ["Rekomendasi", report.recommendation],
+    ["Period", report.periodLabel],
+    ["Total income", report.totalIncome],
+    ["Total expenses", report.totalExpense],
+    ["Remaining balance", report.remainingBalance],
+    ["Financial status", report.financialStatus],
+    ["Top expense category", report.topExpenseCategory],
+    ["Explanation", report.explanation],
+    ["Recommendation", report.recommendation],
   ];
 
   const text = [
-    "Laporan Keuangan RumahBudget",
-    `Pemilik akun: ${accountEmail}`,
-    `Dikirim ke: ${recipientEmail}`,
+    "RumahBudget Financial Report",
+    `Account owner: ${accountEmail}`,
+    `Sent to: ${recipientEmail}`,
     "",
     ...rows.map(([label, value]) => `${label}: ${value}`),
   ].join("\n");
@@ -118,14 +118,14 @@ function buildReportEmail(
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a;">
-      <h1 style="margin-bottom: 8px;">Laporan Keuangan RumahBudget</h1>
-      <p style="margin-top: 0; color: #64748b;">Ringkasan pribadi untuk ${escapeHtml(accountEmail)}</p>
-      <p style="margin-top: 0; color: #64748b;">Mode testing Resend: email dikirim ke ${escapeHtml(recipientEmail)}</p>
+      <h1 style="margin-bottom: 8px;">RumahBudget Financial Report</h1>
+      <p style="margin-top: 0; color: #64748b;">Personal summary for ${escapeHtml(accountEmail)}</p>
+      <p style="margin-top: 0; color: #64748b;">Resend testing mode: email sent to ${escapeHtml(recipientEmail)}</p>
       <table style="width: 100%; border-collapse: collapse; margin-top: 24px; border: 1px solid #e2e8f0;">
         <tbody>${htmlRows}</tbody>
       </table>
       <p style="margin-top: 24px; color: #64748b; font-size: 13px;">
-        Email ini dikirim manual dari preview laporan RumahBudget.
+        This email was sent manually from the RumahBudget report preview.
       </p>
     </div>
   `;
@@ -175,7 +175,7 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error:
-          "Missing Supabase environment variables. Pastikan NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_ANON_KEY tersedia lalu restart npm run dev.",
+          "Missing Supabase environment variables. Make sure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are available, then restart npm run dev.",
       },
       { status: 500 },
     );
@@ -188,7 +188,7 @@ export async function POST(request: Request) {
 
   if (!token) {
     return Response.json(
-      { error: "Login diperlukan sebelum mengirim laporan email." },
+      { error: "Please log in before sending an email report." },
       { status: 401 },
     );
   }
@@ -197,7 +197,7 @@ export async function POST(request: Request) {
 
   if (!isReportPayload(body)) {
     return Response.json(
-      { error: "Format laporan tidak valid." },
+      { error: "Invalid report format." },
       { status: 400 },
     );
   }
@@ -223,7 +223,7 @@ export async function POST(request: Request) {
 
   if (!reportTestRecipientEmail) {
     const message =
-      "Missing REPORT_TEST_RECIPIENT_EMAIL. Tambahkan email Resend yang terverifikasi ke .env.local lalu restart npm run dev.";
+      "Missing REPORT_TEST_RECIPIENT_EMAIL. Add the verified Resend email to .env.local, then restart npm run dev.";
 
     await saveEmailReportLog({
       errorMessage: message,
@@ -240,7 +240,7 @@ export async function POST(request: Request) {
 
   if (!resendApiKey) {
     const message =
-      "Missing RESEND_API_KEY. Tambahkan ke .env.local lalu restart npm run dev.";
+      "Missing RESEND_API_KEY. Add it to .env.local, then restart npm run dev.";
 
     await saveEmailReportLog({
       errorMessage: message,

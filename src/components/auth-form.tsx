@@ -61,7 +61,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
     }
 
     setPassword("");
-    setMessage("Akun dibuat. Periksa email jika Supabase meminta konfirmasi.");
+    setMessage("Account created. Check your email if Supabase requires confirmation.");
   }
 
   async function logout() {
@@ -87,20 +87,20 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
       <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
         <div className="mb-6">
           <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-            Akun RumahBudget
+            RumahBudget Account
           </p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
-            {userEmail ? "Sesi aktif" : "Masuk atau daftar"}
+            {userEmail ? "Active session" : "Log in or sign up"}
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Login is required so your financial data stays private.
+            Sign in so your financial data stays private.
           </p>
         </div>
 
         {userEmail ? (
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-slate-300">
-              Login sebagai <span className="font-semibold">{userEmail}</span>
+              Logged in as <span className="font-semibold">{userEmail}</span>
             </p>
             <button
               className="rounded-full border border-slate-700 px-6 py-3 font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
@@ -108,7 +108,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
               disabled={isSubmitting}
               onClick={logout}
             >
-              Logout
+              Log out
             </button>
           </div>
         ) : (
@@ -120,7 +120,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="nama@email.com"
+                placeholder="name@email.com"
               />
             </label>
 
@@ -131,7 +131,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="Minimal 6 karakter"
+                placeholder="At least 6 characters"
               />
             </label>
 
@@ -141,7 +141,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
                 type="submit"
                 disabled={isSubmitting}
               >
-                Login
+                Log in
               </button>
               <button
                 className="rounded-full border border-slate-700 px-6 py-3 font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
@@ -156,7 +156,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
                 type="button"
                 disabled
               >
-                Logout
+                Log out
               </button>
             </div>
           </form>

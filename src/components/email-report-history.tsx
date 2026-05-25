@@ -8,7 +8,7 @@ type EmailReportHistoryProps = {
   isLoading: boolean;
 };
 
-const dateTimeFormatter = new Intl.DateTimeFormat("id-ID", {
+const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeStyle: "short",
 });
@@ -23,13 +23,13 @@ export default function EmailReportHistory({
       <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
         <div className="border-b border-slate-800 pb-6">
           <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-            Riwayat Email Laporan
+            Email Report History
           </p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Pengiriman terakhir
+            Recent deliveries
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Catatan pengiriman laporan untuk akun yang sedang login.
+            Delivery records for the signed-in account.
           </p>
         </div>
 
@@ -42,11 +42,11 @@ export default function EmailReportHistory({
         <div className="mt-6 space-y-4">
           {isLoading ? (
             <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-              Memuat riwayat email laporan...
+              Loading email report history...
             </div>
           ) : emailReports.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-              Belum ada email laporan yang dikirim.
+              No email reports have been sent yet.
             </div>
           ) : (
             emailReports.map((report) => (
@@ -78,7 +78,7 @@ export default function EmailReportHistory({
                       {report.periodLabel}
                     </p>
                     <p className="mt-2 text-sm text-slate-500">
-                      Dikirim ke {report.recipientEmail}
+                      Sent to {report.recipientEmail}
                     </p>
                   </div>
                 </div>

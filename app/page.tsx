@@ -26,7 +26,7 @@ const activeUsers: ActiveUser[] = ["Ibu", "Bapak", "Kanzan", "Guest"];
 const activeUserStorageKey = "rumahbudget.activeUser";
 
 type MonthlyStatus = {
-  label: "Aman" | "Waspada" | "Bahaya";
+  label: "Safe" | "Warning" | "Critical";
   explanation: string;
   className: string;
 };
@@ -75,7 +75,7 @@ function createSupabaseTimeout() {
 
 function getSupabaseErrorMessage(error: unknown, fallbackMessage: string) {
   if (error instanceof DOMException && error.name === "AbortError") {
-    return "Koneksi Supabase terlalu lama. Coba lagi atau periksa koneksi internet.";
+    return "Supabase connection timed out. Please try again or check your internet connection.";
   }
 
   return error instanceof Error ? error.message : fallbackMessage;
@@ -137,8 +137,8 @@ export default function Home() {
           ? new Date(expense.created_at).getTime()
           : 0,
         amount: Number(expense.amount ?? 0),
-        category: expense.category ?? "Lainnya",
-        paymentMethod: expense.payment_method ?? "Tidak diketahui",
+        category: expense.category ?? "Other",
+        paymentMethod: expense.payment_method ?? "Unknown",
         note: expense.note ?? "",
       }));
 
@@ -148,7 +148,7 @@ export default function Home() {
       setExpenseError(
         getSupabaseErrorMessage(
           error,
-          "Gagal memuat pengeluaran dari Supabase.",
+          "Failed to load expenses from Supabase.",
         ),
       );
     } finally {
@@ -192,7 +192,7 @@ export default function Home() {
         userId: income.user_id ?? authUser.id,
         createdAt: income.created_at ? new Date(income.created_at).getTime() : 0,
         amount: Number(income.amount ?? 0),
-        source: income.source ?? "Tidak diketahui",
+        source: income.source ?? "Unknown",
         note: income.note ?? "",
       }));
 
@@ -202,7 +202,7 @@ export default function Home() {
       setIncomeError(
         getSupabaseErrorMessage(
           error,
-          "Gagal memuat pemasukan dari Supabase.",
+          "Failed to load income from Supabase.",
         ),
       );
     } finally {
@@ -246,9 +246,9 @@ export default function Home() {
         (report): EmailReport => ({
           id: String(report.id ?? crypto.randomUUID()),
           userId: report.user_id ?? authUser.id,
-          recipientEmail: report.recipient_email ?? "Tidak diketahui",
-          reportType: report.report_type ?? "Laporan",
-          periodLabel: report.period_label ?? "Periode tidak diketahui",
+          recipientEmail: report.recipient_email ?? "Unknown",
+          reportType: report.report_type ?? "Report",
+          periodLabel: report.period_label ?? "Unknown period",
           status: report.status === "success" ? "success" : "failed",
           errorMessage: report.error_message ?? "",
           sentAt: report.sent_at ? new Date(report.sent_at).getTime() : 0,
@@ -261,7 +261,7 @@ export default function Home() {
       setEmailReportError(
         getSupabaseErrorMessage(
           error,
-          "Gagal memuat riwayat email laporan dari Supabase.",
+          "Failed to load email report history from Supabase.",
         ),
       );
     } finally {
@@ -389,19 +389,19 @@ export default function Home() {
   const monthlyStatus: MonthlyStatus =
     totalExpense > totalIncome
       ? {
-          label: "Bahaya",
-          explanation: "Pengeluaran sudah melebihi pemasukan.",
+          label: "Critical",
+          explanation: "Expenses are higher than income.",
           className: "text-red-300",
         }
       : expenseRatio >= 0.7
         ? {
-            label: "Waspada",
-            explanation: "Pengeluaran sudah mendekati pemasukan.",
+            label: "Warning",
+            explanation: "Expenses are getting close to income.",
             className: "text-amber-300",
           }
         : {
-            label: "Aman",
-            explanation: "Pengeluaran masih terkendali.",
+            label: "Safe",
+            explanation: "Expenses are still under control.",
             className: "text-emerald-400",
           };
 
@@ -412,7 +412,7 @@ export default function Home() {
     }
 
     if (!authUser) {
-      setExpenseError("Login diperlukan sebelum menyimpan pengeluaran.");
+      setExpenseError("Please log in before saving an expense.");
       return false;
     }
 
@@ -442,7 +442,7 @@ export default function Home() {
       setExpenseError(
         getSupabaseErrorMessage(
           error,
-          "Gagal menyimpan pengeluaran ke Supabase.",
+          "Failed to save expense to Supabase.",
         ),
       );
       return false;
@@ -458,7 +458,7 @@ export default function Home() {
     }
 
     if (!authUser) {
-      setExpenseError("Login diperlukan sebelum menghapus pengeluaran.");
+      setExpenseError("Please log in before deleting an expense.");
       return;
     }
 
@@ -482,7 +482,7 @@ export default function Home() {
       setExpenseError(
         getSupabaseErrorMessage(
           error,
-          "Gagal menghapus pengeluaran dari Supabase.",
+          "Failed to delete expense from Supabase.",
         ),
       );
     } finally {
@@ -497,7 +497,7 @@ export default function Home() {
     }
 
     if (!authUser) {
-      setIncomeError("Login diperlukan sebelum menyimpan pemasukan.");
+      setIncomeError("Please log in before saving income.");
       return false;
     }
 
@@ -526,7 +526,7 @@ export default function Home() {
       setIncomeError(
         getSupabaseErrorMessage(
           error,
-          "Gagal menyimpan pemasukan ke Supabase.",
+          "Failed to save income to Supabase.",
         ),
       );
       return false;
@@ -542,7 +542,7 @@ export default function Home() {
     }
 
     if (!authUser) {
-      setIncomeError("Login diperlukan sebelum menghapus pemasukan.");
+      setIncomeError("Please log in before deleting income.");
       return;
     }
 
@@ -566,7 +566,7 @@ export default function Home() {
       setIncomeError(
         getSupabaseErrorMessage(
           error,
-          "Gagal menghapus pemasukan dari Supabase.",
+          "Failed to delete income from Supabase.",
         ),
       );
     } finally {
@@ -579,7 +579,7 @@ export default function Home() {
       {isAuthLoading ? (
         <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-5 py-8 sm:px-6">
           <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 text-sm text-slate-300">
-            Memeriksa sesi login...
+            Checking your session...
           </div>
         </section>
       ) : null}
@@ -591,7 +591,7 @@ export default function Home() {
       <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-5 py-8 sm:px-6 sm:py-12">
         <div>
           <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-emerald-400">
-            Catatan Keuangan Pribadi
+            Personal Finance Tracker
           </p>
 
           <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
@@ -599,12 +599,12 @@ export default function Home() {
           </h1>
 
           <p className="mt-5 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg sm:leading-8">
-            Catat pemasukan dan pengeluaran pribadi dengan mudah. Berbagi data
-            keluarga bisa ditambahkan nanti setelah login dan privasi siap.
+            Track personal income and expenses with a private account. Family
+            sharing can be added later when permissions are ready.
           </p>
 
           <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
-            <p className="text-sm text-slate-400">Login sebagai</p>
+            <p className="text-sm text-slate-400">Logged in as</p>
             <p className="mt-2 text-lg font-semibold text-white">
               {authUser.email}
             </p>
@@ -612,7 +612,7 @@ export default function Home() {
 
           <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/50 p-5 opacity-80">
             <label className="text-sm font-medium text-slate-300">
-              Pengguna Aktif Sementara
+              Temporary Active User
               <select
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-4 text-base font-semibold text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20"
                 value={activeUser}
@@ -628,25 +628,25 @@ export default function Home() {
               </select>
             </label>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Mode sementara: pilihan ini disimpan untuk kompatibilitas
-              prototipe, tetapi data sekarang dimiliki oleh akun Supabase yang
-              sedang login.
+              Temporary mode: this selection is kept for prototype
+              compatibility, but data now belongs to the signed-in Supabase
+              account.
             </p>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              Data yang tampil hanya milik akun yang sedang login.
+              Only data from the signed-in account is shown.
             </p>
           </div>
 
           <div className="mt-10">
             <div className="mb-4">
               <p className="text-sm font-semibold uppercase tracking-widest text-slate-500">
-                Ringkasan Bulan Ini
+                This Month
               </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:col-span-2">
-                <p className="text-sm text-slate-400">Sisa Bulan Ini</p>
+                <p className="text-sm text-slate-400">Remaining This Month</p>
                 <p
                   className={`mt-2 text-3xl font-bold sm:text-4xl ${
                     remainingBalance < 0 ? "text-red-300" : ""
@@ -657,21 +657,21 @@ export default function Home() {
               </div>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <p className="text-sm text-slate-400">Pemasukan</p>
+              <p className="text-sm text-slate-400">Income</p>
               <p className="mt-2 text-2xl font-bold text-emerald-400 sm:text-3xl">
                 {rupiahFormatter.format(totalIncome)}
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <p className="text-sm text-slate-400">Pengeluaran</p>
+              <p className="text-sm text-slate-400">Expenses</p>
               <p className="mt-2 text-2xl font-bold sm:text-3xl">
                 {rupiahFormatter.format(totalExpense)}
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:col-span-2 lg:col-span-4">
-              <p className="text-sm text-slate-400">Status Bulanan</p>
+              <p className="text-sm text-slate-400">Monthly Status</p>
               <p
                 className={`mt-2 text-3xl font-bold ${monthlyStatus.className}`}
               >
@@ -694,7 +694,7 @@ export default function Home() {
                   ?.scrollIntoView({ behavior: "smooth" })
               }
             >
-              + Catat Pengeluaran
+              + Add Expense
             </button>
 
             <button
@@ -706,7 +706,7 @@ export default function Home() {
                   ?.scrollIntoView({ behavior: "smooth" })
               }
             >
-              + Catat Pemasukan
+              + Add Income
             </button>
           </div>
         </div>

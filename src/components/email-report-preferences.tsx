@@ -26,7 +26,7 @@ function createSupabaseTimeout() {
 
 function getSupabaseErrorMessage(error: unknown, fallbackMessage: string) {
   if (error instanceof DOMException && error.name === "AbortError") {
-    return "Koneksi Supabase terlalu lama. Coba lagi atau periksa koneksi internet.";
+    return "Supabase connection timed out. Please try again or check your internet connection.";
   }
 
   return error instanceof Error ? error.message : fallbackMessage;
@@ -89,7 +89,7 @@ export default function EmailReportPreferences({
         setError(
           getSupabaseErrorMessage(
             loadError,
-            "Gagal memuat pengaturan laporan email.",
+            "Failed to load email report settings.",
           ),
         );
       } finally {
@@ -158,12 +158,12 @@ export default function EmailReportPreferences({
       }
 
       setRecipientEmail(recipientEmail.trim());
-      setMessage("Pengaturan laporan email berhasil disimpan.");
+      setMessage("Email report settings saved.");
     } catch (saveError) {
       setError(
         getSupabaseErrorMessage(
           saveError,
-          "Gagal menyimpan pengaturan laporan email.",
+          "Failed to save email report settings.",
         ),
       );
     } finally {
@@ -177,18 +177,19 @@ export default function EmailReportPreferences({
       <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
         <div className="border-b border-slate-800 pb-6">
           <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-            Pengaturan Laporan Email
+            Email Report Settings
           </p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Preferensi pengiriman
+            Delivery preferences
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Atur laporan mingguan, bulanan, dan alamat penerima untuk akun ini.
+            Choose weekly or monthly reports and set the recipient email for
+            this account.
           </p>
           <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-            Saat ini pengiriman email masih testing mode dan hanya dikirim ke
-            email Resend yang terverifikasi. Pengiriman ke email lain
-            membutuhkan domain terverifikasi.
+            Email sending is currently in testing mode and only sends to the
+            verified Resend email. Sending to other emails requires a verified
+            domain.
           </p>
         </div>
 
@@ -213,7 +214,7 @@ export default function EmailReportPreferences({
                   Weekly report
                 </span>
                 <span className="mt-1 block text-sm leading-6 text-slate-400">
-                  Aktifkan preferensi laporan mingguan untuk akun ini.
+                  Enable weekly report preference for this account.
                 </span>
               </span>
             </label>
@@ -231,21 +232,21 @@ export default function EmailReportPreferences({
                   Monthly report
                 </span>
                 <span className="mt-1 block text-sm leading-6 text-slate-400">
-                  Aktifkan preferensi laporan bulanan untuk akun ini.
+                  Enable monthly report preference for this account.
                 </span>
               </span>
             </label>
           </div>
 
           <label className="block text-sm font-medium text-slate-300">
-            Email penerima
+            Recipient email
             <input
               className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-60"
               type="email"
               value={recipientEmail}
               disabled={isLoading || isSaving}
               onChange={(event) => updateRecipientEmail(event.target.value)}
-              placeholder={user.email ?? "nama@email.com"}
+              placeholder={user.email ?? "name@email.com"}
             />
           </label>
 
@@ -255,12 +256,12 @@ export default function EmailReportPreferences({
               type="submit"
               disabled={isLoading || isSaving}
             >
-              {isSaving ? "Menyimpan..." : "Simpan Pengaturan"}
+              {isSaving ? "Saving..." : "Save Settings"}
             </button>
 
             {isLoading ? (
               <p className="text-sm text-slate-400">
-                Memuat pengaturan laporan email...
+                Loading email report settings...
               </p>
             ) : null}
           </div>

@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 type ReportType = "weekly" | "monthly";
 
 type FinancialStatus = {
-  label: "Aman" | "Waspada" | "Bahaya";
+  label: "Safe" | "Warning" | "Critical";
   className: string;
   explanation: string;
 };
@@ -25,11 +25,20 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
-const dateFormatter = new Intl.DateTimeFormat("id-ID", {
+const dateFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   month: "long",
   year: "numeric",
 });
+
+const categoryLabels = new Map([
+  ["Belanja Dapur", "Groceries"],
+  ["Transportasi", "Transportation"],
+  ["Tagihan", "Bills"],
+  ["Pendidikan", "Education"],
+  ["Kesehatan", "Health"],
+  ["Lainnya", "Other"],
+]);
 
 function getWeekStart(date: Date) {
   const weekStart = new Date(date);
@@ -68,24 +77,24 @@ function getFinancialStatus(totalIncome: number, totalExpense: number) {
 
   if (totalExpense > totalIncome) {
     return {
-      label: "Bahaya",
+      label: "Critical",
       className: "text-red-300",
-      explanation: "Pengeluaran sudah melebihi pemasukan pada periode ini.",
+      explanation: "Expenses are higher than income for this period.",
     } satisfies FinancialStatus;
   }
 
   if (expenseRatio >= 0.7) {
     return {
-      label: "Waspada",
+      label: "Warning",
       className: "text-amber-300",
-      explanation: "Pengeluaran sudah mendekati pemasukan pada periode ini.",
+      explanation: "Expenses are getting close to income for this period.",
     } satisfies FinancialStatus;
   }
 
   return {
-    label: "Aman",
+    label: "Safe",
     className: "text-emerald-300",
-    explanation: "Pengeluaran masih terkendali pada periode ini.",
+    explanation: "Expenses are still under control for this period.",
   } satisfies FinancialStatus;
 }
 
@@ -95,22 +104,22 @@ function getRecommendation(
   totalIncome: number,
 ) {
   if (totalIncome <= 0) {
-    return "Mulai dari mencatat pemasukan agar sisa saldo bisa dihitung lebih jelas.";
+    return "Start by adding income so the remaining balance is clearer.";
   }
 
-  if (status === "Bahaya") {
-    return topCategory === "Belum ada"
-      ? "Periksa transaksi pengeluaran dan tunda belanja yang belum mendesak."
-      : `Kurangi pengeluaran di kategori ${topCategory} dan prioritaskan kebutuhan utama.`;
+  if (status === "Critical") {
+    return topCategory === "None yet"
+      ? "Review expenses and postpone non-urgent purchases."
+      : `Reduce spending in ${topCategory} and prioritize essentials.`;
   }
 
-  if (status === "Waspada") {
-    return topCategory === "Belum ada"
-      ? "Tetap pantau pengeluaran sebelum menambah transaksi baru."
-      : `Pantau kategori ${topCategory} supaya pengeluaran tidak melewati pemasukan.`;
+  if (status === "Warning") {
+    return topCategory === "None yet"
+      ? "Keep monitoring expenses before adding new transactions."
+      : `Watch ${topCategory} so expenses do not exceed income.`;
   }
 
-  return "Pertahankan kebiasaan mencatat dan sisihkan sebagian pemasukan jika memungkinkan.";
+  return "Keep tracking consistently and set aside part of your income when possible.";
 }
 
 function getResponseError(data: unknown) {
@@ -122,7 +131,7 @@ function getResponseError(data: unknown) {
     }
   }
 
-  return "Gagal mengirim laporan email.";
+  return "Failed to send email report.";
 }
 
 export default function ReportPreview({
@@ -172,7 +181,9 @@ export default function ReportPreview({
     )[0];
 
     const status = getFinancialStatus(totalIncome, totalExpense);
-    const topCategory = topCategoryEntry?.[0] ?? "Belum ada";
+    const topCategory = topCategoryEntry?.[0]
+      ? (categoryLabels.get(topCategoryEntry[0]) ?? topCategoryEntry[0])
+      : "None yet";
     const reportName =
       reportType === "weekly" ? "Weekly Report" : "Monthly Report";
     const periodLabel = `${dateFormatter.format(startDate)} - ${dateFormatter.format(endDate)}`;
@@ -207,7 +218,7 @@ export default function ReportPreview({
     } = await supabase.auth.getSession();
 
     if (error || !session?.access_token) {
-      setSendError(error?.message ?? "Login diperlukan sebelum mengirim laporan.");
+      setSendError(error?.message ?? "Please log in before sending a report.");
       setIsSending(false);
       return;
     }
@@ -240,14 +251,14 @@ export default function ReportPreview({
       }
 
       setSendMessage(
-        "Laporan berhasil dikirim ke email testing Resend yang terverifikasi.",
+        "Report sent to the verified Resend testing email.",
       );
       await onReportSent?.();
     } catch (error) {
       setSendError(
         error instanceof Error
           ? error.message
-          : "Gagal mengirim laporan email.",
+          : "Failed to send email report.",
       );
     } finally {
       setIsSending(false);
@@ -263,18 +274,17 @@ export default function ReportPreview({
         <div className="flex flex-col gap-5 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-              Laporan Keuangan
+              Financial Report
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              Preview laporan pribadi
+              Personal report preview
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Ringkasan ini dibuat dari data akun yang sedang login.
+              This summary is generated from the signed-in account.
             </p>
             <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-              Mode testing: laporan email dikirim ke email Resend yang
-              terverifikasi. Pengiriman ke email lain membutuhkan domain
-              terverifikasi.
+              Testing mode: email reports are sent only to the verified Resend
+              email. Sending to other emails requires a verified domain.
             </p>
           </div>
 
@@ -306,21 +316,21 @@ export default function ReportPreview({
 
           <div className="mt-5 grid gap-4 sm:grid-cols-3">
             <div>
-              <p className="text-sm text-slate-500">Total Pemasukan</p>
+              <p className="text-sm text-slate-500">Total Income</p>
               <p className="mt-2 text-xl font-bold text-emerald-300">
                 {rupiahFormatter.format(report.totalIncome)}
               </p>
             </div>
 
             <div>
-              <p className="text-sm text-slate-500">Total Pengeluaran</p>
+              <p className="text-sm text-slate-500">Total Expenses</p>
               <p className="mt-2 text-xl font-bold text-red-300">
                 {rupiahFormatter.format(report.totalExpense)}
               </p>
             </div>
 
             <div>
-              <p className="text-sm text-slate-500">Sisa Saldo</p>
+              <p className="text-sm text-slate-500">Remaining Balance</p>
               <p
                 className={`mt-2 text-xl font-bold ${
                   report.remainingBalance < 0 ? "text-red-300" : "text-white"
@@ -333,7 +343,7 @@ export default function ReportPreview({
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-              <p className="text-sm text-slate-500">Status Keuangan</p>
+              <p className="text-sm text-slate-500">Financial Status</p>
               <p className={`mt-2 text-2xl font-bold ${report.status.className}`}>
                 {report.status.label}
               </p>
@@ -343,7 +353,7 @@ export default function ReportPreview({
             </div>
 
             <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-              <p className="text-sm text-slate-500">Kategori Terbesar</p>
+              <p className="text-sm text-slate-500">Top Category</p>
               <p className="mt-2 text-2xl font-bold text-white">
                 {report.topCategory}
               </p>
@@ -360,7 +370,7 @@ export default function ReportPreview({
               disabled={isSending}
               onClick={sendReport}
             >
-              {isSending ? "Mengirim laporan..." : "Kirim Laporan ke Email"}
+              {isSending ? "Sending report..." : "Send Report Email"}
             </button>
 
             {sendMessage ? (

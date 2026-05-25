@@ -5,14 +5,14 @@ import type { Income } from "@/src/types/income";
 import type { ActiveUser } from "@/src/types/user";
 import { useMemo, useState } from "react";
 
-type TransactionFilter = "Semua" | "Pemasukan" | "Pengeluaran";
+type TransactionFilter = "All" | "Income" | "Expenses";
 
 type CombinedTransaction =
   | {
       id: string;
       owner: string;
       createdAt: number;
-      type: "Pemasukan";
+      type: "Income";
       amount: number;
       title: string;
       note: string;
@@ -21,14 +21,28 @@ type CombinedTransaction =
       id: string;
       owner: string;
       createdAt: number;
-      type: "Pengeluaran";
+      type: "Expenses";
       amount: number;
       title: string;
       paymentMethod: string;
       note: string;
     };
 
-const filters: TransactionFilter[] = ["Semua", "Pemasukan", "Pengeluaran"];
+const filters: TransactionFilter[] = ["All", "Income", "Expenses"];
+const categoryLabels = new Map([
+  ["Belanja Dapur", "Groceries"],
+  ["Transportasi", "Transportation"],
+  ["Tagihan", "Bills"],
+  ["Pendidikan", "Education"],
+  ["Kesehatan", "Health"],
+  ["Lainnya", "Other"],
+]);
+const paymentMethodLabels = new Map([
+  ["Tunai", "Cash"],
+  ["Kartu Debit", "Debit Card"],
+  ["E-Wallet", "E-Wallet"],
+  ["Transfer Bank", "Bank Transfer"],
+]);
 
 const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   style: "currency",
@@ -51,14 +65,14 @@ export default function TransactionHistory({
   onDeleteExpense,
   onDeleteIncome,
 }: TransactionHistoryProps) {
-  const [filter, setFilter] = useState<TransactionFilter>("Semua");
+  const [filter, setFilter] = useState<TransactionFilter>("All");
 
   const transactions = useMemo(() => {
     const incomeTransactions: CombinedTransaction[] = incomes.map((income) => ({
       id: income.id,
       owner: income.owner,
       createdAt: income.createdAt ?? 0,
-      type: "Pemasukan",
+      type: "Income",
       amount: income.amount,
       title: income.source,
       note: income.note,
@@ -69,9 +83,9 @@ export default function TransactionHistory({
         id: expense.id,
         owner: expense.owner,
         createdAt: expense.createdAt ?? 0,
-        type: "Pengeluaran",
+        type: "Expenses",
         amount: expense.amount,
-        title: expense.category,
+        title: categoryLabels.get(expense.category) ?? expense.category,
         paymentMethod: expense.paymentMethod,
         note: expense.note,
       }),
@@ -85,7 +99,7 @@ export default function TransactionHistory({
 
   const filteredTransactions = useMemo(
     () =>
-      filter === "Semua"
+      filter === "All"
         ? transactions
         : transactions.filter((transaction) => transaction.type === filter),
     [filter, transactions],
@@ -100,13 +114,13 @@ export default function TransactionHistory({
         <div className="flex flex-col gap-5 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-              Riwayat Transaksi
+              Transaction History
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              Semua catatan {activeUser}
+              All records for {activeUser}
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Gabungan pemasukan dan pengeluaran terbaru.
+              Recent income and expense records in one place.
             </p>
           </div>
 
@@ -131,11 +145,11 @@ export default function TransactionHistory({
         <div className="mt-6 space-y-4">
           {filteredTransactions.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-              Belum ada transaksi untuk filter ini.
+              No transactions for this filter yet.
             </div>
           ) : (
             filteredTransactions.map((transaction) => {
-              const isIncome = transaction.type === "Pemasukan";
+              const isIncome = transaction.type === "Income";
 
               return (
                 <article
@@ -169,7 +183,12 @@ export default function TransactionHistory({
 
                     <p className="mt-1 text-sm text-slate-300">
                       {transaction.title}
-                      {!isIncome ? ` / ${transaction.paymentMethod}` : ""}
+                      {!isIncome
+                        ? ` / ${
+                            paymentMethodLabels.get(transaction.paymentMethod) ??
+                            transaction.paymentMethod
+                          }`
+                        : ""}
                     </p>
 
                     {transaction.note ? (
@@ -188,7 +207,7 @@ export default function TransactionHistory({
                         : onDeleteExpense(transaction.id)
                     }
                   >
-                    Hapus
+                  Delete
                   </button>
                 </article>
               );

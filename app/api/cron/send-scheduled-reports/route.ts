@@ -58,11 +58,20 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
-const dateFormatter = new Intl.DateTimeFormat("id-ID", {
+const dateFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   month: "long",
   year: "numeric",
 });
+
+const categoryLabels = new Map([
+  ["Belanja Dapur", "Groceries"],
+  ["Transportasi", "Transportation"],
+  ["Tagihan", "Bills"],
+  ["Pendidikan", "Education"],
+  ["Kesehatan", "Health"],
+  ["Lainnya", "Other"],
+]);
 
 function getBearerToken(request: Request) {
   const authorization = request.headers.get("authorization");
@@ -127,7 +136,7 @@ function getErrorMessage(error: unknown) {
     }
   }
 
-  return "Gagal menjalankan dry-run laporan terjadwal.";
+  return "Failed to run scheduled report dry run.";
 }
 
 function createWeeklyReportSummary({
@@ -151,7 +160,7 @@ function createWeeklyReportSummary({
   );
   const categoryTotals = expenses.reduce<Record<string, number>>(
     (totals, expense) => {
-      const category = expense.category ?? "Lainnya";
+      const category = expense.category ?? "Other";
 
       return {
         ...totals,
@@ -172,7 +181,9 @@ function createWeeklyReportSummary({
     totalExpense,
     remainingBalance: totalIncome - totalExpense,
     transactionCount: incomes.length + expenses.length,
-    topExpenseCategory: topCategory ?? "Belum ada",
+    topExpenseCategory: topCategory
+      ? (categoryLabels.get(topCategory) ?? topCategory)
+      : "None yet",
   };
 }
 
@@ -187,14 +198,14 @@ function buildDryRunEmail({
 }) {
   const rows = [
     ["Report type", "weekly"],
-    ["Periode", report.periodLabel],
-    ["Total pemasukan", rupiahFormatter.format(report.totalIncome)],
-    ["Total pengeluaran", rupiahFormatter.format(report.totalExpense)],
-    ["Sisa saldo", rupiahFormatter.format(report.remainingBalance)],
-    ["Jumlah transaksi", String(report.transactionCount)],
-    ["Kategori pengeluaran terbesar", report.topExpenseCategory],
+    ["Period", report.periodLabel],
+    ["Total income", rupiahFormatter.format(report.totalIncome)],
+    ["Total expenses", rupiahFormatter.format(report.totalExpense)],
+    ["Remaining balance", rupiahFormatter.format(report.remainingBalance)],
+    ["Transaction count", String(report.transactionCount)],
+    ["Top expense category", report.topExpenseCategory],
   ];
-  const preferredRecipient = preference.recipient_email ?? "Belum diatur";
+  const preferredRecipient = preference.recipient_email ?? "Not set";
   const text = [
     "RumahBudget Scheduled Email Dry Run",
     `User ID: ${preference.user_id ?? "unknown"}`,
@@ -203,7 +214,7 @@ function buildDryRunEmail({
     "",
     ...rows.map(([label, value]) => `${label}: ${value}`),
     "",
-    "Mode testing: email terjadwal hanya dikirim ke email Resend yang terverifikasi. Pengiriman ke email preferensi membutuhkan domain terverifikasi.",
+    "Testing mode: scheduled email is sent only to the verified Resend email. Sending to the saved recipient preference requires a verified domain.",
   ].join("\n");
   const htmlRows = rows
     .map(
@@ -221,13 +232,13 @@ function buildDryRunEmail({
       <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a;">
         <h1 style="margin-bottom: 8px;">RumahBudget Scheduled Email Dry Run</h1>
         <p style="margin-top: 0; color: #64748b;">User ID: ${escapeHtml(preference.user_id ?? "unknown")}</p>
-        <p style="margin-top: 0; color: #64748b;">Mode testing Resend: email dikirim ke ${escapeHtml(recipientEmail)}</p>
-        <p style="margin-top: 0; color: #64748b;">Preferensi penerima tersimpan: ${escapeHtml(preferredRecipient)}</p>
+        <p style="margin-top: 0; color: #64748b;">Resend testing mode: email sent to ${escapeHtml(recipientEmail)}</p>
+        <p style="margin-top: 0; color: #64748b;">Saved recipient preference: ${escapeHtml(preferredRecipient)}</p>
         <table style="width: 100%; border-collapse: collapse; margin-top: 24px; border: 1px solid #e2e8f0;">
           <tbody>${htmlRows}</tbody>
         </table>
         <p style="margin-top: 24px; color: #64748b; font-size: 13px;">
-          Ini dry-run testing mode. Pengiriman ke email preferensi pengguna membutuhkan domain Resend yang terverifikasi.
+          This is dry-run testing mode. Sending to user recipient preferences requires a verified Resend domain.
         </p>
       </div>
     `,

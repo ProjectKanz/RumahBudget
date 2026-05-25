@@ -5,19 +5,19 @@ import type { ActiveUser } from "@/src/types/user";
 import { FormEvent, useMemo, useState } from "react";
 
 const categories = [
-  { label: "Belanja Dapur", value: "Belanja Dapur" },
-  { label: "Transportasi", value: "Transportasi" },
-  { label: "Tagihan", value: "Tagihan" },
-  { label: "Pendidikan", value: "Pendidikan" },
-  { label: "Kesehatan", value: "Kesehatan" },
-  { label: "Lainnya", value: "Lainnya" },
+  { label: "Groceries", value: "Belanja Dapur" },
+  { label: "Transportation", value: "Transportasi" },
+  { label: "Bills", value: "Tagihan" },
+  { label: "Education", value: "Pendidikan" },
+  { label: "Health", value: "Kesehatan" },
+  { label: "Other", value: "Lainnya" },
 ];
 
 const paymentMethods = [
-  { label: "Tunai", value: "Tunai" },
-  { label: "Kartu Debit", value: "Kartu Debit" },
+  { label: "Cash", value: "Tunai" },
+  { label: "Debit Card", value: "Kartu Debit" },
   { label: "E-Wallet", value: "E-Wallet" },
-  { label: "Transfer Bank", value: "Transfer Bank" },
+  { label: "Bank Transfer", value: "Transfer Bank" },
 ];
 
 const inputClassName =
@@ -30,6 +30,16 @@ const rupiahFormatter = new Intl.NumberFormat("id-ID", {
   currency: "IDR",
   maximumFractionDigits: 0,
 });
+
+const categoryLabels = new Map(
+  categories.map((category) => [category.value, category.label]),
+);
+const paymentMethodLabels = new Map(
+  paymentMethods.map((paymentMethod) => [
+    paymentMethod.value,
+    paymentMethod.label,
+  ]),
+);
 
 type ExpenseFormProps = {
   activeUser: ActiveUser;
@@ -66,7 +76,7 @@ export default function ExpenseForm({
     const numericAmount = Number(amount);
 
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      setError("Masukkan amount yang lebih besar dari 0.");
+      setError("Enter an amount greater than 0.");
       return;
     }
 
@@ -109,19 +119,19 @@ export default function ExpenseForm({
       <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
         <div className="mb-8 max-w-2xl">
           <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-            Catat Pengeluaran
+            Add Expense
           </p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Tambah transaksi pribadi
+            Add a personal transaction
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Tersimpan untuk {activeUser} di prototype lokal ini.
+            Saved for {activeUser} and included in your private account totals.
           </p>
         </div>
 
         <form className="grid gap-5 sm:grid-cols-2" onSubmit={handleSubmit}>
           <label className={labelClassName}>
-            Jumlah
+            Amount
             <input
               className={inputClassName}
               name="amount"
@@ -135,7 +145,7 @@ export default function ExpenseForm({
           </label>
 
           <label className={labelClassName}>
-            Kategori
+            Category
             <select
               className={inputClassName}
               name="category"
@@ -151,7 +161,7 @@ export default function ExpenseForm({
           </label>
 
           <label className={labelClassName}>
-            Metode Pembayaran
+            Payment Method
             <select
               className={inputClassName}
               name="paymentMethod"
@@ -167,12 +177,12 @@ export default function ExpenseForm({
           </label>
 
           <label className={`${labelClassName} sm:col-span-2`}>
-            Catatan
+            Note
             <input
               className={inputClassName}
               name="note"
               type="text"
-              placeholder="Contoh: belanja mingguan di pasar"
+              placeholder="Example: weekly grocery shopping"
               value={note}
               onChange={(event) => setNote(event.target.value)}
             />
@@ -196,7 +206,7 @@ export default function ExpenseForm({
               type="submit"
               disabled={isSaving}
             >
-              {isSaving ? "Menyimpan..." : "Simpan Pengeluaran"}
+              {isSaving ? "Saving..." : "Save Expense"}
             </button>
           </div>
         </form>
@@ -206,7 +216,7 @@ export default function ExpenseForm({
         <div className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-              Riwayat Pengeluaran
+              Expense History
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
               Total {rupiahFormatter.format(totalExpense)}
@@ -214,20 +224,19 @@ export default function ExpenseForm({
           </div>
           <p className="text-sm text-slate-400">
             {isLoadingExpenses
-              ? "Memuat data dari Supabase..."
-              : `${expenses.length} transaksi tersimpan`}
+              ? "Loading data from Supabase..."
+              : `${expenses.length} saved transactions`}
           </p>
         </div>
 
         <div className="mt-6 space-y-4">
           {isLoadingExpenses ? (
             <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-              Memuat pengeluaran dari Supabase...
+              Loading expenses from Supabase...
             </div>
           ) : expenses.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-              Belum ada pengeluaran. Tambahkan transaksi pertama dari form di
-              atas.
+              No expenses yet. Add your first transaction from the form above.
             </div>
           ) : (
             expenses.map((expense) => (
@@ -240,7 +249,9 @@ export default function ExpenseForm({
                     {rupiahFormatter.format(expense.amount)}
                   </p>
                   <p className="mt-1 text-sm text-slate-300">
-                    {expense.category} / {expense.paymentMethod}
+                    {categoryLabels.get(expense.category) ?? expense.category} /{" "}
+                    {paymentMethodLabels.get(expense.paymentMethod) ??
+                      expense.paymentMethod}
                   </p>
                   {expense.note ? (
                     <p className="mt-2 text-sm text-slate-500">
@@ -254,7 +265,7 @@ export default function ExpenseForm({
                   type="button"
                   onClick={() => onDeleteExpense(expense.id)}
                 >
-                  Hapus
+                  Delete
                 </button>
               </article>
             ))
