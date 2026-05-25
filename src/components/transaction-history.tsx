@@ -3,10 +3,11 @@
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
 import type { MoneyAccount } from "@/src/types/money-account";
+import type { Transfer } from "@/src/types/transfer";
 import type { ActiveUser } from "@/src/types/user";
 import { useMemo, useState } from "react";
 
-type TransactionFilter = "All" | "Income" | "Expenses";
+type TransactionFilter = "All" | "Income" | "Expenses" | "Transfers";
 
 type CombinedTransaction =
   | {
@@ -29,9 +30,20 @@ type CombinedTransaction =
       title: string;
       paymentMethod: string;
       note: string;
+    }
+  | {
+      id: string;
+      owner: string;
+      createdAt: number;
+      type: "Transfers";
+      amount: number;
+      fromAccountName: string;
+      toAccountName: string;
+      title: string;
+      note: string;
     };
 
-const filters: TransactionFilter[] = ["All", "Income", "Expenses"];
+const filters: TransactionFilter[] = ["All", "Income", "Expenses", "Transfers"];
 const categoryLabels = new Map([
   ["Belanja Dapur", "Groceries"],
   ["Transportasi", "Transportation"],
@@ -58,8 +70,10 @@ type TransactionHistoryProps = {
   moneyAccounts: MoneyAccount[];
   expenses: Expense[];
   incomes: Income[];
+  transfers: Transfer[];
   onDeleteExpense: (id: string) => void | Promise<void>;
   onDeleteIncome: (id: string) => void | Promise<void>;
+  onDeleteTransfer: (id: string) => void | Promise<void>;
 };
 
 export default function TransactionHistory({
@@ -67,8 +81,10 @@ export default function TransactionHistory({
   moneyAccounts,
   expenses,
   incomes,
+  transfers,
   onDeleteExpense,
   onDeleteIncome,
+  onDeleteTransfer,
 }: TransactionHistoryProps) {
   const [filter, setFilter] = useState<TransactionFilter>("All");
 
@@ -100,12 +116,36 @@ export default function TransactionHistory({
         note: expense.note,
       }),
     );
+    const transferTransactions: CombinedTransaction[] = transfers.map(
+      (transfer) => {
+        const fromAccountName =
+          accountNames.get(transfer.fromAccountId) ?? "Unassigned";
+        const toAccountName =
+          accountNames.get(transfer.toAccountId) ?? "Unassigned";
 
-    return [...incomeTransactions, ...expenseTransactions].sort(
+        return {
+          id: transfer.id,
+          owner: transfer.userId,
+          createdAt: transfer.createdAt ?? 0,
+          type: "Transfers",
+          amount: transfer.amount,
+          fromAccountName,
+          toAccountName,
+          title: `${fromAccountName} to ${toAccountName}`,
+          note: transfer.note,
+        };
+      },
+    );
+
+    return [
+      ...incomeTransactions,
+      ...expenseTransactions,
+      ...transferTransactions,
+    ].sort(
       (firstTransaction, secondTransaction) =>
         secondTransaction.createdAt - firstTransaction.createdAt,
     );
-  }, [expenses, incomes, moneyAccounts]);
+  }, [expenses, incomes, moneyAccounts, transfers]);
 
   const filteredTransactions = useMemo(
     () =>
@@ -134,7 +174,7 @@ export default function TransactionHistory({
             </p>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 rounded-full border border-slate-800 bg-slate-950 p-1">
+          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-1 sm:grid-cols-4 sm:rounded-full">
             {filters.map((option) => (
               <button
                 className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
@@ -160,17 +200,24 @@ export default function TransactionHistory({
           ) : (
             filteredTransactions.map((transaction) => {
               const isIncome = transaction.type === "Income";
+              const isTransfer = transaction.type === "Transfers";
 
               return (
                 <article
-                  className="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  className={`flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between ${
+                    isTransfer
+                      ? "border-sky-400/30 bg-sky-400/10"
+                      : "border-slate-800 bg-slate-950/70"
+                  }`}
                   key={`${transaction.type}-${transaction.id}`}
                 >
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span
                         className={`rounded-full px-3 py-1 text-xs font-bold ${
-                          isIncome
+                          isTransfer
+                            ? "bg-sky-400/15 text-sky-300"
+                            : isIncome
                             ? "bg-emerald-400/15 text-emerald-300"
                             : "bg-red-400/15 text-red-300"
                         }`}
@@ -184,16 +231,20 @@ export default function TransactionHistory({
 
                     <p
                       className={`mt-3 text-xl font-bold ${
-                        isIncome ? "text-emerald-300" : "text-red-300"
+                        isTransfer
+                          ? "text-sky-300"
+                          : isIncome
+                            ? "text-emerald-300"
+                            : "text-red-300"
                       }`}
                     >
-                      {isIncome ? "+" : "-"}
+                      {isTransfer ? "" : isIncome ? "+" : "-"}
                       {rupiahFormatter.format(transaction.amount)}
                     </p>
 
                     <p className="mt-1 text-sm text-slate-300">
                       {transaction.title}
-                      {!isIncome
+                      {!isIncome && !isTransfer
                         ? ` / ${
                             paymentMethodLabels.get(transaction.paymentMethod) ??
                             transaction.paymentMethod
@@ -201,7 +252,9 @@ export default function TransactionHistory({
                         : ""}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">
-                      Account: {transaction.accountName}
+                      {isTransfer
+                        ? `Transfer: ${transaction.fromAccountName} to ${transaction.toAccountName}`
+                        : `Account: ${transaction.accountName}`}
                     </p>
 
                     {transaction.note ? (
@@ -217,6 +270,8 @@ export default function TransactionHistory({
                     onClick={() =>
                       isIncome
                         ? onDeleteIncome(transaction.id)
+                        : isTransfer
+                          ? onDeleteTransfer(transaction.id)
                         : onDeleteExpense(transaction.id)
                     }
                   >

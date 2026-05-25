@@ -9,6 +9,7 @@ import MoneyAccounts from "@/src/components/money-accounts";
 import ReportPreview from "@/src/components/report-preview";
 import SupabaseTestPanel from "@/src/components/supabase-test-panel";
 import TransactionHistory from "@/src/components/transaction-history";
+import TransferMoney from "@/src/components/transfer-money";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import type { EmailReport } from "@/src/types/email-report";
 import type { Expense } from "@/src/types/expense";
@@ -18,6 +19,7 @@ import type {
   MoneyAccountType,
 } from "@/src/types/money-account";
 import type { ActiveUser } from "@/src/types/user";
+import type { Transfer } from "@/src/types/transfer";
 import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -80,6 +82,16 @@ type SupabaseMoneyAccountRow = {
   created_at?: string | null;
 };
 
+type SupabaseTransferRow = {
+  id?: string | number;
+  user_id?: string | null;
+  from_account_id?: string | null;
+  to_account_id?: string | null;
+  amount?: number | string | null;
+  note?: string | null;
+  created_at?: string | null;
+};
+
 function isMoneyAccountType(value: unknown): value is MoneyAccountType {
   return (
     value === "Bank" ||
@@ -120,10 +132,12 @@ export default function Home() {
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [emailReports, setEmailReports] = useState<EmailReport[]>([]);
   const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccount[]>([]);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [expenseError, setExpenseError] = useState("");
   const [incomeError, setIncomeError] = useState("");
   const [emailReportError, setEmailReportError] = useState("");
   const [moneyAccountError, setMoneyAccountError] = useState("");
+  const [transferError, setTransferError] = useState("");
   const [isExpenseLoading, setIsExpenseLoading] = useState(false);
   const [isIncomeLoading, setIsIncomeLoading] = useState(false);
   const [isEmailReportLoading, setIsEmailReportLoading] = useState(false);
@@ -364,6 +378,60 @@ export default function Home() {
     }
   }, [authUser]);
 
+  const loadTransfersFromSupabase = useCallback(async () => {
+    if (!authUser) {
+      setTransfers([]);
+      return;
+    }
+
+    if (!supabase) {
+      setTransferError(missingSupabaseEnvMessage);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { data, error } = await supabase
+        .from("transfers")
+        .select("*")
+        .eq("user_id", authUser.id)
+        .order("created_at", { ascending: false })
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setTransferError(error.message);
+        return;
+      }
+
+      const nextTransfers = (data as SupabaseTransferRow[]).map(
+        (transfer): Transfer => ({
+          id: String(transfer.id ?? crypto.randomUUID()),
+          userId: transfer.user_id ?? authUser.id,
+          fromAccountId: transfer.from_account_id ?? "",
+          toAccountId: transfer.to_account_id ?? "",
+          amount: Number(transfer.amount ?? 0),
+          note: transfer.note ?? "",
+          createdAt: transfer.created_at
+            ? new Date(transfer.created_at).getTime()
+            : 0,
+        }),
+      );
+
+      setTransfers(nextTransfers);
+      setTransferError("");
+    } catch (error) {
+      setTransferError(
+        getSupabaseErrorMessage(
+          error,
+          "Failed to load transfers from Supabase.",
+        ),
+      );
+    } finally {
+      timeout.clear();
+    }
+  }, [authUser]);
+
   useEffect(() => {
     const storedActiveUser = window.localStorage.getItem(activeUserStorageKey);
     const nextActiveUser = isActiveUser(storedActiveUser)
@@ -441,6 +509,7 @@ export default function Home() {
         setIncomes([]);
         setEmailReports([]);
         setMoneyAccounts([]);
+        setTransfers([]);
       });
       return;
     }
@@ -450,6 +519,7 @@ export default function Home() {
       void loadIncomesFromSupabase();
       void loadEmailReportsFromSupabase();
       void loadMoneyAccountsFromSupabase();
+      void loadTransfersFromSupabase();
     });
   }, [
     authUser,
@@ -457,6 +527,7 @@ export default function Home() {
     loadExpensesFromSupabase,
     loadIncomesFromSupabase,
     loadMoneyAccountsFromSupabase,
+    loadTransfersFromSupabase,
   ]);
 
   useEffect(() => {
@@ -506,8 +577,18 @@ export default function Home() {
       balances[expense.accountId] -= expense.amount;
     });
 
+    transfers.forEach((transfer) => {
+      if (transfer.toAccountId && transfer.toAccountId in balances) {
+        balances[transfer.toAccountId] += transfer.amount;
+      }
+
+      if (transfer.fromAccountId && transfer.fromAccountId in balances) {
+        balances[transfer.fromAccountId] -= transfer.amount;
+      }
+    });
+
     return balances;
-  }, [activeExpenses, activeIncomes, moneyAccounts]);
+  }, [activeExpenses, activeIncomes, moneyAccounts, transfers]);
 
   const remainingBalance = totalIncome - totalExpense;
   const expenseRatio = totalIncome > 0 ? totalExpense / totalIncome : 0;
@@ -792,6 +873,95 @@ export default function Home() {
     }
   }
 
+  async function addTransfer(transfer: {
+    amount: number;
+    fromAccountId: string;
+    note: string;
+    toAccountId: string;
+  }) {
+    if (!supabase) {
+      setTransferError(missingSupabaseEnvMessage);
+      return false;
+    }
+
+    if (!authUser) {
+      setTransferError("Please log in before saving a transfer.");
+      return false;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { error } = await supabase
+        .from("transfers")
+        .insert({
+          user_id: authUser.id,
+          from_account_id: transfer.fromAccountId,
+          to_account_id: transfer.toAccountId,
+          amount: transfer.amount,
+          note: transfer.note,
+        })
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setTransferError(error.message);
+        return false;
+      }
+
+      await loadTransfersFromSupabase();
+      return true;
+    } catch (error) {
+      setTransferError(
+        getSupabaseErrorMessage(
+          error,
+          "Failed to save transfer to Supabase.",
+        ),
+      );
+      return false;
+    } finally {
+      timeout.clear();
+    }
+  }
+
+  async function deleteTransfer(id: string) {
+    if (!supabase) {
+      setTransferError(missingSupabaseEnvMessage);
+      return;
+    }
+
+    if (!authUser) {
+      setTransferError("Please log in before deleting a transfer.");
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { error } = await supabase
+        .from("transfers")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", authUser.id)
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setTransferError(error.message);
+        return;
+      }
+
+      await loadTransfersFromSupabase();
+    } catch (error) {
+      setTransferError(
+        getSupabaseErrorMessage(
+          error,
+          "Failed to delete transfer from Supabase.",
+        ),
+      );
+    } finally {
+      timeout.clear();
+    }
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-white">
       {isAuthLoading ? (
@@ -955,6 +1125,12 @@ export default function Home() {
         onArchiveAccount={archiveMoneyAccount}
       />
 
+      <TransferMoney
+        accounts={moneyAccounts}
+        error={transferError}
+        onAddTransfer={addTransfer}
+      />
+
       <ReportPreview
         expenses={activeExpenses}
         incomes={activeIncomes}
@@ -974,8 +1150,10 @@ export default function Home() {
         moneyAccounts={moneyAccounts}
         expenses={activeExpenses}
         incomes={activeIncomes}
+        transfers={transfers}
         onDeleteExpense={deleteExpense}
         onDeleteIncome={deleteIncome}
+        onDeleteTransfer={deleteTransfer}
       />
 
       <IncomeForm
