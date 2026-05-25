@@ -1,10 +1,10 @@
 "use client";
 
+import { formatCurrency } from "@/src/lib/format";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
 import type { MoneyAccount } from "@/src/types/money-account";
 import type { Transfer } from "@/src/types/transfer";
-import type { ActiveUser } from "@/src/types/user";
 import { useMemo, useState } from "react";
 
 type TransactionFilter = "All" | "Income" | "Expenses" | "Transfers";
@@ -59,14 +59,8 @@ const paymentMethodLabels = new Map([
   ["Transfer Bank", "Bank Transfer"],
 ]);
 
-const rupiahFormatter = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
-
 type TransactionHistoryProps = {
-  activeUser: ActiveUser;
+  accountLabel: string;
   moneyAccounts: MoneyAccount[];
   expenses: Expense[];
   incomes: Income[];
@@ -77,7 +71,7 @@ type TransactionHistoryProps = {
 };
 
 export default function TransactionHistory({
-  activeUser,
+  accountLabel,
   moneyAccounts,
   expenses,
   incomes,
@@ -167,7 +161,7 @@ export default function TransactionHistory({
               Transaction History
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-              All records for {activeUser}
+              All records for {accountLabel}
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-400">
               Recent income and expense records in one place.
@@ -239,7 +233,7 @@ export default function TransactionHistory({
                       }`}
                     >
                       {isTransfer ? "" : isIncome ? "+" : "-"}
-                      {rupiahFormatter.format(transaction.amount)}
+                      {formatCurrency(transaction.amount)}
                     </p>
 
                     <p className="mt-1 text-sm text-slate-300">

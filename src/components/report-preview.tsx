@@ -1,5 +1,6 @@
 "use client";
 
+import { formatCurrency } from "@/src/lib/format";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
@@ -18,12 +19,6 @@ type ReportPreviewProps = {
   incomes: Income[];
   onReportSent?: () => void | Promise<void>;
 };
-
-const rupiahFormatter = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
@@ -233,9 +228,9 @@ export default function ReportPreview({
         body: JSON.stringify({
           reportType: report.reportName,
           periodLabel: report.periodLabel,
-          totalIncome: rupiahFormatter.format(report.totalIncome),
-          totalExpense: rupiahFormatter.format(report.totalExpense),
-          remainingBalance: rupiahFormatter.format(report.remainingBalance),
+          totalIncome: formatCurrency(report.totalIncome),
+          totalExpense: formatCurrency(report.totalExpense),
+          remainingBalance: formatCurrency(report.remainingBalance),
           financialStatus: report.status.label,
           topExpenseCategory: report.topCategory,
           explanation: report.status.explanation,
@@ -318,14 +313,14 @@ export default function ReportPreview({
             <div>
               <p className="text-sm text-slate-500">Total Income</p>
               <p className="mt-2 text-xl font-bold text-emerald-300">
-                {rupiahFormatter.format(report.totalIncome)}
+                {formatCurrency(report.totalIncome)}
               </p>
             </div>
 
             <div>
               <p className="text-sm text-slate-500">Total Expenses</p>
               <p className="mt-2 text-xl font-bold text-red-300">
-                {rupiahFormatter.format(report.totalExpense)}
+                {formatCurrency(report.totalExpense)}
               </p>
             </div>
 
@@ -336,7 +331,7 @@ export default function ReportPreview({
                   report.remainingBalance < 0 ? "text-red-300" : "text-white"
                 }`}
               >
-                {rupiahFormatter.format(report.remainingBalance)}
+                {formatCurrency(report.remainingBalance)}
               </p>
             </div>
           </div>

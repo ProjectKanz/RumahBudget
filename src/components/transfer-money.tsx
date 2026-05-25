@@ -9,6 +9,7 @@ const inputClassName =
 const labelClassName = "text-sm font-medium text-slate-300";
 
 type TransferMoneyProps = {
+  accountBalances: Record<string, number>;
   accounts: MoneyAccount[];
   error: string;
   onAddTransfer: (transfer: {
@@ -20,6 +21,7 @@ type TransferMoneyProps = {
 };
 
 export default function TransferMoney({
+  accountBalances,
   accounts,
   error,
   onAddTransfer,
@@ -66,6 +68,18 @@ export default function TransferMoney({
 
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
       setFormError("Enter a transfer amount greater than 0.");
+      return;
+    }
+
+    const fromAccount = accounts.find(
+      (account) => account.id === selectedFromAccountId,
+    );
+    const fromAccountBalance = fromAccount
+      ? (accountBalances[fromAccount.id] ?? fromAccount.initialBalance)
+      : 0;
+
+    if (numericAmount > fromAccountBalance) {
+      setFormError("Transfer amount cannot exceed the From Account balance.");
       return;
     }
 
@@ -156,7 +170,7 @@ export default function TransferMoney({
               value={amount}
               disabled={!hasEnoughAccounts}
               onChange={(event) => setAmount(event.target.value)}
-              placeholder="Rp0"
+              placeholder="Rp 0"
             />
           </label>
 

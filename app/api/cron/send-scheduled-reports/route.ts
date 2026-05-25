@@ -1,3 +1,4 @@
+import { formatCurrency } from "@/src/lib/format";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 
@@ -51,12 +52,6 @@ type WeeklyReportSummary = {
   transactionCount: number;
   topExpenseCategory: string;
 };
-
-const rupiahFormatter = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
@@ -199,9 +194,9 @@ function buildDryRunEmail({
   const rows = [
     ["Report type", "weekly"],
     ["Period", report.periodLabel],
-    ["Total income", rupiahFormatter.format(report.totalIncome)],
-    ["Total expenses", rupiahFormatter.format(report.totalExpense)],
-    ["Remaining balance", rupiahFormatter.format(report.remainingBalance)],
+    ["Total income", formatCurrency(report.totalIncome)],
+    ["Total expenses", formatCurrency(report.totalExpense)],
+    ["Remaining balance", formatCurrency(report.remainingBalance)],
     ["Transaction count", String(report.transactionCount)],
     ["Top expense category", report.topExpenseCategory],
   ];

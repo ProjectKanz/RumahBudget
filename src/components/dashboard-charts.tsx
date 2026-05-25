@@ -2,15 +2,8 @@
 
 import type { Expense } from "@/src/types/expense";
 import type { MoneyAccount } from "@/src/types/money-account";
+import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import { useMemo } from "react";
-
-const rupiahFormatter = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
-
-const hiddenValue = "••••••";
 
 const categoryLabels = new Map([
   ["Belanja Dapur", "Groceries"],
@@ -62,7 +55,9 @@ function SimpleBarList({
             <div className="mb-2 flex items-center justify-between gap-3 text-sm">
               <span className="font-medium text-slate-300">{item.label}</span>
               <span className="shrink-0 text-slate-400">
-                {isBalanceHidden ? hiddenValue : rupiahFormatter.format(item.value)}
+                {isBalanceHidden
+                  ? hiddenBalanceLabel
+                  : formatCurrency(item.value)}
               </span>
             </div>
             <div className="h-3 overflow-hidden rounded-full bg-slate-800">

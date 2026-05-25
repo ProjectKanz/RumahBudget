@@ -1,23 +1,12 @@
 "use client";
 
+import { formatCurrency } from "@/src/lib/format";
 import type { Income } from "@/src/types/income";
 import type { MoneyAccount } from "@/src/types/money-account";
-import type { ActiveUser } from "@/src/types/user";
 import { FormEvent, useMemo, useState } from "react";
 
-const inputClassName =
-  "mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20";
-
-const labelClassName = "text-sm font-medium text-slate-300";
-
-const rupiahFormatter = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
-
 type IncomeFormProps = {
-  activeUser: ActiveUser;
+  accountLabel: string;
   moneyAccounts: MoneyAccount[];
   incomes: Income[];
   onAddIncome: (income: Income) => Promise<boolean>;
@@ -26,8 +15,13 @@ type IncomeFormProps = {
   isLoadingIncomes: boolean;
 };
 
+const inputClassName =
+  "mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20";
+
+const labelClassName = "text-sm font-medium text-slate-300";
+
 export default function IncomeForm({
-  activeUser,
+  accountLabel,
   moneyAccounts,
   incomes,
   onAddIncome,
@@ -75,7 +69,7 @@ export default function IncomeForm({
 
     const income: Income = {
       id: crypto.randomUUID(),
-      owner: activeUser,
+      owner: accountLabel,
       userId: "",
       accountId: selectedAccountId,
       createdAt: Date.now(),
@@ -119,7 +113,7 @@ export default function IncomeForm({
             Add incoming funds
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Saved for {activeUser} and included in your private balance.
+            Saved for {accountLabel} and included in your private balance.
           </p>
           {moneyAccounts.length === 0 ? (
             <p className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
@@ -137,7 +131,7 @@ export default function IncomeForm({
               type="number"
               min="0"
               inputMode="numeric"
-              placeholder="Rp0"
+              placeholder="Rp 0"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
             />
@@ -218,7 +212,7 @@ export default function IncomeForm({
               Income History
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
-              Total {rupiahFormatter.format(totalIncome)}
+              Total {formatCurrency(totalIncome)}
             </h2>
           </div>
           <p className="text-sm text-slate-400">
@@ -245,7 +239,7 @@ export default function IncomeForm({
               >
                 <div>
                   <p className="text-lg font-bold text-white">
-                    {rupiahFormatter.format(income.amount)}
+                    {formatCurrency(income.amount)}
                   </p>
                   <p className="mt-1 text-sm text-slate-300">
                     {income.source}

@@ -100,7 +100,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
         {userEmail ? (
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-slate-300">
-              Logged in as <span className="font-semibold">{userEmail}</span>
+              Signed in as <span className="font-semibold">{userEmail}</span>
             </p>
             <button
               className="rounded-full border border-slate-700 px-6 py-3 font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"

@@ -1,8 +1,8 @@
 "use client";
 
+import { formatCurrency } from "@/src/lib/format";
 import type { Expense } from "@/src/types/expense";
 import type { MoneyAccount } from "@/src/types/money-account";
-import type { ActiveUser } from "@/src/types/user";
 import { FormEvent, useMemo, useState } from "react";
 
 const categories = [
@@ -26,12 +26,6 @@ const inputClassName =
 
 const labelClassName = "text-sm font-medium text-slate-300";
 
-const rupiahFormatter = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
-
 const categoryLabels = new Map(
   categories.map((category) => [category.value, category.label]),
 );
@@ -43,7 +37,7 @@ const paymentMethodLabels = new Map(
 );
 
 type ExpenseFormProps = {
-  activeUser: ActiveUser;
+  accountLabel: string;
   moneyAccounts: MoneyAccount[];
   expenses: Expense[];
   onAddExpense: (expense: Expense) => Promise<boolean>;
@@ -53,7 +47,7 @@ type ExpenseFormProps = {
 };
 
 export default function ExpenseForm({
-  activeUser,
+  accountLabel,
   moneyAccounts,
   expenses,
   onAddExpense,
@@ -96,7 +90,7 @@ export default function ExpenseForm({
 
     const expense: Expense = {
       id: crypto.randomUUID(),
-      owner: activeUser,
+      owner: accountLabel,
       userId: "",
       accountId: selectedAccountId,
       createdAt: Date.now(),
@@ -140,7 +134,7 @@ export default function ExpenseForm({
             Add a personal transaction
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Saved for {activeUser} and included in your private account totals.
+            Saved for {accountLabel} and included in your private account totals.
           </p>
           {moneyAccounts.length === 0 ? (
             <p className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
@@ -158,7 +152,7 @@ export default function ExpenseForm({
               type="number"
               min="0"
               inputMode="numeric"
-              placeholder="Rp0"
+              placeholder="Rp 0"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
             />
@@ -259,7 +253,7 @@ export default function ExpenseForm({
               Expense History
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
-              Total {rupiahFormatter.format(totalExpense)}
+              Total {formatCurrency(totalExpense)}
             </h2>
           </div>
           <p className="text-sm text-slate-400">
@@ -286,7 +280,7 @@ export default function ExpenseForm({
               >
                 <div>
                   <p className="text-lg font-bold text-white">
-                    {rupiahFormatter.format(expense.amount)}
+                    {formatCurrency(expense.amount)}
                   </p>
                   <p className="mt-1 text-sm text-slate-300">
                     {categoryLabels.get(expense.category) ?? expense.category} /{" "}

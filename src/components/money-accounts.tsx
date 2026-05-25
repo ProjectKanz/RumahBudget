@@ -4,6 +4,7 @@ import type {
   MoneyAccount,
   MoneyAccountType,
 } from "@/src/types/money-account";
+import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import { FormEvent, useMemo, useState } from "react";
 
 const accountTypes: MoneyAccountType[] = [
@@ -18,13 +19,6 @@ const inputClassName =
   "mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20";
 
 const labelClassName = "text-sm font-medium text-slate-300";
-
-const rupiahFormatter = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
-const hiddenBalanceLabel = "••••••";
 
 type MoneyAccountsProps = {
   accounts: MoneyAccount[];
@@ -164,7 +158,7 @@ export default function MoneyAccounts({
               inputMode="numeric"
               value={initialBalance}
               onChange={(event) => setInitialBalance(event.target.value)}
-              placeholder="Rp0"
+              placeholder="Rp 0"
             />
           </label>
 
@@ -199,10 +193,10 @@ export default function MoneyAccounts({
               Account List
             </p>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
-              Total balance{" "}
+              Total account balance{" "}
               {isBalanceHidden
                 ? hiddenBalanceLabel
-                : rupiahFormatter.format(totalCurrentBalance)}
+                : formatCurrency(totalCurrentBalance)}
             </h2>
           </div>
           <p className="text-sm text-slate-400">
@@ -238,7 +232,7 @@ export default function MoneyAccounts({
                     <p className="mt-4 text-2xl font-bold text-emerald-300">
                       {isBalanceHidden
                         ? hiddenBalanceLabel
-                        : rupiahFormatter.format(
+                        : formatCurrency(
                             accountBalances[account.id] ??
                               account.initialBalance,
                           )}
@@ -251,7 +245,7 @@ export default function MoneyAccounts({
                       <span className="text-slate-300">
                         {isBalanceHidden
                           ? hiddenBalanceLabel
-                          : rupiahFormatter.format(account.initialBalance)}
+                          : formatCurrency(account.initialBalance)}
                       </span>
                     </p>
                   </div>

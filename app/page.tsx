@@ -11,6 +11,7 @@ import ReportPreview from "@/src/components/report-preview";
 import SupabaseTestPanel from "@/src/components/supabase-test-panel";
 import TransactionHistory from "@/src/components/transaction-history";
 import TransferMoney from "@/src/components/transfer-money";
+import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import type { EmailReport } from "@/src/types/email-report";
 import type { Expense } from "@/src/types/expense";
@@ -19,21 +20,11 @@ import type {
   MoneyAccount,
   MoneyAccountType,
 } from "@/src/types/money-account";
-import type { ActiveUser } from "@/src/types/user";
 import type { Transfer } from "@/src/types/transfer";
 import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-const rupiahFormatter = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-});
-
-const activeUsers: ActiveUser[] = ["Ibu", "Bapak", "Kanzan", "Guest"];
-const activeUserStorageKey = "rumahbudget.activeUser";
 const balancePrivacyStorageKey = "rumahbudget.hideBalances";
-const hiddenBalanceLabel = "••••••";
 
 type MonthlyStatus = {
   label: "Safe" | "Warning" | "Critical";
@@ -123,14 +114,23 @@ function getSupabaseErrorMessage(error: unknown, fallbackMessage: string) {
   return error instanceof Error ? error.message : fallbackMessage;
 }
 
-function isActiveUser(value: unknown): value is ActiveUser {
-  return activeUsers.includes(value as ActiveUser);
+function isCurrentMonthTimestamp(createdAt: number) {
+  if (!createdAt) {
+    return false;
+  }
+
+  const transactionDate = new Date(createdAt);
+  const today = new Date();
+
+  return (
+    transactionDate.getFullYear() === today.getFullYear() &&
+    transactionDate.getMonth() === today.getMonth()
+  );
 }
 
 export default function Home() {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [activeUser, setActiveUser] = useState<ActiveUser>("Ibu");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [emailReports, setEmailReports] = useState<EmailReport[]>([]);
@@ -437,16 +437,11 @@ export default function Home() {
   }, [authUser]);
 
   useEffect(() => {
-    const storedActiveUser = window.localStorage.getItem(activeUserStorageKey);
     const storedBalancePrivacy = window.localStorage.getItem(
       balancePrivacyStorageKey,
     );
-    const nextActiveUser = isActiveUser(storedActiveUser)
-      ? storedActiveUser
-      : "Ibu";
 
     queueMicrotask(() => {
-      setActiveUser(nextActiveUser);
       setIsBalanceHidden(storedBalancePrivacy === "true");
       setIsHydrated(true);
     });
@@ -543,14 +538,6 @@ export default function Home() {
       return;
     }
 
-    window.localStorage.setItem(activeUserStorageKey, activeUser);
-  }, [activeUser, isHydrated]);
-
-  useEffect(() => {
-    if (!isHydrated) {
-      return;
-    }
-
     window.localStorage.setItem(
       balancePrivacyStorageKey,
       String(isBalanceHidden),
@@ -560,15 +547,32 @@ export default function Home() {
   const activeExpenses = expenses;
 
   const activeIncomes = incomes;
+  const signedInEmail = authUser?.email ?? "Signed-in account";
 
-  const totalExpense = useMemo(
-    () => activeExpenses.reduce((total, expense) => total + expense.amount, 0),
+  const monthlyExpenses = useMemo(
+    () =>
+      activeExpenses.filter((expense) =>
+        isCurrentMonthTimestamp(expense.createdAt),
+      ),
     [activeExpenses],
   );
 
-  const totalIncome = useMemo(
-    () => activeIncomes.reduce((total, income) => total + income.amount, 0),
+  const monthlyIncomes = useMemo(
+    () =>
+      activeIncomes.filter((income) =>
+        isCurrentMonthTimestamp(income.createdAt),
+      ),
     [activeIncomes],
+  );
+
+  const totalExpense = useMemo(
+    () => monthlyExpenses.reduce((total, expense) => total + expense.amount, 0),
+    [monthlyExpenses],
+  );
+
+  const totalIncome = useMemo(
+    () => monthlyIncomes.reduce((total, income) => total + income.amount, 0),
+    [monthlyIncomes],
   );
 
   const moneyAccountBalances = useMemo(() => {
@@ -1020,43 +1024,19 @@ export default function Home() {
           </p>
 
           <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
-            <p className="text-sm text-slate-400">Logged in as</p>
-            <p className="mt-2 text-lg font-semibold text-white">
-              {authUser.email}
-            </p>
-          </div>
-
-          <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/50 p-5 opacity-80">
-            <label className="text-sm font-medium text-slate-300">
-              Temporary Active User
-              <select
-                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-4 text-base font-semibold text-white outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20"
-                value={activeUser}
-                onChange={(event) =>
-                  setActiveUser(event.target.value as ActiveUser)
-                }
-              >
-                {activeUsers.map((user) => (
-                  <option key={user} value={user}>
-                    {user}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="mt-3 text-sm leading-6 text-slate-400">
-              Temporary mode: this selection is kept for prototype
-              compatibility, but data now belongs to the signed-in Supabase
-              account.
-            </p>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              Only data from the signed-in account is shown.
+            <p className="text-sm text-slate-400">
+              Signed in as:{" "}
+              <span className="font-semibold text-white">{signedInEmail}</span>
             </p>
           </div>
 
           <div className="mt-10">
             <div className="mb-4">
               <p className="text-sm font-semibold uppercase tracking-widest text-slate-500">
-                This Month
+                Dashboard Summary
+              </p>
+              <p className="mt-2 text-sm text-slate-500">
+                Monthly cards use transactions from this calendar month.
               </p>
             </div>
 
@@ -1064,11 +1044,16 @@ export default function Home() {
               <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-5 sm:col-span-2">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-sm text-emerald-100">Total Balance</p>
+                    <p className="text-sm text-emerald-100">
+                      Total Account Balance
+                    </p>
                     <p className="mt-2 text-3xl font-bold text-white sm:text-4xl">
                       {isBalanceHidden
                         ? hiddenBalanceLabel
-                        : rupiahFormatter.format(totalBalance)}
+                        : formatCurrency(totalBalance)}
+                    </p>
+                    <p className="mt-3 text-sm leading-6 text-emerald-50/80">
+                      Money currently stored across all money accounts.
                     </p>
                   </div>
                   <button
@@ -1084,7 +1069,7 @@ export default function Home() {
               </div>
 
               <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:col-span-2">
-                <p className="text-sm text-slate-400">Remaining This Month</p>
+                <p className="text-sm text-slate-400">Monthly Net Cashflow</p>
                 <p
                   className={`mt-2 text-3xl font-bold sm:text-4xl ${
                     remainingBalance < 0 ? "text-red-300" : ""
@@ -1092,21 +1077,24 @@ export default function Home() {
                 >
                   {isBalanceHidden
                     ? hiddenBalanceLabel
-                    : rupiahFormatter.format(remainingBalance)}
+                    : formatCurrency(remainingBalance)}
+                </p>
+                <p className="mt-3 text-sm leading-6 text-slate-500">
+                  Monthly income minus monthly expenses.
                 </p>
               </div>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <p className="text-sm text-slate-400">Income</p>
+              <p className="text-sm text-slate-400">Monthly Income</p>
               <p className="mt-2 text-2xl font-bold text-emerald-400 sm:text-3xl">
-                {rupiahFormatter.format(totalIncome)}
+                {formatCurrency(totalIncome)}
               </p>
             </div>
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-              <p className="text-sm text-slate-400">Expenses</p>
+              <p className="text-sm text-slate-400">Monthly Expenses</p>
               <p className="mt-2 text-2xl font-bold sm:text-3xl">
-                {rupiahFormatter.format(totalExpense)}
+                {formatCurrency(totalExpense)}
               </p>
             </div>
 
@@ -1130,18 +1118,6 @@ export default function Home() {
               type="button"
               onClick={() =>
                 document
-                  .getElementById("expense-form")
-                  ?.scrollIntoView({ behavior: "smooth" })
-              }
-            >
-              + Add Expense
-            </button>
-
-            <button
-              className="rounded-full border border-slate-700 px-6 py-4 text-base font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:px-7"
-              type="button"
-              onClick={() =>
-                document
                   .getElementById("income-form")
                   ?.scrollIntoView({ behavior: "smooth" })
               }
@@ -1154,11 +1130,35 @@ export default function Home() {
               type="button"
               onClick={() =>
                 document
+                  .getElementById("expense-form")
+                  ?.scrollIntoView({ behavior: "smooth" })
+              }
+            >
+              + Add Expense
+            </button>
+
+            <button
+              className="rounded-full border border-slate-700 px-6 py-4 text-base font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:px-7"
+              type="button"
+              onClick={() =>
+                document
                   .getElementById("money-accounts")
                   ?.scrollIntoView({ behavior: "smooth" })
               }
             >
               + Add Money Account
+            </button>
+
+            <button
+              className="rounded-full border border-slate-700 px-6 py-4 text-base font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:px-7"
+              type="button"
+              onClick={() =>
+                document
+                  .getElementById("transfer-money")
+                  ?.scrollIntoView({ behavior: "smooth" })
+              }
+            >
+              + Transfer Money
             </button>
           </div>
         </div>
@@ -1178,6 +1178,33 @@ export default function Home() {
         onArchiveAccount={archiveMoneyAccount}
       />
 
+      <IncomeForm
+        accountLabel={signedInEmail}
+        moneyAccounts={moneyAccounts}
+        incomes={activeIncomes}
+        onAddIncome={addIncome}
+        onDeleteIncome={deleteIncome}
+        supabaseError={incomeError}
+        isLoadingIncomes={isIncomeLoading}
+      />
+
+      <ExpenseForm
+        accountLabel={signedInEmail}
+        moneyAccounts={moneyAccounts}
+        expenses={activeExpenses}
+        onAddExpense={addExpense}
+        onDeleteExpense={deleteExpense}
+        supabaseError={expenseError}
+        isLoadingExpenses={isExpenseLoading}
+      />
+
+      <TransferMoney
+        accountBalances={moneyAccountBalances}
+        accounts={moneyAccounts}
+        error={transferError}
+        onAddTransfer={addTransfer}
+      />
+
       <DashboardCharts
         accountBalances={moneyAccountBalances}
         expenses={activeExpenses}
@@ -1185,10 +1212,15 @@ export default function Home() {
         moneyAccounts={moneyAccounts}
       />
 
-      <TransferMoney
-        accounts={moneyAccounts}
-        error={transferError}
-        onAddTransfer={addTransfer}
+      <TransactionHistory
+        accountLabel={signedInEmail}
+        moneyAccounts={moneyAccounts}
+        expenses={activeExpenses}
+        incomes={activeIncomes}
+        transfers={transfers}
+        onDeleteExpense={deleteExpense}
+        onDeleteIncome={deleteIncome}
+        onDeleteTransfer={deleteTransfer}
       />
 
       <ReportPreview
@@ -1203,37 +1235,6 @@ export default function Home() {
         emailReports={emailReports}
         error={emailReportError}
         isLoading={isEmailReportLoading}
-      />
-
-      <TransactionHistory
-        activeUser={activeUser}
-        moneyAccounts={moneyAccounts}
-        expenses={activeExpenses}
-        incomes={activeIncomes}
-        transfers={transfers}
-        onDeleteExpense={deleteExpense}
-        onDeleteIncome={deleteIncome}
-        onDeleteTransfer={deleteTransfer}
-      />
-
-      <IncomeForm
-        activeUser={activeUser}
-        moneyAccounts={moneyAccounts}
-        incomes={activeIncomes}
-        onAddIncome={addIncome}
-        onDeleteIncome={deleteIncome}
-        supabaseError={incomeError}
-        isLoadingIncomes={isIncomeLoading}
-      />
-
-      <ExpenseForm
-        activeUser={activeUser}
-        moneyAccounts={moneyAccounts}
-        expenses={activeExpenses}
-        onAddExpense={addExpense}
-        onDeleteExpense={deleteExpense}
-        supabaseError={expenseError}
-        isLoadingExpenses={isExpenseLoading}
       />
         </>
       ) : null}
