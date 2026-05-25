@@ -7,6 +7,9 @@ import EmailReportPreferences from "@/src/components/email-report-preferences";
 import ExpenseForm from "@/src/components/expense-form";
 import IncomeForm from "@/src/components/income-form";
 import MoneyAccounts from "@/src/components/money-accounts";
+import OnboardingTutorial, {
+  onboardingStepCount,
+} from "@/src/components/onboarding-tutorial";
 import ReportPreview from "@/src/components/report-preview";
 import SupabaseTestPanel from "@/src/components/supabase-test-panel";
 import TransactionHistory from "@/src/components/transaction-history";
@@ -25,6 +28,10 @@ import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const balancePrivacyStorageKey = "rumahbudget.hideBalances";
+
+function getOnboardingStorageKey(userId: string) {
+  return `rumahbudget.onboardingCompleted.${userId}`;
+}
 
 type MonthlyStatus = {
   label: "Safe" | "Warning" | "Critical";
@@ -147,6 +154,8 @@ export default function Home() {
   const [isMoneyAccountLoading, setIsMoneyAccountLoading] = useState(false);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
 
   const loadExpensesFromSupabase = useCallback(async () => {
     setIsExpenseLoading(true);
@@ -513,6 +522,8 @@ export default function Home() {
         setEmailReports([]);
         setMoneyAccounts([]);
         setTransfers([]);
+        setIsOnboardingOpen(false);
+        setOnboardingStep(0);
       });
       return;
     }
@@ -532,6 +543,25 @@ export default function Home() {
     loadMoneyAccountsFromSupabase,
     loadTransfersFromSupabase,
   ]);
+
+  useEffect(() => {
+    if (!authUser || !isHydrated) {
+      return;
+    }
+
+    const hasCompletedOnboarding =
+      window.localStorage.getItem(getOnboardingStorageKey(authUser.id)) ===
+      "true";
+
+    if (hasCompletedOnboarding) {
+      return;
+    }
+
+    queueMicrotask(() => {
+      setOnboardingStep(0);
+      setIsOnboardingOpen(true);
+    });
+  }, [authUser, isHydrated]);
 
   useEffect(() => {
     if (!isHydrated) {
@@ -994,6 +1024,20 @@ export default function Home() {
     }
   }
 
+  function completeOnboarding() {
+    if (authUser) {
+      window.localStorage.setItem(getOnboardingStorageKey(authUser.id), "true");
+    }
+
+    setIsOnboardingOpen(false);
+    setOnboardingStep(0);
+  }
+
+  function restartOnboarding() {
+    setOnboardingStep(0);
+    setIsOnboardingOpen(true);
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-white">
       {isAuthLoading ? (
@@ -1008,6 +1052,21 @@ export default function Home() {
 
       {!isAuthLoading && authUser ? (
         <>
+      <OnboardingTutorial
+        currentStep={onboardingStep}
+        isOpen={isOnboardingOpen}
+        onBack={() =>
+          setOnboardingStep((currentStep) => Math.max(0, currentStep - 1))
+        }
+        onFinish={completeOnboarding}
+        onNext={() =>
+          setOnboardingStep((currentStep) =>
+            Math.min(onboardingStepCount - 1, currentStep + 1),
+          )
+        }
+        onSkip={completeOnboarding}
+      />
+
       <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-5 py-8 sm:px-6 sm:py-12">
         <div>
           <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-emerald-400">
@@ -1023,11 +1082,18 @@ export default function Home() {
             sharing can be added later when permissions are ready.
           </p>
 
-          <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900 p-5">
+          <div className="mt-6 flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-900 p-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-slate-400">
               Signed in as:{" "}
               <span className="font-semibold text-white">{signedInEmail}</span>
             </p>
+            <button
+              className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"
+              type="button"
+              onClick={restartOnboarding}
+            >
+              Restart Tutorial
+            </button>
           </div>
 
           <div className="mt-10">
