@@ -11,7 +11,6 @@ import OnboardingTutorial, {
   onboardingStepCount,
 } from "@/src/components/onboarding-tutorial";
 import ReportPreview from "@/src/components/report-preview";
-import SupabaseTestPanel from "@/src/components/supabase-test-panel";
 import TransactionHistory from "@/src/components/transaction-history";
 import TransferMoney from "@/src/components/transfer-money";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
@@ -148,8 +147,8 @@ export default function Home() {
   const [emailReportError, setEmailReportError] = useState("");
   const [moneyAccountError, setMoneyAccountError] = useState("");
   const [transferError, setTransferError] = useState("");
-  const [isExpenseLoading, setIsExpenseLoading] = useState(false);
-  const [isIncomeLoading, setIsIncomeLoading] = useState(false);
+  const [, setIsExpenseLoading] = useState(false);
+  const [, setIsIncomeLoading] = useState(false);
   const [isEmailReportLoading, setIsEmailReportLoading] = useState(false);
   const [isMoneyAccountLoading, setIsMoneyAccountLoading] = useState(false);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
@@ -1038,6 +1037,14 @@ export default function Home() {
     setIsOnboardingOpen(true);
   }
 
+  async function logout() {
+    if (!supabase) {
+      return;
+    }
+
+    await supabase.auth.signOut();
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-white">
       {isAuthLoading ? (
@@ -1087,13 +1094,22 @@ export default function Home() {
               Signed in as:{" "}
               <span className="font-semibold text-white">{signedInEmail}</span>
             </p>
-            <button
-              className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"
-              type="button"
-              onClick={restartOnboarding}
-            >
-              Restart Tutorial
-            </button>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <button
+                className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"
+                type="button"
+                onClick={restartOnboarding}
+              >
+                Restart Tutorial
+              </button>
+              <button
+                className="rounded-full border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-800"
+                type="button"
+                onClick={logout}
+              >
+                Log out
+              </button>
+            </div>
           </div>
 
           <div className="mt-10">
@@ -1230,10 +1246,6 @@ export default function Home() {
         </div>
       </section>
 
-      <AuthForm userEmail={authUser.email} />
-
-      <SupabaseTestPanel />
-
       <MoneyAccounts
         accounts={moneyAccounts}
         accountBalances={moneyAccountBalances}
@@ -1247,21 +1259,15 @@ export default function Home() {
       <IncomeForm
         accountLabel={signedInEmail}
         moneyAccounts={moneyAccounts}
-        incomes={activeIncomes}
         onAddIncome={addIncome}
-        onDeleteIncome={deleteIncome}
         supabaseError={incomeError}
-        isLoadingIncomes={isIncomeLoading}
       />
 
       <ExpenseForm
         accountLabel={signedInEmail}
         moneyAccounts={moneyAccounts}
-        expenses={activeExpenses}
         onAddExpense={addExpense}
-        onDeleteExpense={deleteExpense}
         supabaseError={expenseError}
-        isLoadingExpenses={isExpenseLoading}
       />
 
       <TransferMoney

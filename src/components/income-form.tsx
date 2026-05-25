@@ -1,18 +1,14 @@
 "use client";
 
-import { formatCurrency } from "@/src/lib/format";
 import type { Income } from "@/src/types/income";
 import type { MoneyAccount } from "@/src/types/money-account";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 
 type IncomeFormProps = {
   accountLabel: string;
   moneyAccounts: MoneyAccount[];
-  incomes: Income[];
   onAddIncome: (income: Income) => Promise<boolean>;
-  onDeleteIncome: (id: string) => void;
   supabaseError: string;
-  isLoadingIncomes: boolean;
 };
 
 const inputClassName =
@@ -23,11 +19,8 @@ const labelClassName = "text-sm font-medium text-slate-300";
 export default function IncomeForm({
   accountLabel,
   moneyAccounts,
-  incomes,
   onAddIncome,
-  onDeleteIncome,
   supabaseError,
-  isLoadingIncomes,
 }: IncomeFormProps) {
   const [amount, setAmount] = useState("");
   const [source, setSource] = useState("");
@@ -36,10 +29,6 @@ export default function IncomeForm({
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const totalIncome = useMemo(
-    () => incomes.reduce((total, income) => total + income.amount, 0),
-    [incomes],
-  );
   const selectedAccountId = moneyAccounts.some(
     (account) => account.id === accountId,
   )
@@ -110,10 +99,10 @@ export default function IncomeForm({
             Add Income
           </p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Add incoming funds
+            Record income
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Saved for {accountLabel} and included in your private balance.
+            Saved to your private account.
           </p>
           {moneyAccounts.length === 0 ? (
             <p className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
@@ -205,64 +194,6 @@ export default function IncomeForm({
         </form>
       </div>
 
-      <section className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 sm:p-8">
-        <div className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-              Income History
-            </p>
-            <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
-              Total {formatCurrency(totalIncome)}
-            </h2>
-          </div>
-          <p className="text-sm text-slate-400">
-            {isLoadingIncomes
-              ? "Loading data from Supabase..."
-              : `${incomes.length} saved transactions`}
-          </p>
-        </div>
-
-        <div className="mt-6 space-y-4">
-          {isLoadingIncomes ? (
-            <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-              Loading income from Supabase...
-            </div>
-          ) : incomes.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-              No income yet. Add incoming funds from the form above.
-            </div>
-          ) : (
-            incomes.map((income) => (
-              <article
-                className="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 sm:flex-row sm:items-center sm:justify-between"
-                key={income.id}
-              >
-                <div>
-                  <p className="text-lg font-bold text-white">
-                    {formatCurrency(income.amount)}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-300">
-                    {income.source}
-                  </p>
-                  {income.note ? (
-                    <p className="mt-2 text-sm text-slate-500">
-                      {income.note}
-                    </p>
-                  ) : null}
-                </div>
-
-                <button
-                  className="rounded-full border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-200 transition hover:border-red-400 hover:bg-red-500/10"
-                  type="button"
-                  onClick={() => onDeleteIncome(income.id)}
-                >
-                  Delete
-                </button>
-              </article>
-            ))
-          )}
-        </div>
-      </section>
     </section>
   );
 }

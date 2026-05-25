@@ -196,7 +196,7 @@ function buildDryRunEmail({
     ["Period", report.periodLabel],
     ["Total income", formatCurrency(report.totalIncome)],
     ["Total expenses", formatCurrency(report.totalExpense)],
-    ["Remaining balance", formatCurrency(report.remainingBalance)],
+    ["Period net cashflow", formatCurrency(report.remainingBalance)],
     ["Transaction count", String(report.transactionCount)],
     ["Top expense category", report.topExpenseCategory],
   ];
@@ -209,7 +209,7 @@ function buildDryRunEmail({
     "",
     ...rows.map(([label, value]) => `${label}: ${value}`),
     "",
-    "Testing mode: scheduled email is sent only to the verified Resend email. Sending to the saved recipient preference requires a verified domain.",
+    "Email delivery is currently limited to one verified test address. Sending to the saved recipient preference requires a verified domain.",
   ].join("\n");
   const htmlRows = rows
     .map(

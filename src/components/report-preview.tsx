@@ -161,7 +161,7 @@ export default function ReportPreview({
       (total, income) => total + income.amount,
       0,
     );
-    const remainingBalance = totalIncome - totalExpense;
+    const netCashflow = totalIncome - totalExpense;
 
     const categoryTotals = periodExpenses.reduce<Record<string, number>>(
       (totals, expense) => ({
@@ -189,7 +189,7 @@ export default function ReportPreview({
       label: `${reportName}: ${periodLabel}`,
       totalIncome,
       totalExpense,
-      remainingBalance,
+      remainingBalance: netCashflow,
       status,
       topCategory,
       recommendation: getRecommendation(status.label, topCategory, totalIncome),
@@ -275,11 +275,13 @@ export default function ReportPreview({
               Personal report preview
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              This summary is generated from the signed-in account.
+              This summary is generated from the signed-in account. Period Net
+              Cashflow means income minus expenses for the selected report
+              period.
             </p>
             <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-              Testing mode: email reports are sent only to the verified Resend
-              email. Sending to other emails requires a verified domain.
+              Email delivery is currently limited to one verified test address.
+              Sending to other emails requires a verified domain.
             </p>
           </div>
 
@@ -325,7 +327,7 @@ export default function ReportPreview({
             </div>
 
             <div>
-              <p className="text-sm text-slate-500">Remaining Balance</p>
+              <p className="text-sm text-slate-500">Period Net Cashflow</p>
               <p
                 className={`mt-2 text-xl font-bold ${
                   report.remainingBalance < 0 ? "text-red-300" : "text-white"

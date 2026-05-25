@@ -90,7 +90,7 @@ function buildReportEmail(
     ["Period", report.periodLabel],
     ["Total income", report.totalIncome],
     ["Total expenses", report.totalExpense],
-    ["Remaining balance", report.remainingBalance],
+    ["Period net cashflow", report.remainingBalance],
     ["Financial status", report.financialStatus],
     ["Top expense category", report.topExpenseCategory],
     ["Explanation", report.explanation],

@@ -97,6 +97,15 @@ export default function MoneyAccounts({
   }
 
   async function archiveAccount(id: string) {
+    const account = accounts.find((currentAccount) => currentAccount.id === id);
+    const didConfirm = window.confirm(
+      `Archive ${account?.name ?? "this money account"}? Existing transactions will stay in your history.`,
+    );
+
+    if (!didConfirm) {
+      return;
+    }
+
     setArchivingAccountId(id);
     await onArchiveAccount(id);
     setArchivingAccountId("");
@@ -113,7 +122,7 @@ export default function MoneyAccounts({
             Money Accounts
           </p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Track where your money starts
+            Add the accounts where you keep money
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
             Add wallets, bank accounts, cash, or investments. Transactions are

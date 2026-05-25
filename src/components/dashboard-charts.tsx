@@ -134,7 +134,7 @@ export default function DashboardCharts({
 
           <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-5">
             <h3 className="text-lg font-bold text-white">
-              Expense Breakdown
+              All-time Expense Breakdown
             </h3>
             <div className="mt-5">
               <SimpleBarList

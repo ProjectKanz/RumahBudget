@@ -180,16 +180,15 @@ export default function EmailReportPreferences({
             Email Report Settings
           </p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Delivery preferences
+            Email report preferences
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
             Choose weekly or monthly reports and set the recipient email for
             this account.
           </p>
           <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-            Email sending is currently in testing mode and only sends to the
-            verified Resend email. Sending to other emails requires a verified
-            domain.
+            Email delivery is currently limited to one verified test address.
+            Sending to other emails requires a verified domain.
           </p>
         </div>
 
@@ -214,7 +213,7 @@ export default function EmailReportPreferences({
                   Weekly report
                 </span>
                 <span className="mt-1 block text-sm leading-6 text-slate-400">
-                  Enable weekly report preference for this account.
+                  Send me a weekly summary.
                 </span>
               </span>
             </label>
@@ -232,7 +231,7 @@ export default function EmailReportPreferences({
                   Monthly report
                 </span>
                 <span className="mt-1 block text-sm leading-6 text-slate-400">
-                  Enable monthly report preference for this account.
+                  Send me a monthly summary.
                 </span>
               </span>
             </label>

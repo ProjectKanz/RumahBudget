@@ -1,9 +1,8 @@
 "use client";
 
-import { formatCurrency } from "@/src/lib/format";
 import type { Expense } from "@/src/types/expense";
 import type { MoneyAccount } from "@/src/types/money-account";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 
 const categories = [
   { label: "Groceries", value: "Belanja Dapur" },
@@ -26,34 +25,18 @@ const inputClassName =
 
 const labelClassName = "text-sm font-medium text-slate-300";
 
-const categoryLabels = new Map(
-  categories.map((category) => [category.value, category.label]),
-);
-const paymentMethodLabels = new Map(
-  paymentMethods.map((paymentMethod) => [
-    paymentMethod.value,
-    paymentMethod.label,
-  ]),
-);
-
 type ExpenseFormProps = {
   accountLabel: string;
   moneyAccounts: MoneyAccount[];
-  expenses: Expense[];
   onAddExpense: (expense: Expense) => Promise<boolean>;
-  onDeleteExpense: (id: string) => void;
   supabaseError: string;
-  isLoadingExpenses: boolean;
 };
 
 export default function ExpenseForm({
   accountLabel,
   moneyAccounts,
-  expenses,
   onAddExpense,
-  onDeleteExpense,
   supabaseError,
-  isLoadingExpenses,
 }: ExpenseFormProps) {
   const [amount, setAmount] = useState("");
   const [accountId, setAccountId] = useState("");
@@ -63,10 +46,6 @@ export default function ExpenseForm({
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const totalExpense = useMemo(
-    () => expenses.reduce((total, expense) => total + expense.amount, 0),
-    [expenses],
-  );
   const selectedAccountId = moneyAccounts.some(
     (account) => account.id === accountId,
   )
@@ -131,10 +110,10 @@ export default function ExpenseForm({
             Add Expense
           </p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Add a personal transaction
+            Record an expense
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Saved for {accountLabel} and included in your private account totals.
+            Saved to your private account.
           </p>
           {moneyAccounts.length === 0 ? (
             <p className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
@@ -246,66 +225,6 @@ export default function ExpenseForm({
         </form>
       </div>
 
-      <section className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 sm:p-8">
-        <div className="flex flex-col gap-4 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-              Expense History
-            </p>
-            <h2 className="mt-3 text-2xl font-bold tracking-tight text-white">
-              Total {formatCurrency(totalExpense)}
-            </h2>
-          </div>
-          <p className="text-sm text-slate-400">
-            {isLoadingExpenses
-              ? "Loading data from Supabase..."
-              : `${expenses.length} saved transactions`}
-          </p>
-        </div>
-
-        <div className="mt-6 space-y-4">
-          {isLoadingExpenses ? (
-            <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-              Loading expenses from Supabase...
-            </div>
-          ) : expenses.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
-              No expenses yet. Add your first transaction from the form above.
-            </div>
-          ) : (
-            expenses.map((expense) => (
-              <article
-                className="flex flex-col gap-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 sm:flex-row sm:items-center sm:justify-between"
-                key={expense.id}
-              >
-                <div>
-                  <p className="text-lg font-bold text-white">
-                    {formatCurrency(expense.amount)}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-300">
-                    {categoryLabels.get(expense.category) ?? expense.category} /{" "}
-                    {paymentMethodLabels.get(expense.paymentMethod) ??
-                      expense.paymentMethod}
-                  </p>
-                  {expense.note ? (
-                    <p className="mt-2 text-sm text-slate-500">
-                      {expense.note}
-                    </p>
-                  ) : null}
-                </div>
-
-                <button
-                  className="rounded-full border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-200 transition hover:border-red-400 hover:bg-red-500/10"
-                  type="button"
-                  onClick={() => onDeleteExpense(expense.id)}
-                >
-                  Delete
-                </button>
-              </article>
-            ))
-          )}
-        </div>
-      </section>
     </section>
   );
 }

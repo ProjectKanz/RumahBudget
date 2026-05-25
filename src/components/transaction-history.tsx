@@ -44,6 +44,10 @@ type CombinedTransaction =
     };
 
 const filters: TransactionFilter[] = ["All", "Income", "Expenses", "Transfers"];
+const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 const categoryLabels = new Map([
   ["Belanja Dapur", "Groceries"],
   ["Transportasi", "Transportation"],
@@ -164,7 +168,7 @@ export default function TransactionHistory({
               All records for {accountLabel}
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Recent income and expense records in one place.
+              All income, expenses, and transfers in one place.
             </p>
           </div>
 
@@ -195,6 +199,10 @@ export default function TransactionHistory({
             filteredTransactions.map((transaction) => {
               const isIncome = transaction.type === "Income";
               const isTransfer = transaction.type === "Transfers";
+              const transactionDate =
+                transaction.createdAt > 0
+                  ? dateTimeFormatter.format(new Date(transaction.createdAt))
+                  : "Date unavailable";
 
               return (
                 <article
@@ -220,6 +228,9 @@ export default function TransactionHistory({
                       </span>
                       <span className="text-xs text-slate-500">
                         {transaction.owner}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {transactionDate}
                       </span>
                     </div>
 
@@ -261,13 +272,27 @@ export default function TransactionHistory({
                   <button
                     className="rounded-full border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-200 transition hover:border-red-400 hover:bg-red-500/10"
                     type="button"
-                    onClick={() =>
-                      isIncome
-                        ? onDeleteIncome(transaction.id)
-                        : isTransfer
-                          ? onDeleteTransfer(transaction.id)
-                        : onDeleteExpense(transaction.id)
-                    }
+                    onClick={() => {
+                      const didConfirm = window.confirm(
+                        `Delete this ${transaction.type.toLowerCase()} record? This cannot be undone.`,
+                      );
+
+                      if (!didConfirm) {
+                        return;
+                      }
+
+                      if (isIncome) {
+                        void onDeleteIncome(transaction.id);
+                        return;
+                      }
+
+                      if (isTransfer) {
+                        void onDeleteTransfer(transaction.id);
+                        return;
+                      }
+
+                      void onDeleteExpense(transaction.id);
+                    }}
                   >
                     Delete
                   </button>
