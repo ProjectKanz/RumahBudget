@@ -18,49 +18,66 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const reportTestRecipientEmail = process.env.REPORT_TEST_RECIPIENT_EMAIL;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!reportTestRecipientEmail) {
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
     return Response.json(
       {
         error:
-          "Missing REPORT_TEST_RECIPIENT_EMAIL. Add it to the deployment environment before enabling scheduled reports.",
+          "Missing Supabase environment variables. Add NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY before enabling scheduled report preference reads.",
       },
       { status: 500 },
     );
   }
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return Response.json(
-      {
-        error:
-          "Missing Supabase environment variables. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY before enabling scheduled reports.",
-      },
-      { status: 500 },
-    );
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
 
   // Scheduling foundation only:
   // - Vercel Cron can call this protected endpoint.
   // - Testing mode keeps REPORT_TEST_RECIPIENT_EMAIL as the only recipient.
-  // - Full production scheduling still needs user report preferences and
-  //   a secure way to select eligible users without weakening RLS.
-  const { count, error } = await supabase
-    .from("email_reports")
-    .select("id", { count: "exact", head: true });
+  // - Full production scheduling is still disabled while this endpoint reads
+  //   aggregate preference readiness.
+  const [
+    totalPreferencesResult,
+    weeklyEnabledResult,
+    monthlyEnabledResult,
+  ] = await Promise.all([
+    supabase
+      .from("report_preferences")
+      .select("id", { count: "exact", head: true }),
+    supabase
+      .from("report_preferences")
+      .select("id", { count: "exact", head: true })
+      .eq("weekly_enabled", true),
+    supabase
+      .from("report_preferences")
+      .select("id", { count: "exact", head: true })
+      .eq("monthly_enabled", true),
+  ]);
+
+  const preferenceReadError =
+    totalPreferencesResult.error ??
+    weeklyEnabledResult.error ??
+    monthlyEnabledResult.error;
+
+  if (preferenceReadError) {
+    return Response.json({ error: preferenceReadError.message }, { status: 500 });
+  }
 
   return Response.json({
     ok: true,
-    message:
-      "Cron endpoint ready. User preference scheduling not implemented yet.",
     mode: "testing",
-    recipientEmail: reportTestRecipientEmail,
-    emailReportLogCount: error ? null : (count ?? 0),
-    supabaseReadiness: error ? error.message : "ok",
+    totalPreferences: totalPreferencesResult.count ?? 0,
+    weeklyEnabledCount: weeklyEnabledResult.count ?? 0,
+    monthlyEnabledCount: monthlyEnabledResult.count ?? 0,
+    message:
+      "Cron endpoint can read report preferences, but real scheduled email sending is not enabled yet.",
   });
 }
 
