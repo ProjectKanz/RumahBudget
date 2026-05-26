@@ -155,30 +155,30 @@ export default function TransactionHistory({
 
   return (
     <section
-      className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
+      className="mx-auto w-full max-w-5xl px-5 pb-8 pt-5 sm:px-6"
       id="transaction-history"
     >
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
-        <div className="flex flex-col gap-5 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+      <div className="rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-5 shadow-[0_0_42px_rgba(34,211,238,0.08)] backdrop-blur-xl sm:p-6">
+        <div className="flex flex-col gap-4 border-b border-cyan-300/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
+            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
               Transaction History
             </p>
-            <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
               All records for {accountLabel}
             </h2>
-            <p className="mt-3 text-sm leading-6 text-slate-400">
+            <p className="mt-2 text-sm leading-6 text-slate-400">
               All income, expenses, and transfers in one place.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-1 sm:grid-cols-4 sm:rounded-full">
+          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/30 p-1 sm:grid-cols-4 sm:rounded-full">
             {filters.map((option) => (
               <button
                 className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
                   filter === option
-                    ? "bg-emerald-400 text-slate-950"
-                    : "text-slate-300 hover:bg-slate-800"
+                    ? "bg-gradient-to-r from-cyan-300 to-lime-300 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.22)]"
+                    : "text-slate-300 hover:bg-white/10"
                 }`}
                 key={option}
                 type="button"
@@ -190,7 +190,7 @@ export default function TransactionHistory({
           </div>
         </div>
 
-        <div className="mt-6 space-y-4">
+        <div className="mt-5 space-y-3">
           {filteredTransactions.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
               No transactions for this filter yet.
@@ -206,7 +206,7 @@ export default function TransactionHistory({
 
               return (
                 <article
-                  className={`flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between ${
+                  className={`flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${
                     isTransfer
                       ? "border-sky-400/30 bg-sky-400/10"
                       : "border-slate-800 bg-slate-950/70"

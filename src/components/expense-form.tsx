@@ -5,23 +5,23 @@ import type { MoneyAccount } from "@/src/types/money-account";
 import { FormEvent, useState } from "react";
 
 const categories = [
-  { label: "Groceries", value: "Belanja Dapur" },
-  { label: "Transportation", value: "Transportasi" },
-  { label: "Bills", value: "Tagihan" },
-  { label: "Education", value: "Pendidikan" },
-  { label: "Health", value: "Kesehatan" },
-  { label: "Other", value: "Lainnya" },
+  { label: "Groceries", value: "Groceries" },
+  { label: "Transportation", value: "Transportation" },
+  { label: "Bills", value: "Bills" },
+  { label: "Education", value: "Education" },
+  { label: "Health", value: "Health" },
+  { label: "Other", value: "Other" },
 ];
 
 const paymentMethods = [
-  { label: "Cash", value: "Tunai" },
-  { label: "Debit Card", value: "Kartu Debit" },
+  { label: "Cash", value: "Cash" },
+  { label: "Debit Card", value: "Debit Card" },
   { label: "E-Wallet", value: "E-Wallet" },
-  { label: "Bank Transfer", value: "Transfer Bank" },
+  { label: "Bank Transfer", value: "Bank Transfer" },
 ];
 
 const inputClassName =
-  "mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20";
+  "mt-2 w-full rounded-xl border border-cyan-300/15 bg-slate-950 px-4 py-2.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20";
 
 const labelClassName = "text-sm font-medium text-slate-300";
 
@@ -103,14 +103,14 @@ export default function ExpenseForm({
 
   const content = (
     <>
-        <div className="mb-8 max-w-2xl">
-          <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
+        <div className="mb-5 max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.32em] text-pink-300">
             Add Expense
           </p>
-          <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+          <h2 className="mt-2 text-xl font-black tracking-tight text-white sm:text-2xl">
             Record an expense
           </h2>
-          <p className="mt-3 text-sm leading-6 text-slate-400">
+          <p className="mt-2 text-sm leading-6 text-slate-400">
             Saved to your private account.
           </p>
           {moneyAccounts.length === 0 ? (
@@ -120,7 +120,7 @@ export default function ExpenseForm({
           ) : null}
         </div>
 
-        <form className="grid gap-5 sm:grid-cols-2" onSubmit={handleSubmit}>
+        <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
           <label className={labelClassName}>
             Amount
             <input
@@ -213,7 +213,7 @@ export default function ExpenseForm({
 
           <div className="sm:col-span-2">
             <button
-              className="w-full rounded-full bg-emerald-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              className="w-full rounded-full bg-gradient-to-r from-pink-300 to-fuchsia-300 px-6 py-3 font-bold text-slate-950 shadow-[0_0_24px_rgba(217,70,239,0.2)] transition hover:shadow-[0_0_32px_rgba(217,70,239,0.28)] focus:outline-none focus:ring-2 focus:ring-fuchsia-300 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               type="submit"
               disabled={isSaving || moneyAccounts.length === 0}
             >
@@ -230,10 +230,10 @@ export default function ExpenseForm({
 
   return (
     <section
-      className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
+      className="mx-auto w-full max-w-5xl px-5 pb-8 sm:px-6"
       id="expense-form"
     >
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
+      <div className="rounded-2xl border border-fuchsia-300/15 bg-slate-950/75 p-5 shadow-[0_0_36px_rgba(217,70,239,0.08)] sm:p-6">
         {content}
       </div>
     </section>

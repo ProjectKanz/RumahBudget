@@ -100,7 +100,7 @@ function getRecommendation(
   totalIncome: number,
 ) {
   if (totalIncome <= 0) {
-    return "Start by adding income so the remaining balance is clearer.";
+    return "Start by adding income so net cashflow is clearer.";
   }
 
   if (status === "Critical") {
@@ -264,21 +264,21 @@ export default function ReportPreview({
 
   return (
     <section
-      className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
+      className="mx-auto w-full max-w-5xl px-5 pb-8 pt-5 sm:px-6"
       id="report-preview"
     >
       <div
-        className={`rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 transition sm:p-8 ${highlightClassName}`}
+        className={`rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-5 shadow-[0_0_42px_rgba(34,211,238,0.08)] backdrop-blur-xl transition sm:p-6 ${highlightClassName}`}
       >
-        <div className="flex flex-col gap-5 border-b border-slate-800 pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-4 border-b border-cyan-300/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
+            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
               Financial Report
             </p>
-            <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
               Personal report preview
             </h2>
-            <p className="mt-3 text-sm leading-6 text-slate-400">
+            <p className="mt-2 text-sm leading-6 text-slate-400">
               This summary is generated from the signed-in account. Period Net
               Cashflow means income minus expenses for the selected report
               period.
@@ -289,7 +289,7 @@ export default function ReportPreview({
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 rounded-full border border-slate-800 bg-slate-950 p-1">
+          <div className="grid grid-cols-2 gap-2 rounded-full border border-white/10 bg-black/30 p-1">
             {[
               { label: "Weekly Report", value: "weekly" as const },
               { label: "Monthly Report", value: "monthly" as const },
@@ -297,8 +297,8 @@ export default function ReportPreview({
               <button
                 className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
                   reportType === option.value
-                    ? "bg-emerald-400 text-slate-950"
-                    : "text-slate-300 hover:bg-slate-800"
+                    ? "bg-gradient-to-r from-cyan-300 to-lime-300 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.22)]"
+                    : "text-slate-300 hover:bg-white/10"
                 }`}
                 key={option.value}
                 type="button"
@@ -310,12 +310,12 @@ export default function ReportPreview({
           </div>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-950/70 p-5">
+        <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4">
           <p className="text-sm font-semibold text-slate-300">
             {report.label}
           </p>
 
-          <div className="mt-5 grid gap-4 sm:grid-cols-3">
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
             <div>
               <p className="text-sm text-slate-500">Total Income</p>
               <p className="mt-2 text-xl font-bold text-emerald-300">
@@ -342,8 +342,8 @@ export default function ReportPreview({
             </div>
           </div>
 
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
               <p className="text-sm text-slate-500">Financial Status</p>
               <p className={`mt-2 text-2xl font-bold ${report.status.className}`}>
                 {report.status.label}
@@ -353,7 +353,7 @@ export default function ReportPreview({
               </p>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
               <p className="text-sm text-slate-500">Top Category</p>
               <p className="mt-2 text-2xl font-bold text-white">
                 {report.topCategory}
@@ -364,9 +364,9 @@ export default function ReportPreview({
             </div>
           </div>
 
-          <div className="mt-6 border-t border-slate-800 pt-5">
+          <div className="mt-5 border-t border-white/10 pt-4">
             <button
-              className="w-full rounded-full bg-emerald-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              className="w-full rounded-full bg-gradient-to-r from-cyan-300 to-lime-300 px-6 py-3 font-bold text-slate-950 shadow-[0_0_24px_rgba(34,211,238,0.2)] transition hover:shadow-[0_0_32px_rgba(34,211,238,0.28)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               type="button"
               disabled={isSending}
               onClick={sendReport}

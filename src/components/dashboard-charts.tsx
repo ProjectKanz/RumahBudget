@@ -106,31 +106,31 @@ export default function DashboardCharts({
 
   return (
     <section
-      className="mx-auto w-full max-w-6xl px-5 pb-12 sm:px-6"
+      className="mx-auto w-full max-w-6xl px-5 pb-8 sm:px-6"
       id="dashboard-charts"
     >
       <div
-        className={`rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-6 shadow-[0_0_46px_rgba(34,211,238,0.1)] backdrop-blur-xl transition sm:p-8 ${highlightClassName}`}
+        className={`rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-5 shadow-[0_0_46px_rgba(34,211,238,0.1)] backdrop-blur-xl transition sm:p-6 ${highlightClassName}`}
       >
-        <div className="border-b border-cyan-300/10 pb-6">
+        <div className="border-b border-cyan-300/10 pb-4">
           <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
             Dashboard Charts
           </p>
-          <h2 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl">
+          <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
             Balance and expense overview
           </h2>
-          <p className="mt-3 text-sm leading-6 text-slate-400">
+          <p className="mt-2 text-sm leading-6 text-slate-400">
             Transfers affect account balances only. Expense breakdown uses
             expense transactions.
           </p>
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <div className="rounded-[1.4rem] border border-cyan-300/15 bg-black/25 p-5 transition hover:border-cyan-300/35 hover:shadow-[0_0_28px_rgba(34,211,238,0.12)]">
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-cyan-300/15 bg-black/25 p-4 transition hover:border-cyan-300/35 hover:shadow-[0_0_28px_rgba(34,211,238,0.12)]">
             <h3 className="text-lg font-black text-white">
               Account Balance Overview
             </h3>
-            <div className="mt-5">
+            <div className="mt-4">
               <SimpleBarList
                 emptyMessage="No money accounts yet."
                 isBalanceHidden={isBalanceHidden}
@@ -139,11 +139,11 @@ export default function DashboardCharts({
             </div>
           </div>
 
-          <div className="rounded-[1.4rem] border border-fuchsia-300/15 bg-black/25 p-5 transition hover:border-fuchsia-300/35 hover:shadow-[0_0_28px_rgba(217,70,239,0.12)]">
+          <div className="rounded-2xl border border-fuchsia-300/15 bg-black/25 p-4 transition hover:border-fuchsia-300/35 hover:shadow-[0_0_28px_rgba(217,70,239,0.12)]">
             <h3 className="text-lg font-black text-white">
               All-time Expense Breakdown
             </h3>
-            <div className="mt-5">
+            <div className="mt-4">
               <SimpleBarList
                 emptyMessage="No expenses yet."
                 items={expenseItems}

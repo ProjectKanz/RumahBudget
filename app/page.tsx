@@ -1240,24 +1240,24 @@ export default function Home() {
             onSkip={completeOnboarding}
           />
 
-          <section className="mx-auto max-w-6xl px-5 py-6 sm:px-6 sm:py-8">
-            <div className="rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/70 p-5 shadow-[0_0_60px_rgba(34,211,238,0.08)] backdrop-blur-xl sm:p-6">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <section className="mx-auto max-w-6xl px-5 py-4 sm:px-6 sm:py-5">
+            <div className="rounded-3xl border border-cyan-300/15 bg-slate-950/70 p-4 shadow-[0_0_48px_rgba(34,211,238,0.08)] backdrop-blur-xl sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">
                     Neon Finance OS
                   </p>
-                  <h1 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-5xl">
+                  <h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-5xl">
                     RumahBudget
                   </h1>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
                     Private money tracking with accounts, cashflow, transfers,
-                    reports, and test-mode email delivery in one clean cockpit.
+                    and financial reports in one clean cockpit.
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-300 sm:min-w-72">
-                  <p>
+                <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300 sm:min-w-72">
+                  <p className="leading-5">
                     Signed in as:{" "}
                     <span className="font-semibold text-white">
                       {signedInEmail}
@@ -1282,27 +1282,30 @@ export default function Home() {
                 </div>
               </div>
 
-              <nav
-                aria-label="Primary app views"
-                className="mt-6 hidden gap-2 overflow-x-auto rounded-full border border-white/10 bg-black/30 p-2 sm:flex"
-              >
-                {appViews.map((item) => (
-                  <button
-                    className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-cyan-300/50 ${
-                      activeView === item.value
-                        ? "bg-gradient-to-r from-cyan-300 via-lime-300 to-fuchsia-300 text-slate-950 shadow-[0_0_28px_rgba(34,211,238,0.28)]"
-                        : "text-slate-300 hover:bg-white/10 hover:text-white"
-                    }`}
-                    key={item.value}
-                    type="button"
-                    onClick={() => openView(item.value)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </nav>
             </div>
           </section>
+
+          <div className="sticky top-0 z-30 hidden border-y border-cyan-300/10 bg-slate-950/82 px-5 py-2 backdrop-blur-xl sm:block">
+            <nav
+              aria-label="Primary app views"
+              className="mx-auto flex max-w-6xl gap-2 overflow-x-auto rounded-full border border-white/10 bg-black/30 p-1.5"
+            >
+              {appViews.map((item) => (
+                <button
+                  className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-cyan-300/50 ${
+                    activeView === item.value
+                      ? "bg-gradient-to-r from-cyan-300 via-lime-300 to-fuchsia-300 text-slate-950 shadow-[0_0_28px_rgba(34,211,238,0.28)]"
+                      : "text-slate-300 hover:bg-white/10 hover:text-white"
+                  }`}
+                  key={item.value}
+                  type="button"
+                  onClick={() => openView(item.value)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </div>
 
           <nav
             aria-label="Mobile app views"
@@ -1328,15 +1331,15 @@ export default function Home() {
             {activeView === "overview" ? (
               <>
                 <section
-                  className="mx-auto max-w-6xl px-5 pb-8 sm:px-6"
+                  className="mx-auto max-w-6xl px-5 pb-6 pt-5 sm:px-6"
                   id="overview"
                 >
-                  <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.32em] text-lime-300">
                         Overview
                       </p>
-                      <h2 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-4xl">
+                      <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
                         Your money command center
                       </h2>
                     </div>
@@ -1436,7 +1439,7 @@ export default function Home() {
                   moneyAccounts={moneyAccounts}
                 />
 
-                <section className="mx-auto max-w-6xl px-5 pb-12 sm:px-6">
+                <section className="mx-auto max-w-6xl px-5 pb-8 sm:px-6">
                   <div className="rounded-[1.5rem] border border-white/10 bg-slate-950/70 p-5 shadow-[0_0_36px_rgba(34,211,238,0.08)] backdrop-blur">
                     <div className="flex items-center justify-between gap-4">
                       <div>
@@ -1515,21 +1518,21 @@ export default function Home() {
 
             {activeView === "add" ? (
               <section
-                className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
+                className="mx-auto w-full max-w-5xl px-5 pb-8 pt-5 sm:px-6"
                 id="quick-add"
               >
                 <div
-                  className={`rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-6 shadow-[0_0_46px_rgba(34,211,238,0.1)] backdrop-blur-xl transition sm:p-8 ${getSectionHighlightClass("quick-add")}`}
+                  className={`rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-5 shadow-[0_0_46px_rgba(34,211,238,0.1)] backdrop-blur-xl transition sm:p-6 ${getSectionHighlightClass("quick-add")}`}
                 >
-                  <div className="flex flex-col gap-5 border-b border-cyan-300/10 pb-6 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex flex-col gap-4 border-b border-cyan-300/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
-                        Quick Add
+                        Quick Add Command Center
                       </p>
-                      <h2 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl">
+                      <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
                         Record money movement
                       </h2>
-                      <p className="mt-3 text-sm leading-6 text-slate-400">
+                      <p className="mt-2 text-sm leading-6 text-slate-400">
                         Add income, record an expense, or transfer money between
                         your accounts from one compact workspace.
                       </p>
@@ -1553,7 +1556,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="mt-6">
+                  <div className="mt-5">
                     {quickAddTab === "income" ? (
                       <IncomeForm
                         accountLabel={signedInEmail}
@@ -1622,20 +1625,20 @@ export default function Home() {
 
             {activeView === "settings" ? (
               <>
-                <section className="mx-auto w-full max-w-5xl px-5 pb-8 sm:px-6">
-                  <div className="rounded-[1.75rem] border border-fuchsia-300/15 bg-slate-950/75 p-6 shadow-[0_0_42px_rgba(217,70,239,0.1)] backdrop-blur-xl sm:p-8">
+                <section className="mx-auto w-full max-w-5xl px-5 pb-6 pt-5 sm:px-6">
+                  <div className="rounded-[1.75rem] border border-fuchsia-300/15 bg-slate-950/75 p-5 shadow-[0_0_42px_rgba(217,70,239,0.1)] backdrop-blur-xl sm:p-6">
                     <p className="text-xs font-semibold uppercase tracking-[0.32em] text-fuchsia-300">
                       Settings
                     </p>
-                    <h2 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl">
+                    <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
                       Account controls
                     </h2>
-                    <p className="mt-3 text-sm leading-6 text-slate-400">
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
                       Manage your tutorial, account session, and email report
                       preferences.
                     </p>
 
-                    <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
                       <button
                         className="rounded-full border border-cyan-300/30 px-5 py-3 font-bold text-cyan-100 transition hover:bg-cyan-300/10 hover:shadow-[0_0_22px_rgba(34,211,238,0.16)]"
                         type="button"
