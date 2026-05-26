@@ -33,7 +33,7 @@ function getOnboardingStorageKey(userId: string) {
 }
 
 type MonthlyStatus = {
-  label: "Safe" | "Warning" | "Critical";
+  label: "Safe" | "Warning" | "Critical" | "No income recorded";
   explanation: string;
   className: string;
 };
@@ -763,30 +763,49 @@ export default function Home() {
   const remainingBalance = totalIncome - totalExpense;
   const expenseRatio = totalIncome > 0 ? totalExpense / totalIncome : 0;
   const monthlyStatus: MonthlyStatus =
-    totalExpense > totalIncome
-      ? {
-          label: "Critical",
-          explanation: "Expenses are higher than income.",
-          className: "text-red-300",
-        }
-      : expenseRatio >= 0.7
+    totalIncome === 0 && totalExpense > 0
+      ? totalBalance <= 0
         ? {
-            label: "Warning",
-            explanation: "Expenses are getting close to income.",
-            className: "text-amber-300",
+            label: "Critical",
+            explanation:
+              "You have expenses this month, no income recorded yet, and your Total Account Balance is not positive.",
+            className: "text-red-300",
           }
         : {
-            label: "Safe",
-            explanation: "Expenses are still under control.",
-            className: "text-emerald-400",
-          };
+            label: "No income recorded",
+            explanation:
+              "You have expenses this month, but no income has been recorded yet. These expenses are being paid from your existing account balance.",
+            className: "text-cyan-200",
+          }
+      : totalIncome > 0 && totalExpense > totalIncome
+        ? {
+            label: "Critical",
+            explanation:
+              totalBalance > 0
+                ? "Expenses exceed recorded income this month, but your Total Account Balance is still positive."
+                : "Expenses exceed recorded income this month and your Total Account Balance is not positive.",
+            className: "text-red-300",
+          }
+        : expenseRatio >= 0.7
+          ? {
+              label: "Warning",
+              explanation: "Expenses are 70% or more of recorded income.",
+              className: "text-amber-300",
+            }
+          : {
+              label: "Safe",
+              explanation: "Expenses are less than 70% of recorded income.",
+              className: "text-emerald-400",
+            };
 
   const monthlyStatusBadgeClass =
     monthlyStatus.label === "Safe"
       ? "border-lime-300/50 bg-lime-300/10 text-lime-200 shadow-[0_0_26px_rgba(190,242,100,0.18)]"
       : monthlyStatus.label === "Warning"
         ? "border-amber-300/50 bg-amber-300/10 text-amber-200 shadow-[0_0_26px_rgba(252,211,77,0.14)]"
-        : "border-pink-400/50 bg-pink-500/10 text-pink-200 shadow-[0_0_26px_rgba(244,114,182,0.16)]";
+        : monthlyStatus.label === "Critical"
+          ? "border-pink-400/50 bg-pink-500/10 text-pink-200 shadow-[0_0_26px_rgba(244,114,182,0.16)]"
+          : "border-cyan-300/50 bg-cyan-300/10 text-cyan-100 shadow-[0_0_26px_rgba(34,211,238,0.16)]";
 
   const recentActivity = useMemo<RecentActivityItem[]>(() => {
     const incomeActivity = activeIncomes.map((income) => ({
@@ -1418,8 +1437,12 @@ export default function Home() {
                     <div
                       className={`rounded-[1.5rem] border p-5 sm:col-span-2 ${monthlyStatusBadgeClass}`}
                     >
-                      <p className="text-sm opacity-80">Financial Status</p>
-                      <p className="mt-2 text-3xl font-black">
+                      <p className="text-sm opacity-80">
+                        Monthly Cashflow Status
+                      </p>
+                      <p
+                        className={`mt-2 text-3xl font-black ${monthlyStatus.className}`}
+                      >
                         {monthlyStatus.label}
                       </p>
                       <p className="mt-2 text-sm leading-6 opacity-80">
