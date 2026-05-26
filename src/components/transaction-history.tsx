@@ -171,9 +171,9 @@ export default function TransactionHistory({
         <SectionHeader
           action={
             <SegmentedControl
-              className="grid-cols-2 sm:grid-cols-4"
+              className="grid-cols-2 lg:min-w-[32rem] lg:grid-cols-4"
               options={filters.map((option) => ({
-                label: option,
+                label: option === "Transfers" ? "Transfer" : option,
                 value: option,
               }))}
               value={filter}
@@ -200,6 +200,11 @@ export default function TransactionHistory({
             filteredTransactions.map((transaction) => {
               const isIncome = transaction.type === "Income";
               const isTransfer = transaction.type === "Transfers";
+              const transactionTypeLabel = isTransfer
+                ? "Transfer"
+                : isIncome
+                  ? "Income"
+                  : "Expense";
               const transactionDate =
                 transaction.createdAt > 0
                   ? dateTimeFormatter.format(new Date(transaction.createdAt))
@@ -217,10 +222,10 @@ export default function TransactionHistory({
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusChip
-                        className="py-1"
+                        className="inline-flex min-w-28 justify-center whitespace-nowrap py-1 text-center"
                         tone={isTransfer ? "cyan" : isIncome ? "lime" : "rose"}
                       >
-                        {transaction.type}
+                        {transactionTypeLabel}
                       </StatusChip>
                       <span className="text-xs text-slate-500">
                         {transaction.owner}
@@ -273,7 +278,7 @@ export default function TransactionHistory({
                     type="button"
                     onClick={() => {
                       const didConfirm = window.confirm(
-                        `Delete this ${transaction.type.toLowerCase()} record? This cannot be undone.`,
+                        `Delete this ${transactionTypeLabel.toLowerCase()} record? This cannot be undone.`,
                       );
 
                       if (!didConfirm) {

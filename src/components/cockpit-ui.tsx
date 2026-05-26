@@ -90,11 +90,11 @@ export function SectionHeader({
   return (
     <div
       className={cn(
-        "flex flex-col gap-4 border-b border-white/10 pb-4 sm:flex-row sm:items-end sm:justify-between",
+        "flex flex-col gap-4 border-b border-white/10 pb-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between",
         className,
       )}
     >
-      <div className="max-w-2xl">
+      <div className="max-w-2xl min-w-0">
         <p
           className={cn(
             "text-xs font-semibold uppercase tracking-[0.32em]",
@@ -112,7 +112,7 @@ export function SectionHeader({
           </p>
         ) : null}
       </div>
-      {action}
+      {action ? <div className="w-full sm:w-auto sm:shrink-0">{action}</div> : null}
     </div>
   );
 }
@@ -280,14 +280,14 @@ export function SegmentedControl<T extends string>({
   return (
     <div
       className={cn(
-        "grid gap-2 border border-white/10 bg-black/30 p-1",
+        "grid w-full min-w-0 gap-2 border border-white/10 bg-black/30 p-1",
         className,
       )}
     >
       {options.map((option) => (
         <button
           className={cn(
-            "px-3 py-2 text-sm font-black uppercase tracking-[0.08em] transition focus:outline-none focus:ring-2 focus:ring-cyan-300/50",
+            "flex min-h-11 min-w-0 items-center justify-center overflow-hidden px-4 py-2 text-center text-xs font-black uppercase tracking-[0.06em] transition focus:outline-none focus:ring-2 focus:ring-cyan-300/50 sm:text-sm sm:tracking-[0.08em]",
             value === option.value
               ? "cockpit-nav-active text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.22)]"
               : "text-slate-300 hover:bg-white/10 hover:text-white",

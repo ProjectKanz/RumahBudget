@@ -222,6 +222,10 @@ export default function MoneyAccounts({
                   ? hiddenBalanceLabel
                   : formatCurrency(totalCurrentBalance)}
               </NumberValue>
+              <span className="mt-2 block">
+                Current balance is calculated from initial balance, income,
+                expenses, and transfers.
+              </span>
             </span>
           }
           eyebrow="Account List"
@@ -268,12 +272,15 @@ export default function MoneyAccounts({
                       </NumberValue>
                     </p>
                     <p className="mt-3 text-sm text-slate-500">
-                      Initial balance:{" "}
+                      Initial balance (starting amount):{" "}
                       <NumberValue className="text-slate-300">
                         {isBalanceHidden
                           ? hiddenBalanceLabel
                           : formatCurrency(account.initialBalance)}
                       </NumberValue>
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      Includes linked income, expenses, and transfers.
                     </p>
                   </div>
 

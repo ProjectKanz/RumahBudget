@@ -1933,7 +1933,7 @@ export default function Home() {
                   <SectionHeader
                     action={
                       <SegmentedControl
-                        className="grid-cols-3"
+                        className="grid-cols-1 sm:min-w-[25rem] sm:grid-cols-3"
                         options={quickAddTabs}
                         value={quickAddTab}
                         onChange={setQuickAddTab}
