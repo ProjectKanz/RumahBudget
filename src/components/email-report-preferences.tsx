@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  Notice,
+  SectionHeader,
+  SharpButton,
+  SharpInput,
+  TerminalPanel,
+} from "@/src/components/cockpit-ui";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useEffect, useState } from "react";
@@ -177,35 +184,29 @@ export default function EmailReportPreferences({
       className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
       id="email-settings"
     >
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
-        <div className="border-b border-slate-800 pb-6">
-          <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-            Email Report Settings
-          </p>
-          <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Email report preferences
-          </h2>
-          <p className="mt-3 text-sm leading-6 text-slate-400">
-            Choose weekly or monthly reports and set the recipient email for
-            this account.
-          </p>
-          <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-            Email delivery is currently limited to one verified test address.
-            Sending to other emails requires a verified domain.
-          </p>
-        </div>
+      <TerminalPanel className="!p-5 sm:!p-6">
+        <SectionHeader
+          description="Choose weekly or monthly reports and set the recipient email for this account."
+          eyebrow="Email Report Settings"
+          title="Email report preferences"
+          tone="lime"
+        />
+        <Notice className="mt-4" tone="amber">
+          Email delivery is currently limited to one verified test address.
+          Sending to other emails requires a verified domain.
+        </Notice>
 
         {error ? (
-          <p className="mt-6 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <Notice className="mt-6" tone="rose">
             {error}
-          </p>
+          </Notice>
         ) : null}
 
         <form className="mt-6 space-y-5" onSubmit={savePreferences}>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex items-start gap-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+            <label className="cockpit-card flex items-start gap-4 border border-white/10 bg-white/[0.03] p-4">
               <input
-                className="mt-1 h-5 w-5 accent-emerald-400"
+                className="mt-1 h-5 w-5 accent-cyan-300"
                 type="checkbox"
                 checked={weeklyEnabled}
                 disabled={isLoading || isSaving}
@@ -221,9 +222,9 @@ export default function EmailReportPreferences({
               </span>
             </label>
 
-            <label className="flex items-start gap-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+            <label className="cockpit-card flex items-start gap-4 border border-white/10 bg-white/[0.03] p-4">
               <input
-                className="mt-1 h-5 w-5 accent-emerald-400"
+                className="mt-1 h-5 w-5 accent-cyan-300"
                 type="checkbox"
                 checked={monthlyEnabled}
                 disabled={isLoading || isSaving}
@@ -242,8 +243,7 @@ export default function EmailReportPreferences({
 
           <label className="block text-sm font-medium text-slate-300">
             Recipient email
-            <input
-              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+            <SharpInput
               type="email"
               value={recipientEmail}
               disabled={isLoading || isSaving}
@@ -252,14 +252,14 @@ export default function EmailReportPreferences({
             />
           </label>
 
-          <div className="flex flex-col gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center">
-            <button
-              className="rounded-full bg-emerald-400 px-6 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+          <div className="flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center">
+            <SharpButton
+              variant="primary"
               type="submit"
               disabled={isLoading || isSaving}
             >
               {isSaving ? "Saving..." : "Save Settings"}
-            </button>
+            </SharpButton>
 
             {isLoading ? (
               <p className="text-sm text-slate-400">
@@ -270,11 +270,11 @@ export default function EmailReportPreferences({
         </form>
 
         {message ? (
-          <p className="mt-5 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
+          <Notice className="mt-5" tone="lime">
             {message}
-          </p>
+          </Notice>
         ) : null}
-      </div>
+      </TerminalPanel>
     </section>
   );
 }

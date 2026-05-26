@@ -1,10 +1,14 @@
 "use client";
 
+import {
+  Notice,
+  SharpButton,
+  SharpInput,
+  SharpSelect,
+  TerminalPanel,
+} from "@/src/components/cockpit-ui";
 import type { MoneyAccount } from "@/src/types/money-account";
 import { FormEvent, useMemo, useState } from "react";
-
-const inputClassName =
-  "mt-2 w-full rounded-xl border border-cyan-300/15 bg-slate-950 px-4 py-2.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-60";
 
 const labelClassName = "text-sm font-medium text-slate-300";
 
@@ -107,105 +111,102 @@ export default function TransferMoney({
 
   const content = (
     <>
-        <div className="mb-5 max-w-2xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
-            Transfer Money
-          </p>
-          <h2 className="mt-2 text-xl font-black tracking-tight text-white sm:text-2xl">
-            Move money between accounts
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-400">
-            Transfers move balance between your own money accounts without
-            changing income or expense totals.
-          </p>
-          {!hasEnoughAccounts ? (
-            <p className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-              Create at least two money accounts before transferring.
-            </p>
-          ) : null}
+      <div className="mb-5 max-w-2xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
+          Transfer Money
+        </p>
+        <h3 className="mt-2 text-xl font-black tracking-tight text-white">
+          Move money between accounts
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-slate-400">
+          Transfers move balance between your own money accounts without
+          changing income or expense totals.
+        </p>
+        {!hasEnoughAccounts ? (
+          <Notice className="mt-4" tone="amber">
+            Create at least two money accounts before transferring.
+          </Notice>
+        ) : null}
+      </div>
+
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
+        <label className={labelClassName}>
+          From Account
+          <SharpSelect
+            value={selectedFromAccountId}
+            disabled={!hasEnoughAccounts}
+            onChange={(event) => setFromAccountId(event.target.value)}
+          >
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </SharpSelect>
+        </label>
+
+        <label className={labelClassName}>
+          To Account
+          <SharpSelect
+            value={selectedToAccountId}
+            disabled={!hasEnoughAccounts}
+            onChange={(event) => setToAccountId(event.target.value)}
+          >
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name}
+              </option>
+            ))}
+          </SharpSelect>
+        </label>
+
+        <label className={labelClassName}>
+          Amount
+          <SharpInput
+            type="number"
+            inputMode="numeric"
+            min="0"
+            value={amount}
+            disabled={!hasEnoughAccounts}
+            onChange={(event) => setAmount(event.target.value)}
+            placeholder="Rp 0"
+          />
+        </label>
+
+        <label className={labelClassName}>
+          Note
+          <SharpInput
+            type="text"
+            value={note}
+            disabled={!hasEnoughAccounts}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Optional note"
+          />
+        </label>
+
+        {formError ? (
+          <Notice className="sm:col-span-2" tone="rose">
+            {formError}
+          </Notice>
+        ) : null}
+
+        {error ? (
+          <Notice className="sm:col-span-2" tone="rose">
+            {error}
+          </Notice>
+        ) : null}
+
+        <div className="sm:col-span-2">
+          <SharpButton
+            className="w-full sm:w-auto"
+            variant="primary"
+            type="submit"
+            disabled={isSaving || !hasEnoughAccounts}
+          >
+            {isSaving ? "Saving..." : "Save Transfer"}
+          </SharpButton>
         </div>
-
-        <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
-          <label className={labelClassName}>
-            From Account
-            <select
-              className={inputClassName}
-              value={selectedFromAccountId}
-              disabled={!hasEnoughAccounts}
-              onChange={(event) => setFromAccountId(event.target.value)}
-            >
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={labelClassName}>
-            To Account
-            <select
-              className={inputClassName}
-              value={selectedToAccountId}
-              disabled={!hasEnoughAccounts}
-              onChange={(event) => setToAccountId(event.target.value)}
-            >
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={labelClassName}>
-            Amount
-            <input
-              className={inputClassName}
-              type="number"
-              inputMode="numeric"
-              min="0"
-              value={amount}
-              disabled={!hasEnoughAccounts}
-              onChange={(event) => setAmount(event.target.value)}
-              placeholder="Rp 0"
-            />
-          </label>
-
-          <label className={labelClassName}>
-            Note
-            <input
-              className={inputClassName}
-              type="text"
-              value={note}
-              disabled={!hasEnoughAccounts}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="Optional note"
-            />
-          </label>
-
-          {formError ? (
-            <p className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200 sm:col-span-2">
-              {formError}
-            </p>
-          ) : null}
-
-          {error ? (
-            <p className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200 sm:col-span-2">
-              {error}
-            </p>
-          ) : null}
-
-          <div className="sm:col-span-2">
-            <button
-              className="w-full rounded-full bg-gradient-to-r from-cyan-300 to-fuchsia-300 px-6 py-3 font-bold text-slate-950 shadow-[0_0_24px_rgba(34,211,238,0.2)] transition hover:shadow-[0_0_32px_rgba(34,211,238,0.28)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-              type="submit"
-              disabled={isSaving || !hasEnoughAccounts}
-            >
-              {isSaving ? "Saving..." : "Save Transfer"}
-            </button>
-          </div>
-        </form>
+      </form>
     </>
   );
 
@@ -218,9 +219,9 @@ export default function TransferMoney({
       className="mx-auto w-full max-w-5xl px-5 pb-8 sm:px-6"
       id="transfer-money"
     >
-      <div className="rounded-2xl border border-cyan-300/15 bg-slate-950/75 p-5 shadow-[0_0_36px_rgba(34,211,238,0.08)] sm:p-6">
+      <TerminalPanel className="!p-5 sm:!p-6">
         {content}
-      </div>
+      </TerminalPanel>
     </section>
   );
 }

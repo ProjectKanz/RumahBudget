@@ -8,8 +8,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,8 +19,322 @@
   }
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #0a0a0a;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.rb-app {
+  background:
+    radial-gradient(circle at 18% 4%, rgba(34, 211, 238, 0.12), transparent 28rem),
+    radial-gradient(circle at 86% 12%, rgba(168, 85, 247, 0.11), transparent 26rem),
+    linear-gradient(180deg, #0a0a0a 0%, #050505 100%);
+  isolation: isolate;
+  position: relative;
+}
+
+.rb-app::before {
+  background:
+    linear-gradient(rgba(34, 211, 238, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.05) 1px, transparent 1px);
+  background-size:
+    44px 44px,
+    44px 44px;
+  content: "";
+  inset: 0;
+  opacity: 0.36;
+  pointer-events: none;
+  position: fixed;
+  z-index: -2;
+}
+
+.rb-app::after {
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.035) 0,
+    rgba(255, 255, 255, 0.035) 1px,
+    transparent 1px,
+    transparent 7px
+  );
+  content: "";
+  inset: 0;
+  mix-blend-mode: screen;
+  opacity: 0.13;
+  pointer-events: none;
+  position: fixed;
+  z-index: -1;
+}
+
+.neo-title {
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
+  text-shadow:
+    0 0 18px rgba(34, 211, 238, 0.3),
+    0 0 36px rgba(217, 70, 239, 0.16);
+}
+
+.cockpit-panel,
+.cockpit-card,
+.cockpit-nav {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.026)) padding-box,
+    linear-gradient(135deg, rgba(34, 211, 238, 0.18), rgba(168, 85, 247, 0.11), rgba(255, 255, 255, 0.04)) border-box;
+  border-color: transparent;
+  border-radius: 0;
+  clip-path: polygon(
+    0 0,
+    calc(100% - 18px) 0,
+    100% 18px,
+    100% 100%,
+    18px 100%,
+    0 calc(100% - 18px)
+  );
+  position: relative;
+  transition:
+    background 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.cockpit-panel {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.cockpit-panel-prominent {
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.1),
+    0 24px 90px rgba(34, 211, 238, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.cockpit-card {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.cockpit-card:hover,
+.cockpit-panel:hover {
+  box-shadow:
+    0 18px 60px rgba(34, 211, 238, 0.08),
+    0 0 42px rgba(168, 85, 247, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.cockpit-nav {
+  box-shadow:
+    0 10px 48px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.cockpit-nav-active {
+  background:
+    linear-gradient(90deg, rgba(34, 211, 238, 0.96), rgba(190, 242, 100, 0.9)),
+    #67e8f9;
+}
+
+.status-chip {
+  backdrop-filter: blur(18px);
+  background: rgba(255, 255, 255, 0.045);
+  border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+}
+
+.numeric-value,
+input[type="number"] {
+  color: #ecfeff;
+  font-family: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-shadow: 0 0 14px rgba(34, 211, 238, 0.16);
+}
+
+.system-reading {
+  background:
+    linear-gradient(180deg, rgba(244, 63, 94, 0.12), rgba(255, 255, 255, 0.025)),
+    rgba(255, 255, 255, 0.03);
+  border-color: rgba(244, 63, 94, 0.22);
+  border-radius: 0;
+  box-shadow: inset 0 0 22px rgba(244, 63, 94, 0.05);
+}
+
+.signal-gauge {
+  border-radius: 999px;
+  display: grid;
+  isolation: isolate;
+  place-items: center;
+  position: relative;
+}
+
+.signal-gauge::before {
+  background: #0a0a0a;
+  border-radius: inherit;
+  content: "";
+  inset: 10px;
+  position: absolute;
+  z-index: -1;
+}
+
+.signal-gauge::after {
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.2), transparent 62%);
+  border-radius: inherit;
+  content: "";
+  inset: -10px;
+  opacity: 0.72;
+  position: absolute;
+  z-index: -2;
+}
+
+.signal-status-pill {
+  background:
+    linear-gradient(90deg, rgba(34, 211, 238, 0.16), rgba(168, 85, 247, 0.12)),
+    rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(34, 211, 238, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 28px rgba(34, 211, 238, 0.08);
+}
+
+.signature-console {
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.12),
+    0 28px 110px rgba(34, 211, 238, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.signature-console::after {
+  background: linear-gradient(
+    115deg,
+    transparent 0 34%,
+    rgba(34, 211, 238, 0.09) 42%,
+    transparent 52% 100%
+  );
+  content: "";
+  inset: 0;
+  opacity: 0.55;
+  pointer-events: none;
+  position: absolute;
+}
+
+.signal-reticle::after {
+  animation: reticleSpin 10s linear infinite;
+  background:
+    repeating-conic-gradient(
+      from 0deg,
+      rgba(34, 211, 238, 0.16) 0deg 8deg,
+      transparent 8deg 24deg
+    ),
+    radial-gradient(circle, rgba(34, 211, 238, 0.16), transparent 62%);
+  inset: -14px;
+}
+
+.signal-mini-card,
+.signal-check {
+  clip-path: polygon(
+    0 0,
+    calc(100% - 12px) 0,
+    100% 12px,
+    100% 100%,
+    12px 100%,
+    0 calc(100% - 12px)
+  );
+  position: relative;
+}
+
+.signal-mini-card::before,
+.signal-check::before {
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.18), transparent);
+  content: "";
+  height: 1px;
+  inset: 0 auto auto 0;
+  opacity: 0.65;
+  position: absolute;
+  width: 48%;
+}
+
+.runway-track {
+  border-radius: 999px;
+}
+
+.runway-bar {
+  background: linear-gradient(90deg, #fb7185, #fbbf24, #22d3ee);
+  border-radius: 999px;
+  box-shadow: 0 0 18px rgba(251, 113, 133, 0.16);
+}
+
+.neo-panel {
+  position: relative;
+}
+
+.neo-panel::before {
+  background:
+    linear-gradient(rgba(34, 211, 238, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(217, 70, 239, 0.08) 1px, transparent 1px);
+  background-size: 28px 28px;
+  content: "";
+  inset: 0;
+  mask-image: linear-gradient(to bottom, black, transparent 72%);
+  opacity: 0.5;
+  pointer-events: none;
+  position: absolute;
+}
+
+.neo-panel > * {
+  position: relative;
+}
+
+.signal-meter {
+  animation: signalPulse 2.4s ease-in-out infinite;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+
+@keyframes signalPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 18px rgba(34, 211, 238, 0.18),
+      inset 0 0 16px rgba(34, 211, 238, 0.08);
+    transform: scale(1);
+  }
+
+  50% {
+    box-shadow:
+      0 0 34px rgba(217, 70, 239, 0.26),
+      inset 0 0 22px rgba(217, 70, 239, 0.12);
+    transform: scale(1.04);
+  }
+}
+
+@keyframes reticleSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

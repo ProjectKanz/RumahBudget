@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  EmptyState,
+  NumberValue,
+  SectionHeader,
+  SegmentedControl,
+  SharpButton,
+  StatusChip,
+  TerminalPanel,
+} from "@/src/components/cockpit-ui";
 import { formatCurrency } from "@/src/lib/format";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
@@ -158,43 +167,35 @@ export default function TransactionHistory({
       className="mx-auto w-full max-w-5xl px-5 pb-8 pt-5 sm:px-6"
       id="transaction-history"
     >
-      <div className="rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-5 shadow-[0_0_42px_rgba(34,211,238,0.08)] backdrop-blur-xl sm:p-6">
-        <div className="flex flex-col gap-4 border-b border-cyan-300/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
-              Transaction History
-            </p>
-            <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
-              All records for {accountLabel}
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-400">
-              All income, expenses, and transfers in one place.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/30 p-1 sm:grid-cols-4 sm:rounded-full">
-            {filters.map((option) => (
-              <button
-                className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
-                  filter === option
-                    ? "bg-gradient-to-r from-cyan-300 to-lime-300 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.22)]"
-                    : "text-slate-300 hover:bg-white/10"
-                }`}
-                key={option}
-                type="button"
-                onClick={() => setFilter(option)}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        </div>
+      <TerminalPanel className="!p-5 sm:!p-6">
+        <SectionHeader
+          action={
+            <SegmentedControl
+              className="grid-cols-2 sm:grid-cols-4"
+              options={filters.map((option) => ({
+                label: option,
+                value: option,
+              }))}
+              value={filter}
+              onChange={setFilter}
+            />
+          }
+          description={
+            <>
+              All income, expenses, and transfers in one place for{" "}
+              <span className="text-slate-200">{accountLabel}</span>.
+            </>
+          }
+          eyebrow="Transaction History"
+          title="Ledger records"
+          tone="cyan"
+        />
 
         <div className="mt-5 space-y-3">
           {filteredTransactions.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
+            <EmptyState>
               No transactions for this filter yet.
-            </div>
+            </EmptyState>
           ) : (
             filteredTransactions.map((transaction) => {
               const isIncome = transaction.type === "Income";
@@ -206,26 +207,21 @@ export default function TransactionHistory({
 
               return (
                 <article
-                  className={`flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${
+                  className={`cockpit-card flex flex-col gap-3 border p-5 sm:flex-row sm:items-center sm:justify-between ${
                     isTransfer
-                      ? "border-sky-400/30 bg-sky-400/10"
-                      : "border-slate-800 bg-slate-950/70"
+                      ? "border-cyan-300/30 bg-cyan-300/10"
+                      : "border-white/10 bg-white/[0.03]"
                   }`}
                   key={`${transaction.type}-${transaction.id}`}
                 >
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-bold ${
-                          isTransfer
-                            ? "bg-sky-400/15 text-sky-300"
-                            : isIncome
-                            ? "bg-emerald-400/15 text-emerald-300"
-                            : "bg-red-400/15 text-red-300"
-                        }`}
+                      <StatusChip
+                        className="py-1"
+                        tone={isTransfer ? "cyan" : isIncome ? "lime" : "rose"}
                       >
                         {transaction.type}
-                      </span>
+                      </StatusChip>
                       <span className="text-xs text-slate-500">
                         {transaction.owner}
                       </span>
@@ -237,14 +233,16 @@ export default function TransactionHistory({
                     <p
                       className={`mt-3 text-xl font-bold ${
                         isTransfer
-                          ? "text-sky-300"
+                          ? "text-cyan-300"
                           : isIncome
-                            ? "text-emerald-300"
-                            : "text-red-300"
+                            ? "text-lime-300"
+                            : "text-rose-300"
                       }`}
                     >
-                      {isTransfer ? "" : isIncome ? "+" : "-"}
-                      {formatCurrency(transaction.amount)}
+                      <NumberValue>
+                        {isTransfer ? "" : isIncome ? "+" : "-"}
+                        {formatCurrency(transaction.amount)}
+                      </NumberValue>
                     </p>
 
                     <p className="mt-1 text-sm text-slate-300">
@@ -269,8 +267,9 @@ export default function TransactionHistory({
                     ) : null}
                   </div>
 
-                  <button
-                    className="rounded-full border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-200 transition hover:border-red-400 hover:bg-red-500/10"
+                  <SharpButton
+                    className="min-h-10 px-3 py-2"
+                    variant="danger"
                     type="button"
                     onClick={() => {
                       const didConfirm = window.confirm(
@@ -295,13 +294,13 @@ export default function TransactionHistory({
                     }}
                   >
                     Delete
-                  </button>
+                  </SharpButton>
                 </article>
               );
             })
           )}
         </div>
-      </div>
+      </TerminalPanel>
     </section>
   );
 }

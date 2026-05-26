@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  SharpButton,
+  StatusChip,
+  TerminalPanel,
+} from "@/src/components/cockpit-ui";
+
 type OnboardingStep = {
   title: string;
   description: string;
@@ -76,10 +82,10 @@ export default function OnboardingTutorial({
       className="fixed inset-x-0 bottom-0 z-50 px-4 py-4 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-full sm:max-w-xl sm:px-0 sm:py-0"
       role="dialog"
     >
-      <div className="w-full rounded-2xl border border-slate-700 bg-slate-900/95 p-6 shadow-2xl shadow-slate-950/70 backdrop-blur sm:p-8">
+      <TerminalPanel className="w-full !p-6 shadow-2xl shadow-slate-950/70 sm:!p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
+            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
               Getting Started
             </p>
             <h2
@@ -89,9 +95,9 @@ export default function OnboardingTutorial({
               {step.title}
             </h2>
           </div>
-          <p className="shrink-0 rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-300">
+          <StatusChip className="shrink-0 py-1" tone="neutral">
             {currentStep + 1} / {onboardingSteps.length}
-          </p>
+          </StatusChip>
         </div>
 
         <p className="mt-5 text-sm leading-6 text-slate-300">
@@ -102,8 +108,8 @@ export default function OnboardingTutorial({
           {onboardingSteps.map((item, index) => (
             <div
               aria-label={item.title}
-              className={`h-2 rounded-full ${
-                index <= currentStep ? "bg-emerald-400" : "bg-slate-800"
+              className={`h-2 border border-white/10 ${
+                index <= currentStep ? "bg-cyan-300" : "bg-black/60"
               }`}
               key={item.title}
             />
@@ -111,33 +117,31 @@ export default function OnboardingTutorial({
         </div>
 
         <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            className="rounded-full border border-slate-700 px-5 py-3 text-sm font-semibold text-slate-300 transition hover:border-slate-500 hover:bg-slate-800"
+          <SharpButton
             type="button"
             onClick={onSkip}
           >
             Skip tutorial
-          </button>
+          </SharpButton>
 
           <div className="flex flex-col gap-3 sm:flex-row">
-            <button
-              className="rounded-full border border-slate-700 px-5 py-3 text-sm font-semibold text-slate-300 transition hover:border-slate-500 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            <SharpButton
               type="button"
               disabled={isFirstStep}
               onClick={onBack}
             >
               Back
-            </button>
-            <button
-              className="rounded-full bg-emerald-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300"
+            </SharpButton>
+            <SharpButton
+              variant="primary"
               type="button"
               onClick={isLastStep ? onFinish : onNext}
             >
               {isLastStep ? "Finish" : "Next"}
-            </button>
+            </SharpButton>
           </div>
         </div>
-      </div>
+      </TerminalPanel>
     </div>
   );
 }

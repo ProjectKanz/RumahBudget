@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  EmptyState,
+  Notice,
+  SectionHeader,
+  StatusChip,
+  TerminalPanel,
+} from "@/src/components/cockpit-ui";
 import type { EmailReport } from "@/src/types/email-report";
 
 type EmailReportHistoryProps = {
@@ -23,52 +30,44 @@ export default function EmailReportHistory({
       className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
       id="email-history"
     >
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 sm:p-8">
-        <div className="border-b border-slate-800 pb-6">
-          <p className="text-sm font-semibold uppercase tracking-widest text-emerald-400">
-            Email Report History
-          </p>
-          <h2 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            Recent deliveries
-          </h2>
-          <p className="mt-3 text-sm leading-6 text-slate-400">
-            Delivery records for the signed-in account.
-          </p>
-        </div>
+      <TerminalPanel className="!p-5 sm:!p-6">
+        <SectionHeader
+          description="Delivery records for the signed-in account."
+          eyebrow="Email Report History"
+          title="Recent deliveries"
+          tone="lime"
+        />
 
         {error ? (
-          <p className="mt-6 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <Notice className="mt-6" tone="rose">
             {error}
-          </p>
+          </Notice>
         ) : null}
 
         <div className="mt-6 space-y-4">
           {isLoading ? (
-            <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
+            <EmptyState>
               Loading email report history...
-            </div>
+            </EmptyState>
           ) : emailReports.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
+            <EmptyState>
               No email reports have been sent yet.
-            </div>
+            </EmptyState>
           ) : (
             emailReports.map((report) => (
               <article
-                className="rounded-xl border border-slate-800 bg-slate-950/70 p-4"
+                className="cockpit-card border border-white/10 bg-white/[0.03] p-4"
                 key={report.id}
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-bold ${
-                          report.status === "success"
-                            ? "bg-emerald-400/15 text-emerald-300"
-                            : "bg-red-400/15 text-red-300"
-                        }`}
+                      <StatusChip
+                        className="py-1"
+                        tone={report.status === "success" ? "lime" : "rose"}
                       >
                         {report.status === "success" ? "Success" : "Failed"}
-                      </span>
+                      </StatusChip>
                       <span className="text-xs text-slate-500">
                         {dateTimeFormatter.format(new Date(report.sentAt))}
                       </span>
@@ -87,15 +86,15 @@ export default function EmailReportHistory({
                 </div>
 
                 {report.errorMessage ? (
-                  <p className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                  <Notice className="mt-4" tone="rose">
                     {report.errorMessage}
-                  </p>
+                  </Notice>
                 ) : null}
               </article>
             ))
           )}
         </div>
-      </div>
+      </TerminalPanel>
     </section>
   );
 }

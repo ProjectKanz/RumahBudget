@@ -1,6 +1,17 @@
 "use client";
 
 import AuthForm from "@/src/components/auth-form";
+import {
+  MetricCell,
+  NumberValue,
+  SectionHeader,
+  SharpButton,
+  SharpInput,
+  SegmentedControl,
+  StatusChip,
+  SystemReading,
+  TerminalPanel,
+} from "@/src/components/cockpit-ui";
 import DashboardCharts from "@/src/components/dashboard-charts";
 import EmailReportHistory from "@/src/components/email-report-history";
 import EmailReportPreferences from "@/src/components/email-report-preferences";
@@ -37,6 +48,8 @@ type MonthlyStatus = {
   explanation: string;
   className: string;
 };
+
+type SignalCheckState = "clear" | "critical" | "watch";
 
 type QuickAddTab = "income" | "expense" | "transfer";
 type AppView =
@@ -212,6 +225,7 @@ export default function Home() {
   const [activeView, setActiveView] = useState<AppView>("overview");
   const [quickAddTab, setQuickAddTab] = useState<QuickAddTab>("income");
   const [highlightedSectionId, setHighlightedSectionId] = useState("");
+  const [plannedSpend, setPlannedSpend] = useState("250000");
 
   const loadExpensesFromSupabase = useCallback(async () => {
     setIsExpenseLoading(true);
@@ -769,7 +783,7 @@ export default function Home() {
             label: "Critical",
             explanation:
               "You have expenses this month, no income recorded yet, and your Total Account Balance is not positive.",
-            className: "text-red-300",
+            className: "text-rose-300",
           }
         : {
             label: "No income recorded",
@@ -784,7 +798,7 @@ export default function Home() {
               totalBalance > 0
                 ? "Expenses exceed recorded income this month, but your Total Account Balance is still positive."
                 : "Expenses exceed recorded income this month and your Total Account Balance is not positive.",
-            className: "text-red-300",
+            className: "text-rose-300",
           }
         : expenseRatio >= 0.7
           ? {
@@ -795,7 +809,7 @@ export default function Home() {
           : {
               label: "Safe",
               explanation: "Expenses are less than 70% of recorded income.",
-              className: "text-emerald-400",
+              className: "text-lime-300",
             };
 
   const monthlyStatusBadgeClass =
@@ -806,6 +820,166 @@ export default function Home() {
         : monthlyStatus.label === "Critical"
           ? "border-pink-400/50 bg-pink-500/10 text-pink-200 shadow-[0_0_26px_rgba(244,114,182,0.16)]"
           : "border-cyan-300/50 bg-cyan-300/10 text-cyan-100 shadow-[0_0_26px_rgba(34,211,238,0.16)]";
+
+  const plannedSpendAmount = Number(plannedSpend);
+  const safePlannedSpendAmount =
+    Number.isFinite(plannedSpendAmount) && plannedSpendAmount > 0
+      ? plannedSpendAmount
+      : 0;
+  const balanceAfterPlannedSpend = totalBalance - safePlannedSpendAmount;
+  const dailyBurnEstimate = totalExpense > 0 ? totalExpense / 30 : 0;
+  const runwayDays =
+    dailyBurnEstimate > 0
+      ? Math.max(0, Math.floor(totalBalance / dailyBurnEstimate))
+      : null;
+  const projectedMonthlyExpenses = totalExpense + safePlannedSpendAmount;
+  const projectedNetCashflow = totalIncome - projectedMonthlyExpenses;
+  const projectedDailyBurn =
+    projectedMonthlyExpenses > 0 ? projectedMonthlyExpenses / 30 : 0;
+  const projectedRunwayDays =
+    projectedDailyBurn > 0
+      ? Math.max(
+          0,
+          Math.floor(Math.max(0, balanceAfterPlannedSpend) / projectedDailyBurn),
+        )
+      : null;
+  const spendGaugePercent =
+    totalBalance > 0
+      ? Math.max(
+          0,
+          Math.min(
+            100,
+            Math.round((balanceAfterPlannedSpend / totalBalance) * 100),
+          ),
+        )
+      : 0;
+  const spendGaugeColor =
+    spendGaugePercent <= 15
+      ? "#fb7185"
+      : spendGaugePercent <= 45
+        ? "#fbbf24"
+        : "#22d3ee";
+  const spendSignal =
+    safePlannedSpendAmount <= 0
+      ? {
+          label: "Enter a spend",
+          tone: "text-slate-300",
+          description:
+            "Preview a purchase before it touches your real account balance.",
+        }
+      : balanceAfterPlannedSpend <= 0
+        ? {
+            label: "Hard stop",
+            tone: "text-pink-200",
+            description:
+              "This planned spend would leave your Total Account Balance at zero or below.",
+          }
+        : totalIncome === 0 && totalExpense > 0
+          ? {
+              label: "Balance-funded",
+              tone: "text-cyan-200",
+              description:
+                "Possible, but this month has no recorded income, so it comes from existing balance.",
+            }
+          : safePlannedSpendAmount > Math.max(totalBalance * 0.25, 0)
+            ? {
+                label: "Big move",
+                tone: "text-amber-200",
+                description:
+                  "This is more than 25% of your current account balance. Worth a second look.",
+              }
+            : {
+                label: "Looks manageable",
+                tone: "text-lime-200",
+                description:
+                  "This planned spend fits inside your current account balance.",
+              };
+  const projectedExpenseRatio =
+    totalIncome > 0 ? projectedMonthlyExpenses / totalIncome : null;
+  const runwayDelta =
+    runwayDays !== null && projectedRunwayDays !== null
+      ? runwayDays - projectedRunwayDays
+      : null;
+  const signalMode =
+    balanceAfterPlannedSpend <= 0
+      ? "stop"
+      : spendGaugePercent <= 15 ||
+          (projectedExpenseRatio !== null && projectedExpenseRatio > 1)
+        ? "danger"
+        : spendGaugePercent <= 45 ||
+            (projectedExpenseRatio !== null && projectedExpenseRatio >= 0.7)
+          ? "watch"
+          : "clear";
+  const signalModeClass =
+    signalMode === "stop" || signalMode === "danger"
+      ? "border-rose-300/35 bg-rose-300/10 text-rose-100"
+      : signalMode === "watch"
+        ? "border-amber-300/35 bg-amber-300/10 text-amber-100"
+        : "border-lime-300/30 bg-lime-300/10 text-lime-100";
+  const actionProtocol =
+    signalMode === "stop"
+      ? "Do not spend. This would deplete your Total Account Balance."
+      : signalMode === "danger"
+        ? "Delay or reduce the purchase. Your projected cashflow is under pressure."
+        : signalMode === "watch"
+          ? "Proceed carefully. Log the expense after purchase and watch the next transaction."
+          : "Proceed if it matches your priorities. Your reserve stays healthy.";
+  const decisionChecks: Array<{
+    detail: string;
+    label: string;
+    state: SignalCheckState;
+    value: string;
+  }> = [
+    {
+      label: "Reserve",
+      value: `${spendGaugePercent}%`,
+      detail: "balance left",
+      state:
+        spendGaugePercent <= 15
+          ? "critical"
+          : spendGaugePercent <= 45
+            ? "watch"
+            : "clear",
+    },
+    {
+      label: "Cashflow",
+      value:
+        totalIncome === 0
+          ? "No income"
+          : `${Math.round((projectedExpenseRatio ?? 0) * 100)}%`,
+      detail: totalIncome === 0 ? "recorded this month" : "expense load",
+      state:
+        totalIncome === 0 && projectedMonthlyExpenses > 0
+          ? "watch"
+          : projectedExpenseRatio !== null && projectedExpenseRatio > 1
+            ? "critical"
+            : projectedExpenseRatio !== null && projectedExpenseRatio >= 0.7
+              ? "watch"
+              : "clear",
+    },
+    {
+      label: "Runway",
+      value:
+        projectedRunwayDays === null ? "No burn" : `${projectedRunwayDays}d`,
+      detail:
+        runwayDelta === null
+          ? "after spend"
+          : `${runwayDelta}d impact after spend`,
+      state:
+        projectedRunwayDays === null
+          ? "clear"
+          : projectedRunwayDays <= 7
+            ? "critical"
+            : projectedRunwayDays <= 21
+              ? "watch"
+              : "clear",
+    },
+  ];
+  const checkToneClass: Record<SignalCheckState, string> = {
+    clear: "border-lime-300/25 bg-lime-300/10 text-lime-100",
+    critical: "border-rose-300/35 bg-rose-300/10 text-rose-100",
+    watch: "border-amber-300/35 bg-amber-300/10 text-amber-100",
+  };
 
   const recentActivity = useMemo<RecentActivityItem[]>(() => {
     const incomeActivity = activeIncomes.map((income) => ({
@@ -1231,12 +1405,12 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#020617] bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_30%),radial-gradient(circle_at_top_right,rgba(217,70,239,0.14),transparent_28%),radial-gradient(circle_at_bottom,rgba(163,230,53,0.08),transparent_30%)] text-white">
+    <main className="rb-app min-h-screen overflow-x-hidden bg-black text-white">
       {isAuthLoading ? (
         <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-5 py-8 sm:px-6">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 text-sm text-slate-300">
+          <TerminalPanel className="!p-6 text-sm text-slate-300">
             Checking your session...
-          </div>
+          </TerminalPanel>
         </section>
       ) : null}
 
@@ -1259,23 +1433,28 @@ export default function Home() {
             onSkip={completeOnboarding}
           />
 
-          <section className="mx-auto max-w-6xl px-5 py-4 sm:px-6 sm:py-5">
-            <div className="rounded-3xl border border-cyan-300/15 bg-slate-950/70 p-4 shadow-[0_0_48px_rgba(34,211,238,0.08)] backdrop-blur-xl sm:p-5">
+          <section className="relative mx-auto max-w-6xl px-5 py-4 sm:px-6">
+            <TerminalPanel isProminent className="!p-4 sm:!p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">
-                    Neon Finance OS
+                    Private Finance Cockpit
                   </p>
-                  <h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-5xl">
+                  <h1 className="neo-title mt-2 text-4xl font-black tracking-tight text-white sm:text-6xl">
                     RumahBudget
                   </h1>
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
                     Private money tracking with accounts, cashflow, transfers,
                     and financial reports in one clean cockpit.
                   </p>
+                  <div className="mt-4 flex flex-wrap gap-2 text-[0.68rem] font-black uppercase tracking-[0.22em]">
+                    <StatusChip tone="cyan">Live ledger</StatusChip>
+                    <StatusChip tone="lime">Spend signal</StatusChip>
+                    <StatusChip tone="fuchsia">Report ready</StatusChip>
+                  </div>
                 </div>
 
-                <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300 sm:min-w-72">
+                <div className="border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300 sm:min-w-72">
                   <p className="leading-5">
                     Signed in as:{" "}
                     <span className="font-semibold text-white">
@@ -1283,37 +1462,37 @@ export default function Home() {
                     </span>
                   </p>
                   <div className="flex gap-2">
-                    <button
-                      className="flex-1 rounded-full border border-cyan-300/30 px-4 py-2 font-semibold text-cyan-100 transition hover:border-cyan-200 hover:bg-cyan-300/10"
+                    <SharpButton
+                      className="min-h-10 flex-1 px-3 py-2"
                       type="button"
                       onClick={() => openView("settings")}
                     >
                       Settings
-                    </button>
-                    <button
-                      className="flex-1 rounded-full border border-pink-300/30 px-4 py-2 font-semibold text-pink-100 transition hover:border-pink-200 hover:bg-pink-300/10"
+                    </SharpButton>
+                    <SharpButton
+                      className="min-h-10 flex-1 px-3 py-2"
+                      variant="danger"
                       type="button"
                       onClick={logout}
                     >
                       Log out
-                    </button>
+                    </SharpButton>
                   </div>
                 </div>
               </div>
-
-            </div>
+            </TerminalPanel>
           </section>
 
-          <div className="sticky top-0 z-30 hidden border-y border-cyan-300/10 bg-slate-950/82 px-5 py-2 backdrop-blur-xl sm:block">
+          <div className="sticky top-0 z-30 hidden border-y border-cyan-300/10 bg-black/80 px-5 py-2 backdrop-blur-xl sm:block">
             <nav
               aria-label="Primary app views"
-              className="mx-auto flex max-w-6xl gap-2 overflow-x-auto rounded-full border border-white/10 bg-black/30 p-1.5"
+              className="cockpit-nav mx-auto flex max-w-6xl gap-2 overflow-x-auto border border-white/10 bg-black/40 p-1.5"
             >
               {appViews.map((item) => (
                 <button
-                  className={`shrink-0 rounded-full px-4 py-2 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-cyan-300/50 ${
+                  className={`shrink-0 px-4 py-2 text-sm font-black uppercase tracking-[0.12em] transition focus:outline-none focus:ring-2 focus:ring-cyan-300/50 ${
                     activeView === item.value
-                      ? "bg-gradient-to-r from-cyan-300 via-lime-300 to-fuchsia-300 text-slate-950 shadow-[0_0_28px_rgba(34,211,238,0.28)]"
+                      ? "cockpit-nav-active text-slate-950 shadow-[0_0_28px_rgba(34,211,238,0.28)]"
                       : "text-slate-300 hover:bg-white/10 hover:text-white"
                   }`}
                   key={item.value}
@@ -1328,11 +1507,11 @@ export default function Home() {
 
           <nav
             aria-label="Mobile app views"
-            className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-6 gap-1 rounded-3xl border border-cyan-300/20 bg-slate-950/90 p-2 shadow-[0_0_36px_rgba(34,211,238,0.18)] backdrop-blur-xl sm:hidden"
+            className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-3 gap-1 border border-cyan-300/20 bg-black/90 p-2 shadow-[0_0_36px_rgba(34,211,238,0.18)] backdrop-blur-xl sm:hidden"
           >
             {appViews.map((item) => (
               <button
-                className={`rounded-2xl px-1 py-2 text-[0.68rem] font-bold transition ${
+                className={`px-1 py-2 text-[0.68rem] font-bold transition ${
                   activeView === item.value
                     ? "bg-cyan-300 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.38)]"
                     : "text-slate-400"
@@ -1346,7 +1525,7 @@ export default function Home() {
             ))}
           </nav>
 
-          <div className="pb-28 sm:pb-10">
+          <div className="pb-36 sm:pb-10">
             {activeView === "overview" ? (
               <>
                 <section
@@ -1369,25 +1548,10 @@ export default function Home() {
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <div
-                      className={`group rounded-[1.5rem] border border-cyan-300/25 bg-cyan-300/10 p-5 shadow-[0_0_34px_rgba(34,211,238,0.12)] transition hover:-translate-y-0.5 hover:border-cyan-200/60 hover:shadow-[0_0_46px_rgba(34,211,238,0.2)] sm:col-span-2 ${getSectionHighlightClass("overview")}`}
-                    >
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <p className="text-sm text-cyan-100">
-                            Total Account Balance
-                          </p>
-                          <p className="mt-2 text-3xl font-black text-white transition sm:text-4xl">
-                            {isBalanceHidden
-                              ? hiddenBalanceLabel
-                              : formatCurrency(totalBalance)}
-                          </p>
-                          <p className="mt-3 text-sm leading-6 text-cyan-50/75">
-                            Money currently stored across all money accounts.
-                          </p>
-                        </div>
-                        <button
-                          className="rounded-full border border-cyan-200/40 bg-black/20 px-4 py-2 text-sm font-bold text-cyan-50 transition hover:bg-cyan-300/10"
+                    <MetricCell
+                      action={
+                        <SharpButton
+                          className="min-h-10 px-3 py-2"
                           type="button"
                           onClick={() =>
                             setIsBalanceHidden(
@@ -1395,61 +1559,278 @@ export default function Home() {
                             )
                           }
                         >
-                          {isBalanceHidden ? "Show Balance" : "Hide Balance"}
-                        </button>
+                          {isBalanceHidden ? "Show" : "Hide"}
+                        </SharpButton>
+                      }
+                      className={`sm:col-span-2 ${getSectionHighlightClass("overview")}`}
+                      description="Money currently stored across all money accounts."
+                      label="Total Account Balance"
+                      tone="cyan"
+                      value={
+                        isBalanceHidden
+                          ? hiddenBalanceLabel
+                          : formatCurrency(totalBalance)
+                      }
+                    />
+
+                    <MetricCell
+                      className="sm:col-span-2"
+                      description="Monthly income minus monthly expenses."
+                      label="Monthly Net Cashflow"
+                      tone="fuchsia"
+                      value={
+                        <span
+                          className={
+                            remainingBalance < 0
+                              ? "text-pink-200"
+                              : "text-white"
+                          }
+                        >
+                          {isBalanceHidden
+                            ? hiddenBalanceLabel
+                            : formatCurrency(remainingBalance)}
+                        </span>
+                      }
+                    />
+
+                    <MetricCell
+                      label="Monthly Income"
+                      tone="lime"
+                      value={
+                        <span className="text-lime-300">
+                          {formatCurrency(totalIncome)}
+                        </span>
+                      }
+                    />
+
+                    <MetricCell
+                      label="Monthly Expenses"
+                      tone="rose"
+                      value={
+                        <span className="text-pink-200">
+                          {formatCurrency(totalExpense)}
+                        </span>
+                      }
+                    />
+
+                    <MetricCell
+                      className={`sm:col-span-2 ${monthlyStatusBadgeClass}`}
+                      description={monthlyStatus.explanation}
+                      label="Monthly Cashflow Status"
+                      tone={
+                        monthlyStatus.label === "Safe"
+                          ? "lime"
+                          : monthlyStatus.label === "Warning"
+                            ? "amber"
+                            : monthlyStatus.label === "Critical"
+                              ? "rose"
+                              : "cyan"
+                      }
+                      value={
+                        <span className={monthlyStatus.className}>
+                          {monthlyStatus.label}
+                        </span>
+                      }
+                    />
+                  </div>
+                </section>
+
+                <section className="mx-auto max-w-6xl px-5 pb-8 sm:px-6">
+                  <TerminalPanel className="signature-console neo-panel overflow-hidden !p-0">
+                    <div className="grid lg:grid-cols-[0.9fr_1.1fr]">
+                      <div className="border-b border-white/10 p-5 sm:p-6 lg:border-b-0 lg:border-r">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusChip tone="fuchsia">Spend Signal</StatusChip>
+                          <StatusChip tone="cyan">What-if simulator</StatusChip>
+                        </div>
+                        <h2 className="neo-title mt-4 text-3xl font-black tracking-tight text-white sm:text-4xl">
+                          Can I spend this?
+                        </h2>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
+                          Test a purchase against account balance, monthly
+                          cashflow, and burn runway before recording anything.
+                        </p>
+
+                        <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end lg:grid-cols-1">
+                          <label className="text-sm font-medium text-slate-300">
+                            Planned spend
+                            <SharpInput
+                              inputMode="numeric"
+                              min="0"
+                              type="number"
+                              value={plannedSpend}
+                              placeholder="Rp 250000"
+                              onChange={(event) =>
+                                setPlannedSpend(event.target.value)
+                              }
+                            />
+                          </label>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            {[100000, 250000, 500000].map((amount) => (
+                              <SharpButton
+                                className="px-3 py-3 text-xs"
+                                key={amount}
+                                type="button"
+                                onClick={() => setPlannedSpend(String(amount))}
+                              >
+                                <NumberValue>
+                                  {formatCurrency(amount)}
+                                </NumberValue>
+                              </SharpButton>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                          <div className="signal-mini-card border border-white/10 bg-white/[0.03] p-4">
+                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                              Planned spend
+                            </p>
+                            <p className="mt-2 text-lg font-black text-white">
+                              <NumberValue>
+                                {formatCurrency(safePlannedSpendAmount)}
+                              </NumberValue>
+                            </p>
+                          </div>
+                          <div className="signal-mini-card border border-white/10 bg-white/[0.03] p-4">
+                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                              Net after spend
+                            </p>
+                            <p
+                              className={`mt-2 text-lg font-black ${
+                                projectedNetCashflow < 0
+                                  ? "text-rose-200"
+                                  : "text-cyan-100"
+                              }`}
+                            >
+                              <NumberValue>
+                                {formatCurrency(projectedNetCashflow)}
+                              </NumberValue>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div
+                          className={`mt-5 border px-4 py-3 text-sm leading-6 ${signalModeClass}`}
+                        >
+                          <p className="font-black uppercase tracking-[0.16em]">
+                            Action protocol
+                          </p>
+                          <p className="mt-2 text-slate-200/90">
+                            {actionProtocol}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="p-5 sm:p-6">
+                        <div className="grid gap-5 xl:grid-cols-[auto_1fr] xl:items-center">
+                          <div
+                            className="signal-gauge signal-reticle mx-auto h-44 w-44 border border-white/10 text-center sm:h-52 sm:w-52"
+                            style={{
+                              background: `conic-gradient(${spendGaugeColor} ${spendGaugePercent * 3.6}deg, rgba(255,255,255,0.08) 0deg)`,
+                              boxShadow: `0 0 48px ${spendGaugeColor}33`,
+                            }}
+                          >
+                            <span className="numeric-value text-4xl font-black text-white">
+                              {spendGaugePercent}%
+                            </span>
+                            <span className="absolute mt-16 text-[0.6rem] font-black uppercase tracking-[0.18em] text-slate-500 sm:mt-20">
+                              reserve left
+                            </span>
+                          </div>
+
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
+                              Decision engine
+                            </p>
+                            <p
+                              className={`signal-status-pill mt-3 inline-flex px-4 py-3 text-2xl font-black ${spendSignal.tone}`}
+                            >
+                              {spendSignal.label}
+                            </p>
+                            <p className="mt-3 text-sm leading-6 text-slate-400">
+                              {spendSignal.description}
+                            </p>
+
+                            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                              {decisionChecks.map((check) => (
+                                <div
+                                  className={`signal-check border p-4 ${checkToneClass[check.state]}`}
+                                  key={check.label}
+                                >
+                                  <p className="text-[0.65rem] font-black uppercase tracking-[0.18em] opacity-75">
+                                    {check.label}
+                                  </p>
+                                  <p className="mt-2 text-xl font-black text-white">
+                                    <NumberValue>{check.value}</NumberValue>
+                                  </p>
+                                  <p className="mt-1 text-xs leading-5 opacity-80">
+                                    {check.detail}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                          <div className="signal-mini-card border border-white/10 bg-white/[0.03] p-4">
+                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                              Balance after
+                            </p>
+                            <p className="mt-2 text-lg font-black text-white">
+                              <NumberValue>
+                                {isBalanceHidden
+                                  ? hiddenBalanceLabel
+                                  : formatCurrency(balanceAfterPlannedSpend)}
+                              </NumberValue>
+                            </p>
+                          </div>
+
+                          <SystemReading className="p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-bold uppercase tracking-[0.18em] text-rose-200/80">
+                                  Burn runway
+                                </p>
+                                <p className="mt-2 text-lg font-black text-white">
+                                  <NumberValue>
+                                    {projectedRunwayDays === null
+                                      ? "No burn"
+                                      : `${projectedRunwayDays} days`}
+                                  </NumberValue>
+                                </p>
+                              </div>
+                              <span className="h-2 w-2 animate-pulse rounded-full bg-rose-300 shadow-[0_0_18px_rgba(251,113,133,0.8)]" />
+                            </div>
+                            <div className="runway-track mt-4 h-2 overflow-hidden bg-white/10">
+                              <div
+                                className="runway-bar h-full"
+                                style={{
+                                  width:
+                                    projectedRunwayDays === null
+                                      ? "100%"
+                                      : `${Math.max(8, Math.min(100, projectedRunwayDays))}%`,
+                                }}
+                              />
+                            </div>
+                          </SystemReading>
+
+                          <div className="signal-mini-card border border-white/10 bg-white/[0.03] p-4">
+                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                              Expenses after
+                            </p>
+                            <p className="mt-2 text-lg font-black text-rose-100">
+                              <NumberValue>
+                                {formatCurrency(projectedMonthlyExpenses)}
+                              </NumberValue>
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     </div>
-
-                    <div className="rounded-[1.5rem] border border-fuchsia-300/20 bg-fuchsia-300/10 p-5 shadow-[0_0_34px_rgba(217,70,239,0.1)] transition hover:-translate-y-0.5 hover:border-fuchsia-200/50 sm:col-span-2">
-                      <p className="text-sm text-fuchsia-100">
-                        Monthly Net Cashflow
-                      </p>
-                      <p
-                        className={`mt-2 text-3xl font-black sm:text-4xl ${
-                          remainingBalance < 0 ? "text-pink-200" : "text-white"
-                        }`}
-                      >
-                        {isBalanceHidden
-                          ? hiddenBalanceLabel
-                          : formatCurrency(remainingBalance)}
-                      </p>
-                      <p className="mt-3 text-sm leading-6 text-fuchsia-50/70">
-                        Monthly income minus monthly expenses.
-                      </p>
-                    </div>
-
-                    <div className="rounded-[1.5rem] border border-lime-300/20 bg-slate-950/70 p-5 transition hover:-translate-y-0.5 hover:border-lime-300/50 hover:shadow-[0_0_30px_rgba(190,242,100,0.12)]">
-                      <p className="text-sm text-slate-400">Monthly Income</p>
-                      <p className="mt-2 text-2xl font-black text-lime-300 sm:text-3xl">
-                        {formatCurrency(totalIncome)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-[1.5rem] border border-pink-300/20 bg-slate-950/70 p-5 transition hover:-translate-y-0.5 hover:border-pink-300/50 hover:shadow-[0_0_30px_rgba(244,114,182,0.12)]">
-                      <p className="text-sm text-slate-400">
-                        Monthly Expenses
-                      </p>
-                      <p className="mt-2 text-2xl font-black text-pink-200 sm:text-3xl">
-                        {formatCurrency(totalExpense)}
-                      </p>
-                    </div>
-
-                    <div
-                      className={`rounded-[1.5rem] border p-5 sm:col-span-2 ${monthlyStatusBadgeClass}`}
-                    >
-                      <p className="text-sm opacity-80">
-                        Monthly Cashflow Status
-                      </p>
-                      <p
-                        className={`mt-2 text-3xl font-black ${monthlyStatus.className}`}
-                      >
-                        {monthlyStatus.label}
-                      </p>
-                      <p className="mt-2 text-sm leading-6 opacity-80">
-                        {monthlyStatus.explanation}
-                      </p>
-                    </div>
-                  </div>
+                  </TerminalPanel>
                 </section>
 
                 <DashboardCharts
@@ -1463,7 +1844,7 @@ export default function Home() {
                 />
 
                 <section className="mx-auto max-w-6xl px-5 pb-8 sm:px-6">
-                  <div className="rounded-[1.5rem] border border-white/10 bg-slate-950/70 p-5 shadow-[0_0_36px_rgba(34,211,238,0.08)] backdrop-blur">
+                  <TerminalPanel className="!p-5">
                     <div className="flex items-center justify-between gap-4">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300">
@@ -1473,25 +1854,25 @@ export default function Home() {
                           Latest transactions
                         </h2>
                       </div>
-                      <button
-                        className="rounded-full border border-cyan-300/30 px-4 py-2 text-sm font-bold text-cyan-100 transition hover:bg-cyan-300/10"
+                      <SharpButton
+                        className="min-h-10 px-3 py-2"
                         type="button"
                         onClick={() => openView("transactions")}
                       >
                         View all
-                      </button>
+                      </SharpButton>
                     </div>
 
                     <div className="mt-5 space-y-3">
                       {recentActivity.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-cyan-300/20 bg-cyan-300/5 px-4 py-8 text-center text-sm text-slate-400">
+                        <div className="border border-dashed border-cyan-300/20 bg-cyan-300/5 px-4 py-8 text-center text-sm text-slate-400">
                           No transactions yet. Add income, expenses, or
                           transfers to light up your dashboard.
                         </div>
                       ) : (
                         recentActivity.map((activity) => (
                           <article
-                            className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition hover:border-cyan-300/30 sm:flex-row sm:items-center sm:justify-between"
+                            className="cockpit-card flex flex-col gap-3 border border-white/10 bg-white/[0.03] p-4 transition hover:border-cyan-300/30 sm:flex-row sm:items-center sm:justify-between"
                             key={activity.id}
                           >
                             <div>
@@ -1514,14 +1895,16 @@ export default function Home() {
                                     : "text-cyan-200"
                               }`}
                             >
-                              {activity.tone === "expense" ? "-" : ""}
-                              {formatCurrency(activity.amount)}
+                              <NumberValue>
+                                {activity.tone === "expense" ? "-" : ""}
+                                {formatCurrency(activity.amount)}
+                              </NumberValue>
                             </p>
                           </article>
                         ))
                       )}
                     </div>
-                  </div>
+                  </TerminalPanel>
                 </section>
               </>
             ) : null}
@@ -1544,40 +1927,28 @@ export default function Home() {
                 className="mx-auto w-full max-w-5xl px-5 pb-8 pt-5 sm:px-6"
                 id="quick-add"
               >
-                <div
-                  className={`rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-5 shadow-[0_0_46px_rgba(34,211,238,0.1)] backdrop-blur-xl transition sm:p-6 ${getSectionHighlightClass("quick-add")}`}
+                <TerminalPanel
+                  className={`!p-5 transition sm:!p-6 ${getSectionHighlightClass("quick-add")}`}
                 >
-                  <div className="flex flex-col gap-4 border-b border-cyan-300/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
-                        Quick Add Command Center
-                      </p>
-                      <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
-                        Record money movement
-                      </h2>
-                      <p className="mt-2 text-sm leading-6 text-slate-400">
+                  <SectionHeader
+                    action={
+                      <SegmentedControl
+                        className="grid-cols-3"
+                        options={quickAddTabs}
+                        value={quickAddTab}
+                        onChange={setQuickAddTab}
+                      />
+                    }
+                    description={
+                      <>
                         Add income, record an expense, or transfer money between
                         your accounts from one compact workspace.
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 rounded-full border border-white/10 bg-black/30 p-1">
-                      {quickAddTabs.map((tab) => (
-                        <button
-                          className={`rounded-full px-3 py-2 text-sm font-bold transition ${
-                            quickAddTab === tab.value
-                              ? "bg-gradient-to-r from-cyan-300 to-lime-300 text-slate-950 shadow-[0_0_22px_rgba(34,211,238,0.28)]"
-                              : "text-slate-300 hover:bg-white/10"
-                          }`}
-                          key={tab.value}
-                          type="button"
-                          onClick={() => setQuickAddTab(tab.value)}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                      </>
+                    }
+                    eyebrow="Quick Add Command Center"
+                    title="Record money movement"
+                    tone="cyan"
+                  />
 
                   <div className="mt-5">
                     {quickAddTab === "income" ? (
@@ -1610,7 +1981,7 @@ export default function Home() {
                       />
                     ) : null}
                   </div>
-                </div>
+                </TerminalPanel>
               </section>
             ) : null}
 
@@ -1649,35 +2020,30 @@ export default function Home() {
             {activeView === "settings" ? (
               <>
                 <section className="mx-auto w-full max-w-5xl px-5 pb-6 pt-5 sm:px-6">
-                  <div className="rounded-[1.75rem] border border-fuchsia-300/15 bg-slate-950/75 p-5 shadow-[0_0_42px_rgba(217,70,239,0.1)] backdrop-blur-xl sm:p-6">
-                    <p className="text-xs font-semibold uppercase tracking-[0.32em] text-fuchsia-300">
-                      Settings
-                    </p>
-                    <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
-                      Account controls
-                    </h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-400">
-                      Manage your tutorial, account session, and email report
-                      preferences.
-                    </p>
+                  <TerminalPanel className="!p-5 sm:!p-6">
+                    <SectionHeader
+                      description="Manage your tutorial, account session, and email report preferences."
+                      eyebrow="Settings"
+                      title="Account controls"
+                      tone="fuchsia"
+                    />
 
                     <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                      <button
-                        className="rounded-full border border-cyan-300/30 px-5 py-3 font-bold text-cyan-100 transition hover:bg-cyan-300/10 hover:shadow-[0_0_22px_rgba(34,211,238,0.16)]"
+                      <SharpButton
                         type="button"
                         onClick={restartOnboarding}
                       >
                         Restart Tutorial
-                      </button>
-                      <button
-                        className="rounded-full border border-pink-300/30 px-5 py-3 font-bold text-pink-100 transition hover:bg-pink-300/10 hover:shadow-[0_0_22px_rgba(244,114,182,0.16)]"
+                      </SharpButton>
+                      <SharpButton
+                        variant="danger"
                         type="button"
                         onClick={logout}
                       >
                         Log out
-                      </button>
+                      </SharpButton>
                     </div>
-                  </div>
+                  </TerminalPanel>
                 </section>
 
                 <EmailReportPreferences user={authUser} />

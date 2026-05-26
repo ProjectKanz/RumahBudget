@@ -1,8 +1,14 @@
 "use client";
 
+import {
+  EmptyState,
+  NumberValue,
+  SectionHeader,
+  TerminalPanel,
+} from "@/src/components/cockpit-ui";
+import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import type { Expense } from "@/src/types/expense";
 import type { MoneyAccount } from "@/src/types/money-account";
-import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import { useMemo } from "react";
 
 const categoryLabels = new Map([
@@ -40,30 +46,33 @@ function SimpleBarList({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-cyan-300/20 bg-cyan-300/5 px-4 py-8 text-center text-sm text-slate-400">
+      <EmptyState>
         {emptyMessage}
-      </div>
+      </EmptyState>
     );
   }
 
   return (
     <div className="space-y-4">
       {items.map((item) => {
-        const width = maxValue > 0 ? Math.max(8, (Math.abs(item.value) / maxValue) * 100) : 8;
+        const width =
+          maxValue > 0
+            ? Math.max(8, (Math.abs(item.value) / maxValue) * 100)
+            : 8;
 
         return (
           <div key={item.label}>
             <div className="mb-2 flex items-center justify-between gap-3 text-sm">
               <span className="font-medium text-slate-300">{item.label}</span>
-              <span className="shrink-0 text-slate-400">
+              <NumberValue className="shrink-0 text-slate-400">
                 {isBalanceHidden
                   ? hiddenBalanceLabel
                   : formatCurrency(item.value)}
-              </span>
+              </NumberValue>
             </div>
-            <div className="h-3 overflow-hidden rounded-full bg-slate-900">
+            <div className="h-3 overflow-hidden border border-white/10 bg-black/60">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-lime-300 to-fuchsia-300 shadow-[0_0_18px_rgba(34,211,238,0.35)] transition-all duration-700"
+                className="h-full bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.35)] transition-all duration-700"
                 style={{ width: isBalanceHidden ? "48%" : `${width}%` }}
               />
             </div>
@@ -109,24 +118,23 @@ export default function DashboardCharts({
       className="mx-auto w-full max-w-6xl px-5 pb-8 sm:px-6"
       id="dashboard-charts"
     >
-      <div
-        className={`rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-5 shadow-[0_0_46px_rgba(34,211,238,0.1)] backdrop-blur-xl transition sm:p-6 ${highlightClassName}`}
+      <TerminalPanel
+        className={`!p-5 transition sm:!p-6 ${highlightClassName}`}
       >
-        <div className="border-b border-cyan-300/10 pb-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
-            Dashboard Charts
-          </p>
-          <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
-            Balance and expense overview
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-400">
+        <SectionHeader
+          description={
+            <>
             Transfers affect account balances only. Expense breakdown uses
             expense transactions.
-          </p>
-        </div>
+            </>
+          }
+          eyebrow="Dashboard Charts"
+          title="Balance and expense overview"
+          tone="cyan"
+        />
 
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          <div className="rounded-2xl border border-cyan-300/15 bg-black/25 p-4 transition hover:border-cyan-300/35 hover:shadow-[0_0_28px_rgba(34,211,238,0.12)]">
+          <div className="cockpit-card border border-cyan-300/15 bg-black/25 p-5 transition hover:border-cyan-300/35">
             <h3 className="text-lg font-black text-white">
               Account Balance Overview
             </h3>
@@ -139,7 +147,7 @@ export default function DashboardCharts({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-fuchsia-300/15 bg-black/25 p-4 transition hover:border-fuchsia-300/35 hover:shadow-[0_0_28px_rgba(217,70,239,0.12)]">
+          <div className="cockpit-card border border-fuchsia-300/15 bg-black/25 p-5 transition hover:border-fuchsia-300/35">
             <h3 className="text-lg font-black text-white">
               All-time Expense Breakdown
             </h3>
@@ -151,7 +159,7 @@ export default function DashboardCharts({
             </div>
           </div>
         </div>
-      </div>
+      </TerminalPanel>
     </section>
   );
 }

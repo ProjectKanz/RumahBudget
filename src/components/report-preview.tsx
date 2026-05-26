@@ -1,9 +1,18 @@
 "use client";
 
+import {
+  Notice,
+  NumberValue,
+  SectionHeader,
+  SegmentedControl,
+  SharpButton,
+  StatusChip,
+  TerminalPanel,
+} from "@/src/components/cockpit-ui";
 import { formatCurrency } from "@/src/lib/format";
+import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
-import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import { useMemo, useState } from "react";
 
 type ReportType = "weekly" | "monthly";
@@ -74,7 +83,7 @@ function getFinancialStatus(totalIncome: number, totalExpense: number) {
   if (totalExpense > totalIncome) {
     return {
       label: "Critical",
-      className: "text-red-300",
+      className: "text-rose-300",
       explanation: "Expenses are higher than income for this period.",
     } satisfies FinancialStatus;
   }
@@ -89,7 +98,7 @@ function getFinancialStatus(totalIncome: number, totalExpense: number) {
 
   return {
     label: "Safe",
-    className: "text-emerald-300",
+    className: "text-lime-300",
     explanation: "Expenses are still under control for this period.",
   } satisfies FinancialStatus;
 }
@@ -247,9 +256,7 @@ export default function ReportPreview({
         return;
       }
 
-      setSendMessage(
-        "Report sent to the verified Resend testing email.",
-      );
+      setSendMessage("Report email request completed.");
       await onReportSent?.();
     } catch (error) {
       setSendError(
@@ -267,50 +274,34 @@ export default function ReportPreview({
       className="mx-auto w-full max-w-5xl px-5 pb-8 pt-5 sm:px-6"
       id="report-preview"
     >
-      <div
-        className={`rounded-[1.75rem] border border-cyan-300/15 bg-slate-950/75 p-5 shadow-[0_0_42px_rgba(34,211,238,0.08)] backdrop-blur-xl transition sm:p-6 ${highlightClassName}`}
+      <TerminalPanel
+        className={`!p-5 transition sm:!p-6 ${highlightClassName}`}
       >
-        <div className="flex flex-col gap-4 border-b border-cyan-300/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-cyan-300">
-              Financial Report
-            </p>
-            <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
-              Personal report preview
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-400">
+        <SectionHeader
+          action={
+            <SegmentedControl
+              className="grid-cols-2"
+              options={[
+                { label: "Weekly", value: "weekly" as const },
+                { label: "Monthly", value: "monthly" as const },
+              ]}
+              value={reportType}
+              onChange={setReportType}
+            />
+          }
+          description={
+            <>
               This summary is generated from the signed-in account. Period Net
               Cashflow means income minus expenses for the selected report
               period.
-            </p>
-            <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-100">
-              Email delivery is currently limited to one verified test address.
-              Sending to other emails requires a verified domain.
-            </p>
-          </div>
+            </>
+          }
+          eyebrow="Financial Report"
+          title="Personal report preview"
+          tone="cyan"
+        />
 
-          <div className="grid grid-cols-2 gap-2 rounded-full border border-white/10 bg-black/30 p-1">
-            {[
-              { label: "Weekly Report", value: "weekly" as const },
-              { label: "Monthly Report", value: "monthly" as const },
-            ].map((option) => (
-              <button
-                className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
-                  reportType === option.value
-                    ? "bg-gradient-to-r from-cyan-300 to-lime-300 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.22)]"
-                    : "text-slate-300 hover:bg-white/10"
-                }`}
-                key={option.value}
-                type="button"
-                onClick={() => setReportType(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4">
+        <div className="cockpit-card mt-5 border border-white/10 bg-black/25 p-5">
           <p className="text-sm font-semibold text-slate-300">
             {report.label}
           </p>
@@ -318,15 +309,15 @@ export default function ReportPreview({
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
             <div>
               <p className="text-sm text-slate-500">Total Income</p>
-              <p className="mt-2 text-xl font-bold text-emerald-300">
-                {formatCurrency(report.totalIncome)}
+              <p className="mt-2 text-xl font-bold text-lime-300">
+                <NumberValue>{formatCurrency(report.totalIncome)}</NumberValue>
               </p>
             </div>
 
             <div>
               <p className="text-sm text-slate-500">Total Expenses</p>
-              <p className="mt-2 text-xl font-bold text-red-300">
-                {formatCurrency(report.totalExpense)}
+              <p className="mt-2 text-xl font-bold text-rose-300">
+                <NumberValue>{formatCurrency(report.totalExpense)}</NumberValue>
               </p>
             </div>
 
@@ -334,18 +325,24 @@ export default function ReportPreview({
               <p className="text-sm text-slate-500">Period Net Cashflow</p>
               <p
                 className={`mt-2 text-xl font-bold ${
-                  report.remainingBalance < 0 ? "text-red-300" : "text-white"
+                  report.remainingBalance < 0 ? "text-rose-300" : "text-white"
                 }`}
               >
-                {formatCurrency(report.remainingBalance)}
+                <NumberValue>
+                  {formatCurrency(report.remainingBalance)}
+                </NumberValue>
               </p>
             </div>
           </div>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="text-sm text-slate-500">Financial Status</p>
-              <p className={`mt-2 text-2xl font-bold ${report.status.className}`}>
+            <div className="cockpit-card border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-sm text-slate-500">
+                Period Cashflow Status
+              </p>
+              <p
+                className={`mt-2 text-2xl font-bold ${report.status.className}`}
+              >
                 {report.status.label}
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-400">
@@ -353,10 +350,12 @@ export default function ReportPreview({
               </p>
             </div>
 
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="cockpit-card border border-white/10 bg-white/[0.03] p-4">
               <p className="text-sm text-slate-500">Top Category</p>
-              <p className="mt-2 text-2xl font-bold text-white">
-                {report.topCategory}
+              <p className="mt-2 flex flex-wrap gap-2 text-2xl font-bold text-white">
+                <StatusChip tone="fuchsia">
+                  {report.topCategory}
+                </StatusChip>
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-400">
                 {report.recommendation}
@@ -365,29 +364,30 @@ export default function ReportPreview({
           </div>
 
           <div className="mt-5 border-t border-white/10 pt-4">
-            <button
-              className="w-full rounded-full bg-gradient-to-r from-cyan-300 to-lime-300 px-6 py-3 font-bold text-slate-950 shadow-[0_0_24px_rgba(34,211,238,0.2)] transition hover:shadow-[0_0_32px_rgba(34,211,238,0.28)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            <SharpButton
+              className="w-full sm:w-auto"
+              variant="primary"
               type="button"
               disabled={isSending}
               onClick={sendReport}
             >
               {isSending ? "Sending report..." : "Send Report Email"}
-            </button>
+            </SharpButton>
 
             {sendMessage ? (
-              <p className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
+              <Notice className="mt-4" tone="lime">
                 {sendMessage}
-              </p>
+              </Notice>
             ) : null}
 
             {sendError ? (
-              <p className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              <Notice className="mt-4" tone="rose">
                 {sendError}
-              </p>
+              </Notice>
             ) : null}
           </div>
         </div>
-      </div>
+      </TerminalPanel>
     </section>
   );
 }
