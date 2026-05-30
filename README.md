@@ -2,7 +2,7 @@
 
 RumahBudget is a private personal finance cockpit for tracking accounts, cashflow, transfers, transaction history, and financial reports in one dark cyberpunk dashboard.
 
-The app is designed as a portfolio-grade full-stack product: authenticated users can manage their own financial records, review monthly cashflow, preview reports, and test automated email summaries without exposing private data between accounts.
+The app is designed as a portfolio-focused full-stack prototype: authenticated users can manage their own financial records, review monthly cashflow, preview reports, and test automated email summaries without exposing private data between accounts.
 
 ## Problem Statement
 
@@ -34,7 +34,7 @@ RumahBudget focuses on turning those questions into a compact cockpit-style work
 - Monthly Income, Monthly Expenses, and Monthly Net Cashflow.
 - Monthly Cashflow Status that distinguishes spending from existing balance versus spending beyond income.
 - Hide/show balance privacy mode.
-- Dashboard charts for monthly cashflow and category visibility.
+- Dashboard metrics and charts for monthly cashflow, account balances, and category visibility.
 - Transaction history with income, expense, and transfer records.
 - Financial report preview for weekly or monthly periods.
 - Manual email report testing mode using Resend.

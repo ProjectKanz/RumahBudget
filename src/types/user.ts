@@ -1,1 +1,1 @@
-export type ActiveUser = "Ibu" | "Bapak" | "Kanzan" | "Guest";
+export type ActiveUser = "Parent" | "Family Member" | "Demo User" | "Guest";

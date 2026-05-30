@@ -8,7 +8,7 @@ RumahBudget is a mobile-first personal expense tracker with optional future fami
 
 1. Mother
 2. Father
-3. Admin / Kanzan
+3. Admin / Demo User
 
 ## Main Problem
 
@@ -30,7 +30,7 @@ Status: Completed
 - Expense tracking
 - Income tracking
 - Dashboard totals
-- Monthly status: Aman / Waspada / Bahaya
+- Monthly status: Safe / Warning / Critical
 - localStorage persistence
 - Combined transaction history
 - Transaction filters
@@ -210,17 +210,17 @@ Next milestone: **V0.5 Production Email Readiness / Verified Domain or Family Sh
 
 ## Default Categories
 
-- Belanja Dapur
-- Makan Harian
+- Groceries
+- Daily Meals
 - Transport
-- Listrik / Air / Internet
-- Kesehatan
-- Sekolah / Anak
-- Cicilan
-- Sedekah / Sosial
-- Rumah
-- Darurat
-- Lainnya
+- Utilities / Internet
+- Health
+- School / Children
+- Installments
+- Donations / Social
+- Home
+- Emergency
+- Other
 
 ## Success Criteria
 
