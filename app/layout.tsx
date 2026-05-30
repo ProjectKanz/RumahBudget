@@ -13,8 +13,9 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RumahBudget",
-  description: "Private cyberpunk financial cockpit for personal cashflow.",
+  title: "RumahBudget | Private Finance Cockpit",
+  description:
+    "A private multi-account personal finance cockpit for tracking balances, income, expenses, transfers, cashflow, and report automation.",
 };
 
 export default function RootLayout({
