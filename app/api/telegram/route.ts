@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
@@ -82,6 +82,24 @@ async function sendTelegramMessage(chatId: string | number, text: string, botTok
     }
   } catch (error) {
     console.error("Error sending telegram message:", error);
+  }
+}
+
+async function getMostRecentStoredBotToken(supabaseAdmin: SupabaseClient) {
+  try {
+    const { data } = await supabaseAdmin
+      .from("report_preferences")
+      .select("telegram_bot_token")
+      .not("telegram_bot_token", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const latestPreference = data as { telegram_bot_token?: string | null } | null;
+    return latestPreference?.telegram_bot_token || "";
+  } catch (err) {
+    console.error("Error fetching latest stored Telegram bot token:", err);
+    return "";
   }
 }
 
@@ -180,17 +198,45 @@ export async function POST(request: Request) {
       console.error("Error fetching bot token in /start:", err);
     }
 
+    if (!startBotToken) {
+      startBotToken = await getMostRecentStoredBotToken(supabaseAdmin);
+    }
+
     try {
+      const { data: authUser, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(userId);
+      if (authUserError || !authUser.user) {
+        await sendTelegramMessage(
+          chatId,
+          "❌ <b>Unknown account token.</b>\nPlease copy the latest <code>/start</code> command from RumahBudget while logged in.",
+          startBotToken,
+        );
+        return Response.json({ ok: true });
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error("Error validating /start user:", errMsg);
+      await sendTelegramMessage(
+        chatId,
+        `❌ Failed to validate account token: ${errMsg}`,
+        startBotToken,
+      );
+      return Response.json({ ok: true });
+    }
+
+    try {
+      const linkPayload: Record<string, string> = {
+        user_id: userId,
+        telegram_chat_id: String(chatId),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (startBotToken) {
+        linkPayload.telegram_bot_token = startBotToken;
+      }
+
       const { error: upsertError } = await supabaseAdmin
         .from("report_preferences")
-        .upsert(
-          {
-            user_id: userId,
-            telegram_chat_id: String(chatId),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id" },
-        );
+        .upsert(linkPayload, { onConflict: "user_id" });
 
       if (upsertError) {
         console.error("Error upserting telegram chat id:", upsertError);
