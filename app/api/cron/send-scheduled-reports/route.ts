@@ -1,6 +1,11 @@
-import { formatCurrency } from "@/src/lib/format";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+import {
+  buildDetailedHtmlReport,
+  getWeekStart,
+  getWeekEnd,
+  getCategoryLabel,
+} from "@/src/lib/email-templates";
 
 export const runtime = "nodejs";
 
@@ -32,41 +37,11 @@ type ReportPreferenceRow = {
   recipient_email?: string | null;
 };
 
-type IncomeRow = {
-  amount?: number | string | null;
-  source?: string | null;
-  created_at?: string | null;
-};
-
-type ExpenseRow = {
-  amount?: number | string | null;
-  category?: string | null;
-  created_at?: string | null;
-};
-
-type WeeklyReportSummary = {
-  periodLabel: string;
-  totalIncome: number;
-  totalExpense: number;
-  remainingBalance: number;
-  transactionCount: number;
-  topExpenseCategory: string;
-};
-
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   month: "long",
   year: "numeric",
 });
-
-const categoryLabels = new Map([
-  ["Belanja Dapur", "Groceries"],
-  ["Transportasi", "Transportation"],
-  ["Tagihan", "Bills"],
-  ["Pendidikan", "Education"],
-  ["Kesehatan", "Health"],
-  ["Lainnya", "Other"],
-]);
 
 function getBearerToken(request: Request) {
   const authorization = request.headers.get("authorization");
@@ -84,38 +59,7 @@ function isAuthorizedCronRequest(request: Request) {
     return true;
   }
 
-  // Vercel Cron schedule is configured in vercel.json as "0 0 * * 1",
-  // which runs Monday 00:00 UTC / Monday 07:00 WIB.
   return request.headers.get("x-vercel-cron") === "1";
-}
-
-function getWeekStart(date: Date) {
-  const weekStart = new Date(date);
-  const day = weekStart.getDay();
-  const daysFromMonday = day === 0 ? 6 : day - 1;
-
-  weekStart.setDate(weekStart.getDate() - daysFromMonday);
-  weekStart.setHours(0, 0, 0, 0);
-
-  return weekStart;
-}
-
-function getWeekEnd(weekStart: Date) {
-  const weekEnd = new Date(weekStart);
-
-  weekEnd.setDate(weekEnd.getDate() + 6);
-  weekEnd.setHours(23, 59, 59, 999);
-
-  return weekEnd;
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 function getErrorMessage(error: unknown) {
@@ -134,111 +78,51 @@ function getErrorMessage(error: unknown) {
   return "Failed to run scheduled report dry run.";
 }
 
-function createWeeklyReportSummary({
-  expenses,
-  incomes,
-  weekEnd,
-  weekStart,
-}: {
-  expenses: ExpenseRow[];
-  incomes: IncomeRow[];
-  weekEnd: Date;
-  weekStart: Date;
-}): WeeklyReportSummary {
-  const totalIncome = incomes.reduce(
-    (total, income) => total + Number(income.amount ?? 0),
-    0,
-  );
-  const totalExpense = expenses.reduce(
-    (total, expense) => total + Number(expense.amount ?? 0),
-    0,
-  );
-  const categoryTotals = expenses.reduce<Record<string, number>>(
-    (totals, expense) => {
-      const category = expense.category ?? "Other";
+function getFinancialStatus(totalIncome: number, totalExpense: number) {
+  const expenseRatio = totalIncome > 0 ? totalExpense / totalIncome : 0;
 
-      return {
-        ...totals,
-        [category]: (totals[category] ?? 0) + Number(expense.amount ?? 0),
-      };
-    },
-    {},
-  );
-  const topCategory = Object.entries(categoryTotals).sort(
-    ([, firstAmount], [, secondAmount]) => secondAmount - firstAmount,
-  )[0]?.[0];
+  if (totalExpense > totalIncome) {
+    return {
+      label: "Critical" as const,
+      explanation: "Expenses are higher than income for this period.",
+    };
+  }
+
+  if (expenseRatio >= 0.7) {
+    return {
+      label: "Warning" as const,
+      explanation: "Expenses are getting close to income for this period.",
+    };
+  }
 
   return {
-    periodLabel: `${dateFormatter.format(weekStart)} - ${dateFormatter.format(
-      weekEnd,
-    )}`,
-    totalIncome,
-    totalExpense,
-    remainingBalance: totalIncome - totalExpense,
-    transactionCount: incomes.length + expenses.length,
-    topExpenseCategory: topCategory
-      ? (categoryLabels.get(topCategory) ?? topCategory)
-      : "None yet",
+    label: "Safe" as const,
+    explanation: "Expenses are still under control for this period.",
   };
 }
 
-function buildDryRunEmail({
-  preference,
-  report,
-  recipientEmail,
-}: {
-  preference: ReportPreferenceRow;
-  report: WeeklyReportSummary;
-  recipientEmail: string;
-}) {
-  const rows = [
-    ["Report type", "weekly"],
-    ["Period", report.periodLabel],
-    ["Total income", formatCurrency(report.totalIncome)],
-    ["Total expenses", formatCurrency(report.totalExpense)],
-    ["Period net cashflow", formatCurrency(report.remainingBalance)],
-    ["Transaction count", String(report.transactionCount)],
-    ["Top expense category", report.topExpenseCategory],
-  ];
-  const preferredRecipient = preference.recipient_email ?? "Not set";
-  const text = [
-    "RumahBudget Scheduled Email Dry Run",
-    `User ID: ${preference.user_id ?? "unknown"}`,
-    `Testing recipient: ${recipientEmail}`,
-    `Saved recipient preference: ${preferredRecipient}`,
-    "",
-    ...rows.map(([label, value]) => `${label}: ${value}`),
-    "",
-    "Email delivery is currently limited to one verified test address. Sending to the saved recipient preference requires a verified domain.",
-  ].join("\n");
-  const htmlRows = rows
-    .map(
-      ([label, value]) => `
-        <tr>
-          <td style="padding: 10px 12px; color: #64748b; border-bottom: 1px solid #e2e8f0;">${escapeHtml(label)}</td>
-          <td style="padding: 10px 12px; color: #0f172a; border-bottom: 1px solid #e2e8f0; font-weight: 600;">${escapeHtml(value)}</td>
-        </tr>
-      `,
-    )
-    .join("");
+function getRecommendation(
+  status: "Safe" | "Warning" | "Critical",
+  topCategory: string,
+  totalIncome: number,
+) {
+  if (totalIncome <= 0) {
+    return "Start by adding income so net cashflow is clearer.";
+  }
 
-  return {
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a;">
-        <h1 style="margin-bottom: 8px;">RumahBudget Scheduled Email Dry Run</h1>
-        <p style="margin-top: 0; color: #64748b;">User ID: ${escapeHtml(preference.user_id ?? "unknown")}</p>
-        <p style="margin-top: 0; color: #64748b;">Resend testing mode: email sent to ${escapeHtml(recipientEmail)}</p>
-        <p style="margin-top: 0; color: #64748b;">Saved recipient preference: ${escapeHtml(preferredRecipient)}</p>
-        <table style="width: 100%; border-collapse: collapse; margin-top: 24px; border: 1px solid #e2e8f0;">
-          <tbody>${htmlRows}</tbody>
-        </table>
-        <p style="margin-top: 24px; color: #64748b; font-size: 13px;">
-          This is dry-run testing mode. Sending to user recipient preferences requires a verified Resend domain.
-        </p>
-      </div>
-    `,
-    text,
-  };
+  if (status === "Critical") {
+    return topCategory === "None yet"
+      ? "Review expenses and postpone non-urgent purchases."
+      : `Reduce spending in ${topCategory} and prioritize essentials.`;
+  }
+
+  if (status === "Warning") {
+    return topCategory === "None yet"
+      ? "Keep monitoring expenses before adding new transactions."
+      : `Watch ${topCategory} so expenses do not exceed income.`;
+  }
+
+  return "Keep tracking consistently and set aside part of your income when possible.";
 }
 
 async function saveEmailReportLog({
@@ -319,13 +203,7 @@ export async function GET(request: Request) {
   const fromEmail =
     process.env.RESEND_FROM_EMAIL ?? "RumahBudget <onboarding@resend.dev>";
 
-  // Scheduled email dry-run testing mode:
-  // - Vercel Cron can call this protected endpoint.
-  // - Preferences are read with a server-only service role because user RLS
-  //   correctly prevents anonymous aggregate reads.
-  // - Email is sent only to REPORT_TEST_RECIPIENT_EMAIL, never to
-  //   report_preferences.recipient_email.
-  // - Real recipient sending requires a verified Resend domain.
+  // Fetch users with weekly or monthly reports enabled
   const { data: preferencesData, error: preferencesError } = await supabase
     .from("report_preferences")
     .select("id, user_id, weekly_enabled, monthly_enabled, recipient_email")
@@ -345,52 +223,118 @@ export async function GET(request: Request) {
 
   for (const preference of weeklyPreferences) {
     const userId = preference.user_id as string;
-    let periodLabel = `${dateFormatter.format(weekStart)} - ${dateFormatter.format(
+    const periodLabel = `${dateFormatter.format(weekStart)} - ${dateFormatter.format(
       weekEnd,
     )}`;
 
     try {
-      const [incomesResult, expensesResult] = await Promise.all([
-        supabase
-          .from("incomes")
-          .select("amount, source, created_at")
-          .eq("user_id", userId)
-          .gte("created_at", weekStart.toISOString())
-          .lte("created_at", weekEnd.toISOString()),
-        supabase
-          .from("expenses")
-          .select("amount, category, created_at")
-          .eq("user_id", userId)
-          .gte("created_at", weekStart.toISOString())
-          .lte("created_at", weekEnd.toISOString()),
+      // Get user email
+      const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+      const accountEmail = authUser?.user?.email || preference.recipient_email || "user@email.com";
+
+      // Fetch all accounts, incomes, expenses, and transfers for the user
+      const [accountsRes, incomesRes, expensesRes, transfersRes] = await Promise.all([
+        supabase.from("money_accounts").select("*").eq("user_id", userId).eq("is_archived", false),
+        supabase.from("incomes").select("*").eq("user_id", userId),
+        supabase.from("expenses").select("*").eq("user_id", userId),
+        supabase.from("transfers").select("*").eq("user_id", userId),
       ]);
 
-      if (incomesResult.error) {
-        throw new Error(incomesResult.error.message);
-      }
+      if (accountsRes.error) throw new Error(accountsRes.error.message);
+      if (incomesRes.error) throw new Error(incomesRes.error.message);
+      if (expensesRes.error) throw new Error(expensesRes.error.message);
+      if (transfersRes.error) throw new Error(transfersRes.error.message);
 
-      if (expensesResult.error) {
-        throw new Error(expensesResult.error.message);
-      }
+      const accounts = accountsRes.data || [];
+      const balances: Record<string, number> = {};
 
-      const report = createWeeklyReportSummary({
-        expenses: (expensesResult.data ?? []) as ExpenseRow[],
-        incomes: (incomesResult.data ?? []) as IncomeRow[],
-        weekEnd,
-        weekStart,
+      // Compute current balances
+      accounts.forEach((acc) => {
+        balances[acc.id] = Number(acc.initial_balance || 0);
       });
-      periodLabel = report.periodLabel;
-      const email = buildDryRunEmail({
-        preference,
-        report,
-        recipientEmail: reportTestRecipientEmail,
+      (incomesRes.data || []).forEach((inc) => {
+        if (inc.account_id && inc.account_id in balances) {
+          balances[inc.account_id] += Number(inc.amount || 0);
+        }
       });
+      (expensesRes.data || []).forEach((exp) => {
+        if (exp.account_id && exp.account_id in balances) {
+          balances[exp.account_id] -= Number(exp.amount || 0);
+        }
+      });
+      (transfersRes.data || []).forEach((tf) => {
+        if (tf.to_account_id && tf.to_account_id in balances) {
+          balances[tf.to_account_id] += Number(tf.amount || 0);
+        }
+        if (tf.from_account_id && tf.from_account_id in balances) {
+          balances[tf.from_account_id] -= Number(tf.amount || 0);
+        }
+      });
+
+      // Filter period incomes & expenses
+      const periodIncomes = (incomesRes.data || []).filter((inc) => {
+        const d = inc.created_at ? new Date(inc.created_at).getTime() : 0;
+        return d >= weekStart.getTime() && d <= weekEnd.getTime();
+      });
+
+      const periodExpenses = (expensesRes.data || []).filter((exp) => {
+        const d = exp.created_at ? new Date(exp.created_at).getTime() : 0;
+        return d >= weekStart.getTime() && d <= weekEnd.getTime();
+      });
+
+      const totalIncome = periodIncomes.reduce((sum, inc) => sum + Number(inc.amount || 0), 0);
+      const totalExpense = periodExpenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
+      const netCashflow = totalIncome - totalExpense;
+
+      // Category breakdown
+      const categoryTotals: Record<string, number> = {};
+      periodExpenses.forEach((exp) => {
+        const cat = exp.category || "Other";
+        categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(exp.amount || 0);
+      });
+      const sortedCategories = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
+      const topCategoryEntry = sortedCategories[0];
+      const topCategory = topCategoryEntry
+        ? getCategoryLabel(topCategoryEntry[0])
+        : "None yet";
+
+      // Source breakdown
+      const sourceTotals: Record<string, number> = {};
+      periodIncomes.forEach((inc) => {
+        const src = inc.source || "Other Inflow";
+        sourceTotals[src] = (sourceTotals[src] || 0) + Number(inc.amount || 0);
+      });
+      const sortedSources = Object.entries(sourceTotals).sort((a, b) => b[1] - a[1]);
+
+      const statusObj = getFinancialStatus(totalIncome, totalExpense);
+      const recommendation = getRecommendation(statusObj.label, topCategory, totalIncome);
+
+      // Build structured HTML report
+      const emailContent = buildDetailedHtmlReport({
+        accountEmail,
+        reportType: "Weekly Report",
+        periodLabel,
+        totalIncome,
+        totalExpense,
+        netCashflow,
+        financialStatus: statusObj.label,
+        topExpenseCategory: topCategory,
+        explanation: statusObj.explanation,
+        recommendation,
+        accounts,
+        balances,
+        sortedCategories,
+        sortedSources,
+        isDryRun: true,
+        preferredRecipient: preference.recipient_email || "Not set",
+      });
+
       const { error: sendError } = await resend.emails.send({
         from: fromEmail,
         to: reportTestRecipientEmail,
-        subject: `RumahBudget weekly dry run: ${report.periodLabel}`,
-        html: email.html,
-        text: email.text,
+        subject: `RumahBudget weekly dry run: ${periodLabel}`,
+        html: emailContent.html,
+        text: emailContent.text,
       });
 
       if (sendError) {

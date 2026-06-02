@@ -40,7 +40,9 @@ import type {
 import type { Transfer } from "@/src/types/transfer";
 import type { SandboxTransaction } from "@/src/types/sandbox";
 import { AuthApiError, type User } from "@supabase/supabase-js";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import RecurringCommitments from "@/src/components/recurring-commitments";
+import type { RecurringCommitment } from "@/src/types/recurring-commitment";
 
 const balancePrivacyStorageKey = "rumahbudget.hideBalances";
 
@@ -267,6 +269,20 @@ function isCurrentMonthTimestamp(createdAt: number) {
   );
 }
 
+function isCurrentMonthString(dateStr: string | null | undefined): boolean {
+  if (!dateStr) {
+    return false;
+  }
+
+  const date = new Date(dateStr);
+  const today = new Date();
+
+  return (
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth()
+  );
+}
+
 export default function Home() {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -297,6 +313,18 @@ export default function Home() {
   const [isSandboxMode, setIsSandboxMode] = useState(false);
   const [sandboxTransactions, setSandboxTransactions] = useState<SandboxTransaction[]>([]);
 
+  // Recurring Commitments and Offline Caching States
+  const [commitments, setCommitments] = useState<RecurringCommitment[]>([]);
+  const [isCommitmentsLoading, setIsCommitmentsLoading] = useState(false);
+  const [commitmentsError, setCommitmentsError] = useState("");
+  const [dbSupportsCommitments, setDbSupportsCommitments] = useState(true);
+
+  const [isOfflineActive, setIsOfflineActive] = useState(false);
+  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+  const [onlineSuccessMessage, setOnlineSuccessMessage] = useState("");
+  const [isAutoDeducting, setIsAutoDeducting] = useState(false);
+  const hasScannedAutoDeducts = useRef(false);
+
   useEffect(() => {
     const storedSandboxMode = window.localStorage.getItem("rumahbudget.isSandboxMode");
     const storedTransactions = window.localStorage.getItem("rumahbudget.sandboxTransactions");
@@ -313,6 +341,38 @@ export default function Home() {
       }
     });
   }, []);
+
+  // Offline status & Queue handler
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateOnlineStatus = () => {
+      const isOnline = navigator.onLine;
+      setIsOfflineActive(!isOnline);
+
+      if (isOnline) {
+        void syncOfflineQueue();
+      }
+    };
+
+    const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
+    if (queueJson) {
+      try {
+        const q = JSON.parse(queueJson);
+        setOfflineQueueCount(q.length);
+      } catch {}
+    }
+
+    setIsOfflineActive(!navigator.onLine);
+
+    window.addEventListener("online", updateOnlineStatus);
+    window.addEventListener("offline", updateOnlineStatus);
+
+    return () => {
+      window.removeEventListener("online", updateOnlineStatus);
+      window.removeEventListener("offline", updateOnlineStatus);
+    };
+  }, [authUser]);
 
   const handleSetSandboxMode = (value: boolean) => {
     setIsSandboxMode(value);
@@ -665,6 +725,424 @@ export default function Home() {
     }
   }, [authUser]);
 
+  const loadCommitmentsFromSupabase = useCallback(async () => {
+    setIsCommitmentsLoading(true);
+    setCommitmentsError("");
+
+    if (!authUser) {
+      setCommitments([]);
+      setIsCommitmentsLoading(false);
+      return;
+    }
+
+    if (!supabase) {
+      const localData = window.localStorage.getItem("rumahbudget.localCommitments");
+      if (localData) {
+        try {
+          setCommitments(JSON.parse(localData));
+        } catch {
+          setCommitments([]);
+        }
+      } else {
+        setCommitments([]);
+      }
+      setIsCommitmentsLoading(false);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { data, error } = await supabase
+        .from("recurring_commitments")
+        .select("*")
+        .eq("user_id", authUser.id)
+        .order("created_at", { ascending: false })
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        if (error.code === "42P01") {
+          setDbSupportsCommitments(false);
+          const localData = window.localStorage.getItem("rumahbudget.localCommitments");
+          if (localData) {
+            setCommitments(JSON.parse(localData));
+          } else {
+            const fallbackComs: RecurringCommitment[] = [
+              {
+                id: "fallback-sub-1",
+                userId: authUser.id,
+                accountId: null,
+                name: "Spotify Premium (Local Fallback)",
+                amount: 54990,
+                category: "Bills",
+                commitmentType: "subscription",
+                dueDay: 15,
+                isAutoDeduct: true,
+                disableReminders: false,
+                lastProcessed: null,
+                createdAt: Date.now(),
+              },
+              {
+                id: "fallback-rent-2",
+                userId: authUser.id,
+                accountId: null,
+                name: "Rent (Local Fallback)",
+                amount: 2500000,
+                category: "Other",
+                commitmentType: "rent",
+                dueDay: 1,
+                isAutoDeduct: false,
+                disableReminders: false,
+                lastProcessed: null,
+                createdAt: Date.now(),
+              },
+            ];
+            window.localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(fallbackComs));
+            setCommitments(fallbackComs);
+          }
+          return;
+        }
+        setCommitmentsError(error.message);
+        return;
+      }
+
+      const nextCommitments = (data || []).map((c: any) => ({
+        id: String(c.id ?? crypto.randomUUID()),
+        userId: c.user_id ?? authUser.id,
+        accountId: c.account_id ?? null,
+        name: c.name ?? "Untitled commitment",
+        amount: Number(c.amount ?? 0),
+        category: c.category ?? "Other",
+        commitmentType: c.commitment_type ?? "other",
+        dueDay: Number(c.due_day ?? 1),
+        isAutoDeduct: Boolean(c.is_auto_deduct),
+        disableReminders: Boolean(c.disable_reminders),
+        lastProcessed: c.last_processed ?? null,
+        createdAt: c.created_at ? new Date(c.created_at).getTime() : 0,
+      }));
+
+      setCommitments(nextCommitments);
+    } catch (err) {
+      setCommitmentsError(getSupabaseErrorMessage(err, "Failed to load commitments."));
+    } finally {
+      timeout.clear();
+      setIsCommitmentsLoading(false);
+    }
+  }, [authUser]);
+
+  async function addCommitment(c: Omit<RecurringCommitment, "id" | "userId" | "createdAt" | "lastProcessed">) {
+    if (!authUser) return false;
+
+    if (!supabase || !dbSupportsCommitments) {
+      const localData = window.localStorage.getItem("rumahbudget.localCommitments");
+      const localComs: RecurringCommitment[] = localData ? JSON.parse(localData) : [];
+      const newCommitment: RecurringCommitment = {
+        ...c,
+        id: crypto.randomUUID(),
+        userId: authUser.id,
+        createdAt: Date.now(),
+        lastProcessed: null,
+      };
+      const updated = [newCommitment, ...localComs];
+      window.localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(updated));
+      setCommitments(updated);
+      return true;
+    }
+
+    const timeout = createSupabaseTimeout();
+    try {
+      const { error } = await supabase
+        .from("recurring_commitments")
+        .insert({
+          user_id: authUser.id,
+          account_id: c.accountId,
+          name: c.name,
+          amount: c.amount,
+          category: c.category,
+          commitment_type: c.commitmentType,
+          due_day: c.dueDay,
+          is_auto_deduct: c.isAutoDeduct,
+          disable_reminders: c.disableReminders,
+        })
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setCommitmentsError(error.message);
+        return false;
+      }
+
+      await loadCommitmentsFromSupabase();
+      return true;
+    } catch (err) {
+      setCommitmentsError(getSupabaseErrorMessage(err, "Failed to save commitment."));
+      return false;
+    } finally {
+      timeout.clear();
+    }
+  }
+
+  async function deleteCommitment(id: string) {
+    if (!authUser) return;
+
+    if (!supabase || !dbSupportsCommitments) {
+      const localData = window.localStorage.getItem("rumahbudget.localCommitments");
+      if (localData) {
+        const localComs: RecurringCommitment[] = JSON.parse(localData);
+        const updated = localComs.filter((c) => c.id !== id);
+        window.localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(updated));
+        setCommitments(updated);
+      }
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+    try {
+      const { error } = await supabase
+        .from("recurring_commitments")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", authUser.id)
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setCommitmentsError(error.message);
+        return;
+      }
+
+      await loadCommitmentsFromSupabase();
+    } catch (err) {
+      setCommitmentsError(getSupabaseErrorMessage(err, "Failed to delete commitment."));
+    } finally {
+      timeout.clear();
+    }
+  }
+
+  const syncOfflineQueue = async () => {
+    const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
+    if (!queueJson) return;
+
+    let queue: { type: string; data: any }[] = [];
+    try {
+      queue = JSON.parse(queueJson);
+    } catch {
+      return;
+    }
+
+    if (queue.length === 0) return;
+    if (!supabase) return;
+
+    let successCount = 0;
+
+    for (const item of queue) {
+      try {
+        if (item.type === "expense") {
+          const { error } = await supabase.from("expenses").insert({
+            user_id: authUser?.id,
+            owner: authUser?.email,
+            account_id: item.data.accountId,
+            amount: item.data.amount,
+            category: item.data.category,
+            payment_method: item.data.paymentMethod,
+            note: item.data.note,
+          });
+          if (!error) successCount++;
+        } else if (item.type === "income") {
+          const { error } = await supabase.from("incomes").insert({
+            user_id: authUser?.id,
+            owner: authUser?.email,
+            account_id: item.data.accountId,
+            amount: item.data.amount,
+            source: item.data.source,
+            note: item.data.note,
+          });
+          if (!error) successCount++;
+        } else if (item.type === "transfer") {
+          const { error } = await supabase.from("transfers").insert({
+            user_id: authUser?.id,
+            from_account_id: item.data.fromAccountId,
+            to_account_id: item.data.toAccountId,
+            amount: item.data.amount,
+            note: item.data.note,
+          });
+          if (!error) successCount++;
+        }
+      } catch (err) {
+        console.error("Offline sync item failed:", err);
+      }
+    }
+
+    localStorage.removeItem("rumahbudget.offlineQueue");
+    setOfflineQueueCount(0);
+
+    if (successCount > 0) {
+      setOnlineSuccessMessage(`⚠️ [OFFLINE ACTIVE] Connection restored. ${successCount} transaction(s) synced.`);
+      void loadExpensesFromSupabase();
+      void loadIncomesFromSupabase();
+      void loadTransfersFromSupabase();
+      void loadMoneyAccountsFromSupabase();
+
+      setTimeout(() => {
+        setOnlineSuccessMessage("");
+      }, 5000);
+    }
+  };
+
+  const syncAutoDeducts = async (commitmentsToProcess: RecurringCommitment[]) => {
+    setIsAutoDeducting(true);
+    try {
+      for (const c of commitmentsToProcess) {
+        const expenseAccountId = c.accountId || (moneyAccounts[0]?.id ?? "");
+        if (!expenseAccountId) {
+          console.warn(`No account available to auto-deduct commitment: ${c.name}`);
+          continue;
+        }
+
+        if (supabase) {
+          const { error: expError } = await supabase.from("expenses").insert({
+            user_id: authUser?.id,
+            owner: authUser?.email,
+            account_id: expenseAccountId,
+            amount: c.amount,
+            category: c.category,
+            payment_method: "Debit Card",
+            note: `Auto-Deducted commitment: ${c.name}`,
+          });
+
+          if (expError) {
+            console.error("Auto-deduct expense insert failed:", expError.message);
+            continue;
+          }
+        } else {
+          const localExp: Expense = {
+            id: crypto.randomUUID(),
+            owner: authUser?.email ?? "Offline user",
+            userId: authUser?.id ?? "",
+            accountId: expenseAccountId,
+            createdAt: Date.now(),
+            amount: c.amount,
+            category: c.category,
+            paymentMethod: "Debit Card",
+            note: `Auto-Deducted commitment: ${c.name}`,
+          };
+          setExpenses((prev) => [localExp, ...prev]);
+        }
+
+        const nowStr = new Date().toISOString();
+        if (supabase && dbSupportsCommitments) {
+          const { error: comError } = await supabase
+            .from("recurring_commitments")
+            .update({ last_processed: nowStr })
+            .eq("id", c.id);
+
+          if (comError) {
+            console.error("Failed to update last_processed:", comError.message);
+          }
+        } else {
+          const localData = localStorage.getItem("rumahbudget.localCommitments");
+          if (localData) {
+            const localComs: RecurringCommitment[] = JSON.parse(localData);
+            const updated = localComs.map((lc) =>
+              lc.id === c.id ? { ...lc, lastProcessed: nowStr } : lc
+            );
+            localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(updated));
+          }
+        }
+      }
+
+      await loadExpensesFromSupabase();
+      await loadCommitmentsFromSupabase();
+    } catch (err) {
+      console.error("Error running auto-deducts:", err);
+    } finally {
+      setIsAutoDeducting(false);
+    }
+  };
+
+  async function recordCommitmentPayment(c: RecurringCommitment) {
+    const expenseAccountId = c.accountId || (moneyAccounts[0]?.id ?? "");
+    if (!expenseAccountId) {
+      alert("Please create a money account first.");
+      return;
+    }
+
+    setIsAutoDeducting(true);
+    try {
+      if (supabase) {
+        const { error: expError } = await supabase.from("expenses").insert({
+          user_id: authUser?.id,
+          owner: authUser?.email,
+          account_id: expenseAccountId,
+          amount: c.amount,
+          category: c.category,
+          payment_method: "Debit Card",
+          note: `Manual payment for commitment: ${c.name}`,
+        });
+
+        if (expError) {
+          alert(`Failed to save expense: ${expError.message}`);
+          return;
+        }
+      } else {
+        const localExp: Expense = {
+          id: crypto.randomUUID(),
+          owner: authUser?.email ?? "Offline user",
+          userId: authUser?.id ?? "",
+          accountId: expenseAccountId,
+          createdAt: Date.now(),
+          amount: c.amount,
+          category: c.category,
+          paymentMethod: "Debit Card",
+          note: `Manual payment for commitment: ${c.name}`,
+        };
+        setExpenses((prev) => [localExp, ...prev]);
+      }
+
+      const nowStr = new Date().toISOString();
+      if (supabase && dbSupportsCommitments) {
+        await supabase
+          .from("recurring_commitments")
+          .update({ last_processed: nowStr })
+          .eq("id", c.id);
+      } else {
+        const localData = localStorage.getItem("rumahbudget.localCommitments");
+        if (localData) {
+          const localComs: RecurringCommitment[] = JSON.parse(localData);
+          const updated = localComs.map((lc) =>
+            lc.id === c.id ? { ...lc, lastProcessed: nowStr } : lc
+          );
+          localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(updated));
+        }
+      }
+
+      await loadExpensesFromSupabase();
+      await loadCommitmentsFromSupabase();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsAutoDeducting(false);
+    }
+  }
+
+  async function muteCommitmentReminders(c: RecurringCommitment) {
+    if (supabase && dbSupportsCommitments) {
+      await supabase
+        .from("recurring_commitments")
+        .update({ disable_reminders: true })
+        .eq("id", c.id);
+    } else {
+      const localData = localStorage.getItem("rumahbudget.localCommitments");
+      if (localData) {
+        const localComs: RecurringCommitment[] = JSON.parse(localData);
+        const updated = localComs.map((lc) =>
+          lc.id === c.id ? { ...lc, disableReminders: true } : lc
+        );
+        localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(updated));
+      }
+    }
+
+    await loadCommitmentsFromSupabase();
+  }
+
   useEffect(() => {
     const storedBalancePrivacy = window.localStorage.getItem(
       balancePrivacyStorageKey,
@@ -786,6 +1264,7 @@ export default function Home() {
       void loadMoneyAccountsFromSupabase();
       void loadTransfersFromSupabase();
       void loadPreferencesFromSupabase();
+      void loadCommitmentsFromSupabase();
     });
   }, [
     authUser,
@@ -795,7 +1274,33 @@ export default function Home() {
     loadMoneyAccountsFromSupabase,
     loadTransfersFromSupabase,
     loadPreferencesFromSupabase,
+    loadCommitmentsFromSupabase,
   ]);
+
+  // Scan and trigger Auto-Deduct
+  useEffect(() => {
+    if (!authUser || isMoneyAccountLoading || isAutoDeducting) {
+      return;
+    }
+    if (hasScannedAutoDeducts.current) {
+      return;
+    }
+
+    const today = new Date();
+    const currentDay = today.getDate();
+
+    const toAutoDeduct = commitments.filter(
+      (c) =>
+        c.isAutoDeduct &&
+        currentDay >= c.dueDay &&
+        !isCurrentMonthString(c.lastProcessed)
+    );
+
+    if (toAutoDeduct.length > 0) {
+      hasScannedAutoDeducts.current = true;
+      void syncAutoDeducts(toAutoDeduct);
+    }
+  }, [authUser, isMoneyAccountLoading, commitments, isAutoDeducting]);
 
   useEffect(() => {
     if (!authUser || !isHydrated) {
@@ -870,6 +1375,19 @@ export default function Home() {
 
   const activeIncomes = incomes;
   const signedInEmail = authUser?.email ?? "Signed-in account";
+
+  const approachingCommitments = useMemo(() => {
+    const today = new Date();
+    const currentDay = today.getDate();
+
+    return commitments.filter((c) => {
+      if (c.isAutoDeduct || c.disableReminders) return false;
+      if (isCurrentMonthString(c.lastProcessed)) return false;
+
+      const diff = c.dueDay - currentDay;
+      return diff <= 3;
+    });
+  }, [commitments]);
 
   const monthlyExpenses = useMemo(
     () =>
@@ -1264,6 +1782,25 @@ export default function Home() {
   }, [accountNamesById, activeExpenses, activeIncomes, transfers]);
 
   async function addExpense(expense: Expense) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
+      const queue = queueJson ? JSON.parse(queueJson) : [];
+      queue.push({ type: "expense", data: expense });
+      localStorage.setItem("rumahbudget.offlineQueue", JSON.stringify(queue));
+      setOfflineQueueCount(queue.length);
+
+      setExpenses((prev) => [
+        {
+          ...expense,
+          owner: authUser?.email ?? "Offline user",
+          userId: authUser?.id ?? "",
+          createdAt: Date.now(),
+        },
+        ...prev,
+      ]);
+      return true;
+    }
+
     if (!supabase) {
       setExpenseError(missingSupabaseEnvMessage);
       return false;
@@ -1350,6 +1887,25 @@ export default function Home() {
   }
 
   async function addIncome(income: Income) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
+      const queue = queueJson ? JSON.parse(queueJson) : [];
+      queue.push({ type: "income", data: income });
+      localStorage.setItem("rumahbudget.offlineQueue", JSON.stringify(queue));
+      setOfflineQueueCount(queue.length);
+
+      setIncomes((prev) => [
+        {
+          ...income,
+          owner: authUser?.email ?? "Offline user",
+          userId: authUser?.id ?? "",
+          createdAt: Date.now(),
+        },
+        ...prev,
+      ]);
+      return true;
+    }
+
     if (!supabase) {
       setIncomeError(missingSupabaseEnvMessage);
       return false;
@@ -1531,6 +2087,28 @@ export default function Home() {
     note: string;
     toAccountId: string;
   }) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
+      const queue = queueJson ? JSON.parse(queueJson) : [];
+      queue.push({ type: "transfer", data: transfer });
+      localStorage.setItem("rumahbudget.offlineQueue", JSON.stringify(queue));
+      setOfflineQueueCount(queue.length);
+
+      setTransfers((prev) => [
+        {
+          id: crypto.randomUUID(),
+          userId: authUser?.id ?? "",
+          fromAccountId: transfer.fromAccountId,
+          toAccountId: transfer.toAccountId,
+          amount: transfer.amount,
+          note: transfer.note,
+          createdAt: Date.now(),
+        },
+        ...prev,
+      ]);
+      return true;
+    }
+
     if (!supabase) {
       setTransferError(missingSupabaseEnvMessage);
       return false;
@@ -1650,6 +2228,21 @@ export default function Home() {
 
   return (
     <main className={`rb-app min-h-screen overflow-x-hidden bg-black text-white ${isSandboxMode ? "sandbox-active" : ""}`}>
+      {isOfflineActive && (
+        <div className="bg-rose-600/95 text-white font-black text-xs uppercase tracking-widest text-center py-3 animate-pulse sticky top-0 z-50 shadow-[0_4px_20px_rgba(225,29,72,0.5)]">
+          ⚠️ [OFFLINE ACTIVE] Connection lost. {offlineQueueCount} transaction{offlineQueueCount !== 1 ? 's' : ''} pending sync.
+        </div>
+      )}
+      {onlineSuccessMessage && (
+        <div className="bg-lime-600 text-white font-black text-xs uppercase tracking-widest text-center py-3 sticky top-0 z-50 shadow-[0_4px_20px_rgba(101,163,13,0.5)]">
+          {onlineSuccessMessage}
+        </div>
+      )}
+      {isAutoDeducting && (
+        <div className="bg-fuchsia-600/90 text-white font-black text-xs uppercase tracking-widest text-center py-3 animate-pulse sticky top-0 z-50 shadow-[0_4px_20px_rgba(217,70,239,0.5)]">
+          ⚙️ Auto-Deducting commitments in progress. Syncing ledger...
+        </div>
+      )}
       {/* Background Ambient Glow Blobs for dynamic glass blur */}
       <div 
         className="absolute top-[20%] left-[-10%] md:left-[5%] w-[35rem] md:w-[50rem] h-[35rem] md:h-[50rem] rounded-full pointer-events-none z-[0] blur-3xl opacity-80 animate-premium-pulse-slow"
@@ -1983,6 +2576,85 @@ export default function Home() {
                     />
                   </div>
                 </section>
+
+                {approachingCommitments.length > 0 && (
+                  <section className="mx-auto max-w-6xl px-5 pb-6 sm:px-6">
+                    <TerminalPanel className="border-amber-500/35 bg-black/40 shadow-[0_0_24px_rgba(245,158,11,0.08)]">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
+                        <h3 className="text-sm font-black uppercase tracking-[0.2em] text-amber-400">
+                          Approaching Commitments Radar
+                        </h3>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Manual bills due soon or overdue. Record payment to update ledger.
+                      </p>
+
+                      <div className="mt-4 space-y-3">
+                        {approachingCommitments.map((c) => {
+                          const today = new Date();
+                          const currentDay = today.getDate();
+                          const isOverdue = currentDay >= c.dueDay;
+                          const toneClass = isOverdue
+                            ? "border-rose-500/30 bg-rose-500/5 hover:border-rose-500/50 shadow-[0_0_12px_rgba(244,63,94,0.05)]"
+                            : "border-amber-500/30 bg-amber-500/5 hover:border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.05)]";
+
+                          return (
+                            <div
+                              key={c.id}
+                              className={`border p-4 transition flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${toneClass}`}
+                            >
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`text-[0.62rem] font-black uppercase tracking-widest px-2 py-0.5 border rounded ${
+                                      isOverdue
+                                        ? "text-rose-400 border-rose-500/30 bg-rose-500/10"
+                                        : "text-amber-400 border-amber-500/30 bg-amber-500/10"
+                                    }`}
+                                  >
+                                    {isOverdue ? "⚠️ Overdue" : "⏳ Due Soon"}
+                                  </span>
+                                  <span className="font-bold text-white">{c.name}</span>
+                                </div>
+                                <div className="mt-1.5 text-xs text-slate-400 flex flex-wrap gap-x-4">
+                                  <span>Due: Day {c.dueDay} of Month</span>
+                                  <span>Category: {c.category}</span>
+                                  <span>
+                                    Account:{" "}
+                                    {c.accountId
+                                      ? accountNamesById[c.accountId] ?? "Unknown"
+                                      : "Cash"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3 justify-between sm:justify-end">
+                                <span className="text-base font-black text-white font-mono">
+                                  {formatCurrency(c.amount)}
+                                </span>
+                                <div className="flex gap-2">
+                                  <SharpButton
+                                    onClick={() => recordCommitmentPayment(c)}
+                                    className="!py-1.5 !px-3 text-xs border-lime-500/40 text-lime-200 hover:bg-lime-500/10"
+                                  >
+                                    Record Payment
+                                  </SharpButton>
+                                  <SharpButton
+                                    onClick={() => muteCommitmentReminders(c)}
+                                    className="!py-1.5 !px-3 text-xs border-slate-500/40 text-slate-300 hover:bg-slate-500/10"
+                                  >
+                                    Mute
+                                  </SharpButton>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </TerminalPanel>
+                  </section>
+                )}
 
                 <section className="mx-auto max-w-6xl px-5 pb-8 sm:px-6">
                   <TerminalPanel className="signature-console neo-panel overflow-hidden !p-0">
@@ -2465,6 +3137,16 @@ export default function Home() {
                     </div>
                   </TerminalPanel>
                 </section>
+
+                <RecurringCommitments
+                  commitments={commitments}
+                  moneyAccounts={moneyAccounts}
+                  accountNamesById={accountNamesById}
+                  onAddCommitment={addCommitment}
+                  onDeleteCommitment={deleteCommitment}
+                  error={commitmentsError}
+                  isLoading={isCommitmentsLoading}
+                />
 
                 <EmailReportPreferences user={authUser} onWageChange={setNetHourlyWage} />
               </>
