@@ -16,7 +16,7 @@ import type {
   MoneyAccount,
   MoneyAccountType,
 } from "@/src/types/money-account";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, MouseEvent, CSSProperties, useMemo, useState } from "react";
 
 const accountTypes: MoneyAccountType[] = [
   "Bank",
@@ -244,62 +244,117 @@ export default function MoneyAccounts({
             </EmptyState>
           ) : (
             accounts.map((account) => (
-              <article
-                className="cockpit-card border border-white/10 bg-white/[0.03] p-5 transition hover:-translate-y-0.5 hover:border-cyan-300/35"
+              <MoneyAccountCard
                 key={account.id}
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-base font-bold text-white">
-                        {account.name}
-                      </p>
-                      <StatusChip className="py-1" tone="neutral">
-                        {account.accountType}
-                      </StatusChip>
-                    </div>
-                    <p className="mt-4 text-xs uppercase tracking-[0.18em] text-slate-500">
-                      Current balance
-                    </p>
-                    <p className="mt-1 text-2xl font-black text-cyan-100">
-                      <NumberValue>
-                        {isBalanceHidden
-                          ? hiddenBalanceLabel
-                          : formatCurrency(
-                              accountBalances[account.id] ??
-                                account.initialBalance,
-                            )}
-                      </NumberValue>
-                    </p>
-                    <p className="mt-3 text-sm text-slate-500">
-                      Initial balance (starting amount):{" "}
-                      <NumberValue className="text-slate-300">
-                        {isBalanceHidden
-                          ? hiddenBalanceLabel
-                          : formatCurrency(account.initialBalance)}
-                      </NumberValue>
-                    </p>
-                    <p className="mt-2 text-xs leading-5 text-slate-500">
-                      Includes linked income, expenses, and transfers.
-                    </p>
-                  </div>
-
-                  <SharpButton
-                    className="min-h-10 px-3 py-2"
-                    type="button"
-                    disabled={archivingAccountId === account.id}
-                    onClick={() => archiveAccount(account.id)}
-                  >
-                    {archivingAccountId === account.id
-                      ? "Archiving..."
-                      : "Archive"}
-                  </SharpButton>
-                </div>
-              </article>
+                account={account}
+                balance={accountBalances[account.id] ?? account.initialBalance}
+                isBalanceHidden={isBalanceHidden}
+                isArchiving={archivingAccountId === account.id}
+                onArchive={() => archiveAccount(account.id)}
+              />
             ))
           )}
         </div>
       </TerminalPanel>
     </section>
+  );
+}
+
+interface MoneyAccountCardProps {
+  account: MoneyAccount;
+  balance: number;
+  isBalanceHidden: boolean;
+  isArchiving: boolean;
+  onArchive: () => void;
+}
+
+function MoneyAccountCard({
+  account,
+  balance,
+  isBalanceHidden,
+  isArchiving,
+  onArchive,
+}: MoneyAccountCardProps) {
+  const [tiltStyle, setTiltStyle] = useState<CSSProperties>({});
+
+  const handleMouseMove = (e: MouseEvent<HTMLElement>) => {
+    const card = e.currentTarget;
+    const rect = card.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    const xc = x - width / 2;
+    const yc = y - height / 2;
+    
+    const maxRotate = 10;
+    const rotateX = -(yc / (height / 2)) * maxRotate;
+    const rotateY = (xc / (width / 2)) * maxRotate;
+    
+    setTiltStyle({
+      transform: `perspective(1000px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) scale(1.03)`,
+    });
+  };
+
+  const handleMouseLeave = () => {
+    setTiltStyle({
+      transform: "perspective(1000px) rotateX(0deg) rotateY(0deg) scale(1)",
+    });
+  };
+
+  return (
+    <article
+      className="premium-glass-card card-3d-tilt transition-all duration-200 cursor-pointer p-5"
+      style={tiltStyle}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-base font-bold text-white">
+              {account.name}
+            </p>
+            <StatusChip className="py-1" tone="neutral">
+              {account.accountType}
+            </StatusChip>
+          </div>
+          <p className="mt-4 text-xs uppercase tracking-[0.18em] text-slate-500">
+            Current balance
+          </p>
+          <p className="mt-1 text-2xl font-black text-cyan-100">
+            <NumberValue>
+              {isBalanceHidden
+                ? hiddenBalanceLabel
+                : formatCurrency(balance)}
+            </NumberValue>
+          </p>
+          <p className="mt-3 text-sm text-slate-500">
+            Initial balance (starting amount):{" "}
+            <NumberValue className="text-slate-300">
+              {isBalanceHidden
+                ? hiddenBalanceLabel
+                : formatCurrency(account.initialBalance)}
+            </NumberValue>
+          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">
+            Includes linked income, expenses, and transfers.
+          </p>
+        </div>
+
+        <SharpButton
+          className="min-h-10 px-3 py-2"
+          type="button"
+          disabled={isArchiving}
+          onClick={(e) => {
+            e.stopPropagation();
+            onArchive();
+          }}
+        >
+          {isArchiving ? "Archiving..." : "Archive"}
+        </SharpButton>
+      </div>
+    </article>
   );
 }

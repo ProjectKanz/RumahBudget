@@ -62,8 +62,8 @@ export function TerminalPanel({
   return (
     <div
       className={cn(
-        "cockpit-panel border p-6 backdrop-blur-xl sm:p-8",
-        isProminent && "cockpit-panel-prominent",
+        "glass-frosted p-6 sm:p-8",
+        isProminent && "shadow-[0_0_36px_rgba(34,211,238,0.15)] border-cyan-300/30",
         className,
       )}
     >
@@ -133,7 +133,7 @@ export function MetricCell({
   value: ReactNode;
 }) {
   return (
-    <div className={cn("cockpit-card border p-6", toneBorder[tone], className)}>
+    <div className={cn("glass-frosted p-6", toneBorder[tone], className)}>
       <div className="flex h-full flex-col gap-4">
         <div className="flex items-start justify-between gap-4">
           <div>

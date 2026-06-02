@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   TerminalPanel,
   SharpButton,
@@ -17,6 +17,7 @@ type SystemDiagnosticsProps = {
   accountBalances: Record<string, number>;
   expenses: Expense[];
   isBalanceHidden: boolean;
+  autoStartScanTrigger?: number;
 };
 
 type FlaggedSubscription = {
@@ -83,6 +84,7 @@ export default function SystemDiagnostics({
   accountBalances,
   expenses,
   isBalanceHidden,
+  autoStartScanTrigger = 0,
 }: SystemDiagnosticsProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
@@ -237,7 +239,7 @@ export default function SystemDiagnostics({
   }, [accounts]);
 
   // Run the diagnostic scan simulation
-  const startScan = () => {
+  const startScan = useCallback(() => {
     setIsScanning(true);
     setHasScanned(false);
     setScanProgress(0);
@@ -272,7 +274,16 @@ export default function SystemDiagnostics({
         setHasScanned(true);
       }
     }, 200);
-  };
+  }, [accounts, idleRatio, frictionExpenses.length, subscriptions.length]);
+
+  useEffect(() => {
+    if (autoStartScanTrigger > 0) {
+      const timer = setTimeout(() => {
+        startScan();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [autoStartScanTrigger, startScan]);
 
   const isAnyLeakage = isIdleCapitalWarning || totalFrictionFees > 0 || subscriptions.length > 0;
 

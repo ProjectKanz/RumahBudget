@@ -27,6 +27,7 @@ import TransferMoney from "@/src/components/transfer-money";
 import SurvivalMatrix from "@/src/components/survival-matrix";
 import SystemDiagnostics from "@/src/components/system-diagnostics";
 import SandboxControls from "@/src/components/sandbox-controls";
+import CommandK from "@/src/components/command-k";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import type { EmailReport } from "@/src/types/email-report";
@@ -289,6 +290,7 @@ export default function Home() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [activeView, setActiveView] = useState<AppView>("overview");
+  const [autoStartScanTrigger, setAutoStartScanTrigger] = useState(0);
   const [quickAddTab, setQuickAddTab] = useState<QuickAddTab>("income");
   const [highlightedSectionId, setHighlightedSectionId] = useState("");
   const [plannedSpend, setPlannedSpend] = useState("250000");
@@ -1648,6 +1650,26 @@ export default function Home() {
 
   return (
     <main className={`rb-app min-h-screen overflow-x-hidden bg-black text-white ${isSandboxMode ? "sandbox-active" : ""}`}>
+      {/* Background Ambient Glow Blobs for dynamic glass blur */}
+      <div 
+        className="absolute top-[20%] left-[-10%] md:left-[5%] w-[35rem] md:w-[50rem] h-[35rem] md:h-[50rem] rounded-full pointer-events-none z-[0] blur-3xl opacity-80 animate-premium-pulse-slow"
+        style={{
+          background: "radial-gradient(circle, rgba(6, 182, 212, 0.1) 0%, transparent 70%)",
+        }}
+      />
+      <div 
+        className="absolute top-[50%] right-[-10%] md:right-[5%] w-[40rem] md:w-[55rem] h-[40rem] md:h-[55rem] rounded-full pointer-events-none z-[0] blur-3xl opacity-80 animate-premium-pulse-medium"
+        style={{
+          background: "radial-gradient(circle, rgba(168, 85, 247, 0.1) 0%, transparent 70%)",
+        }}
+      />
+      <div 
+        className="absolute top-[75%] left-[-5%] md:left-[10%] w-[30rem] md:w-[45rem] h-[30rem] md:h-[45rem] rounded-full pointer-events-none z-[0] blur-3xl opacity-80 animate-premium-pulse-fast"
+        style={{
+          background: "radial-gradient(circle, rgba(132, 204, 22, 0.05) 0%, transparent 70%)",
+        }}
+      />
+
       {isAuthLoading ? (
         <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-5 py-8 sm:px-6">
           <TerminalPanel className="!p-6 text-sm text-slate-300">
@@ -2173,6 +2195,7 @@ export default function Home() {
                   accountBalances={moneyAccountBalances}
                   expenses={activeExpenses}
                   isBalanceHidden={isBalanceHidden}
+                  autoStartScanTrigger={autoStartScanTrigger}
                 />
 
                 <DashboardCharts
@@ -2446,6 +2469,26 @@ export default function Home() {
                 <EmailReportPreferences user={authUser} onWageChange={setNetHourlyWage} />
               </>
             ) : null}
+
+            <CommandK
+              accounts={moneyAccounts}
+              addExpense={addExpense}
+              addIncome={addIncome}
+              addTransfer={addTransfer}
+              setActiveView={setActiveView}
+              isSandboxMode={isSandboxMode}
+              handleSetSandboxMode={handleSetSandboxMode}
+              isBalanceHidden={isBalanceHidden}
+              setIsBalanceHidden={setIsBalanceHidden}
+              onScan={() => {
+                setActiveView("overview");
+                setAutoStartScanTrigger((prev) => prev + 1);
+                setTimeout(() => {
+                  const el = document.getElementById("system-diagnostics");
+                  el?.scrollIntoView({ behavior: "smooth" });
+                }, 100);
+              }}
+            />
           </div>
         </>
       ) : null}

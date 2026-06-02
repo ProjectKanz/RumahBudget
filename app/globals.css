@@ -450,3 +450,66 @@ input[type="number"] {
   box-shadow: 0 0 36px rgba(245, 158, 11, 0.12) !important;
 }
 
+/* Premium Glass Frosted Panel Class */
+.glass-frosted {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background-color: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 
+    0 8px 32px 0 rgba(0, 0, 0, 0.37),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Premium Glass Card Class */
+.premium-glass-card {
+  border-radius: 1rem; /* rounded-2xl (16px) */
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.premium-glass-card:hover {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 24px rgba(34, 211, 238, 0.1);
+}
+
+/* Sandbox Mode Hover Overrides for Premium Glass Card */
+.sandbox-active .premium-glass-card:hover {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 24px rgba(245, 158, 11, 0.1) !important;
+}
+
+/* 3D Card Hover animations for account cards */
+.card-3d-tilt {
+  transform: perspective(1000px) rotateX(0deg) rotateY(0deg) scale(1);
+}
+
+/* Premium Ambient Glow Animations */
+@keyframes premiumPulse {
+  0%, 100% {
+    transform: scale(1) translate(0px, 0px);
+  }
+  33% {
+    transform: scale(1.08) translate(30px, -50px);
+  }
+  66% {
+    transform: scale(0.95) translate(-20px, 20px);
+  }
+}
+
+.animate-premium-pulse-slow {
+  animation: premiumPulse 25s ease-in-out infinite;
+}
+
+.animate-premium-pulse-medium {
+  animation: premiumPulse 20s ease-in-out infinite;
+  animation-delay: 5s;
+}
+
+.animate-premium-pulse-fast {
+  animation: premiumPulse 15s ease-in-out infinite;
+  animation-delay: 10s;
+}
+
+
