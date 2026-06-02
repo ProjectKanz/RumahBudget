@@ -166,6 +166,7 @@ export async function POST(request: Request) {
     },
     body: JSON.stringify({
       allowed_updates: ["message", "edited_message"],
+      drop_pending_updates: true,
       url: webhookUrl,
     }),
   });

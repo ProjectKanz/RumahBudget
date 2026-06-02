@@ -202,6 +202,7 @@ export async function POST(request: Request) {
       startBotToken = await getMostRecentStoredBotToken(supabaseAdmin);
     }
 
+    let linkedUserEmail = "";
     try {
       const { data: authUser, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(userId);
       if (authUserError || !authUser.user) {
@@ -212,6 +213,7 @@ export async function POST(request: Request) {
         );
         return Response.json({ ok: true });
       }
+      linkedUserEmail = authUser.user.email || "";
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error validating /start user:", errMsg);
@@ -224,8 +226,11 @@ export async function POST(request: Request) {
     }
 
     try {
-      const linkPayload: Record<string, string> = {
+      const linkPayload: Record<string, string | boolean> = {
         user_id: userId,
+        weekly_enabled: false,
+        monthly_enabled: false,
+        recipient_email: linkedUserEmail,
         telegram_chat_id: String(chatId),
         updated_at: new Date().toISOString(),
       };
