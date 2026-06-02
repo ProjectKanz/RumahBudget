@@ -142,21 +142,17 @@ export async function POST(request: Request) {
   const text = message.text.trim();
   const fallbackUserId = process.env.TELEGRAM_FALLBACK_USER_ID || "";
 
-  // 1. Handle /help
-  if (text.startsWith("/help")) {
-    await sendHelpMessage(chatId);
-    return Response.json({ ok: true });
-  }
-
   // 2. Handle /start
   if (text.startsWith("/start")) {
     const parts = text.split(/\s+/);
     const token = parts[1];
+    let startBotToken: string | undefined = undefined;
 
     if (!token) {
       await sendTelegramMessage(
         chatId,
         "❌ <b>Missing token.</b>\nUse: <code>/start &lt;token&gt;</code>\nYou can find your token in your RumahBudget settings.",
+        startBotToken,
       );
       return Response.json({ ok: true });
     }
@@ -166,8 +162,22 @@ export async function POST(request: Request) {
       await sendTelegramMessage(
         chatId,
         "❌ <b>Invalid token format.</b>\nPlease copy the correct base64 token or UUID from your settings page.",
+        startBotToken,
       );
       return Response.json({ ok: true });
+    }
+
+    try {
+      const { data: prefData } = await supabaseAdmin
+        .from("report_preferences")
+        .select("telegram_bot_token")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (prefData?.telegram_bot_token) {
+        startBotToken = prefData.telegram_bot_token;
+      }
+    } catch (err) {
+      console.error("Error fetching bot token in /start:", err);
     }
 
     try {
@@ -196,18 +206,21 @@ export async function POST(request: Request) {
               chatId,
               "⚠️ Database columns are missing, but you are using the configured local fallback user ID.\n\n" +
                 "You can now log transactions using <code>/expense</code> and <code>/income</code>.",
+              startBotToken,
             );
           } else {
             await sendTelegramMessage(
               chatId,
               "⚠️ Database columns or tables for Telegram integration are missing. Please run the SQL migration script first.\n\n" +
                 "You can also set <code>TELEGRAM_FALLBACK_USER_ID</code> in environment variables for testing.",
+              startBotToken,
             );
           }
         } else {
           await sendTelegramMessage(
             chatId,
             `❌ Failed to link account: ${upsertError.message}`,
+            startBotToken,
           );
         }
         return Response.json({ ok: true });
@@ -216,6 +229,7 @@ export async function POST(request: Request) {
       await sendTelegramMessage(
         chatId,
         "✅ <b>Successfully linked!</b>\nYour Telegram chat has been linked to your RumahBudget account. You can now log transactions directly from here.",
+        startBotToken,
       );
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -223,6 +237,7 @@ export async function POST(request: Request) {
       await sendTelegramMessage(
         chatId,
         `❌ Unexpected error during link: ${errMsg}`,
+        startBotToken,
       );
     }
 
@@ -282,6 +297,12 @@ export async function POST(request: Request) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("Auth resolve error:", errMsg);
     await sendTelegramMessage(chatId, `❌ Authentication error: ${errMsg}`);
+    return Response.json({ ok: true });
+  }
+
+  // Handle /help (moved after chat_id lookup is complete and userBotToken is set)
+  if (text.startsWith("/help")) {
+    await sendHelpMessage(chatId, userBotToken);
     return Response.json({ ok: true });
   }
 
