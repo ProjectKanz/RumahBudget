@@ -25,6 +25,8 @@ type SandboxControlsProps = {
   isBalanceHidden: boolean;
   isSandboxMode: boolean;
   onToggleSandboxMode: (value: boolean) => void;
+  onCreateShareUrl: () => string;
+  importNotice?: string;
 };
 
 const labelClassName = "text-sm font-medium text-slate-300";
@@ -54,6 +56,8 @@ export default function SandboxControls({
   isBalanceHidden,
   isSandboxMode,
   onToggleSandboxMode,
+  onCreateShareUrl,
+  importNotice,
 }: SandboxControlsProps) {
   const [type, setType] = useState<"income" | "expense" | "transfer">("expense");
   const [label, setLabel] = useState("");
@@ -61,6 +65,7 @@ export default function SandboxControls({
   const [timing, setTiming] = useState<"recurring" | "one-time">("recurring");
   const [monthOffset, setMonthOffset] = useState("1");
   const [error, setError] = useState("");
+  const [shareMessage, setShareMessage] = useState("");
 
   const monthsList = useMemo(() => getNext12Months(), []);
 
@@ -180,6 +185,25 @@ export default function SandboxControls({
     setAmount("");
   }
 
+  async function handleShareSimulation() {
+    setShareMessage("");
+    setError("");
+
+    const shareUrl = onCreateShareUrl();
+    if (!shareUrl) {
+      setShareMessage("Add at least one scenario branch before sharing a simulation.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareMessage("Share link copied to clipboard.");
+    } catch {
+      setShareMessage("Unable to copy automatically. Select and copy the generated URL from your browser console.");
+      console.info("RumahBudget sandbox share URL:", shareUrl);
+    }
+  }
+
   // Count negative months
   const negativeMonthsCount = projectionData.filter((d) => d.isNegative).length;
 
@@ -196,6 +220,12 @@ export default function SandboxControls({
           </button>
         </Notice>
       )}
+
+      {importNotice ? (
+        <Notice tone={importNotice.startsWith("Loaded") ? "lime" : "amber"} className="mb-6">
+          {importNotice}
+        </Notice>
+      ) : null}
 
       {/* 12-Month Projections Header & Chart */}
       <TerminalPanel className="mb-8 border-amber-500/20 bg-black/40">
@@ -221,6 +251,32 @@ export default function SandboxControls({
             </>
           }
         />
+
+        <div className="mt-5 flex flex-col gap-3 border border-amber-500/20 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-amber-400">
+              Blueprint sharing
+            </p>
+            <p className="mt-1 text-sm leading-6 text-slate-400">
+              Export the current scenario branches as a reloadable sandbox link.
+            </p>
+          </div>
+          <SharpButton
+            className="border-amber-500/40 text-amber-200 hover:bg-amber-500/10 focus:ring-amber-500/20"
+            disabled={sandboxTransactions.length === 0}
+            onClick={handleShareSimulation}
+            type="button"
+            variant="ghost"
+          >
+            Share Simulation
+          </SharpButton>
+        </div>
+
+        {shareMessage ? (
+          <Notice className="mt-4" tone={shareMessage.startsWith("Share link") ? "lime" : "amber"}>
+            {shareMessage}
+          </Notice>
+        ) : null}
 
         {/* Projection Status readout */}
         <div className="mt-5 grid gap-4 sm:grid-cols-2 md:grid-cols-3">

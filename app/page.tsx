@@ -118,6 +118,86 @@ type MonthlyStatus = {
 type SignalCheckState = "clear" | "critical" | "watch";
 
 type QuickAddTab = "income" | "expense" | "transfer";
+
+const SANDBOX_IMPORT_PARAM = "import";
+const MAX_SANDBOX_SHARE_ITEMS = 50;
+const MAX_SANDBOX_SHARE_LENGTH = 12000;
+
+function encodeSandboxSharePayload(transactions: SandboxTransaction[]) {
+  const payload = JSON.stringify({
+    version: 1,
+    transactions,
+  });
+  const encoded = btoa(unescape(encodeURIComponent(payload)));
+  return encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function decodeSandboxSharePayload(payload: string) {
+  const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+  return decodeURIComponent(escape(atob(padded)));
+}
+
+function validateSandboxTransaction(value: unknown, index: number): SandboxTransaction | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<SandboxTransaction>;
+  const type = candidate.type;
+  const timing = candidate.timing;
+  const amount = Number(candidate.amount);
+  const label = typeof candidate.label === "string" ? candidate.label.trim() : "";
+  const monthOffset = Number(candidate.monthOffset);
+
+  if (type !== "income" && type !== "expense" && type !== "transfer") {
+    return null;
+  }
+  if (timing !== "recurring" && timing !== "one-time") {
+    return null;
+  }
+  if (!label || label.length > 80) {
+    return null;
+  }
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000_000) {
+    return null;
+  }
+  if (timing === "one-time" && (!Number.isInteger(monthOffset) || monthOffset < 1 || monthOffset > 12)) {
+    return null;
+  }
+
+  return {
+    id: typeof candidate.id === "string" && candidate.id ? candidate.id : `shared-${Date.now()}-${index}`,
+    type,
+    label,
+    amount,
+    timing,
+    monthOffset: timing === "one-time" ? monthOffset : undefined,
+  };
+}
+
+function parseSandboxImportPayload(payload: string) {
+  if (!payload || payload.length > MAX_SANDBOX_SHARE_LENGTH) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(decodeSandboxSharePayload(payload)) as {
+      transactions?: unknown;
+    };
+    if (!Array.isArray(parsed.transactions) || parsed.transactions.length > MAX_SANDBOX_SHARE_ITEMS) {
+      return null;
+    }
+
+    const transactions = parsed.transactions
+      .map((transaction, index) => validateSandboxTransaction(transaction, index))
+      .filter((transaction): transaction is SandboxTransaction => Boolean(transaction));
+
+    return transactions.length === parsed.transactions.length ? transactions : null;
+  } catch {
+    return null;
+  }
+}
 type AppView =
   | "overview"
   | "accounts"
@@ -312,6 +392,7 @@ export default function Home() {
   const [plannedSpend, setPlannedSpend] = useState("250000");
   const [isSandboxMode, setIsSandboxMode] = useState(false);
   const [sandboxTransactions, setSandboxTransactions] = useState<SandboxTransaction[]>([]);
+  const [sandboxImportNotice, setSandboxImportNotice] = useState("");
 
   // Recurring Commitments and Offline Caching States
   const [commitments, setCommitments] = useState<RecurringCommitment[]>([]);
@@ -374,6 +455,34 @@ export default function Home() {
     };
   }, [authUser]);
 
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const importPayload = url.searchParams.get(SANDBOX_IMPORT_PARAM);
+
+    if (!importPayload) {
+      return;
+    }
+
+    const importedTransactions = parseSandboxImportPayload(importPayload);
+    url.searchParams.delete(SANDBOX_IMPORT_PARAM);
+    const cleanedUrl = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, "", cleanedUrl || window.location.pathname);
+
+    queueMicrotask(() => {
+      if (!importedTransactions) {
+        setSandboxImportNotice("Shared sandbox link could not be loaded. The scenario payload is invalid or too large.");
+        return;
+      }
+
+      setSandboxTransactions(importedTransactions);
+      setIsSandboxMode(true);
+      setActiveView("sandbox");
+      window.localStorage.setItem("rumahbudget.sandboxTransactions", JSON.stringify(importedTransactions));
+      window.localStorage.setItem("rumahbudget.isSandboxMode", "true");
+      setSandboxImportNotice(`Loaded shared sandbox scenario with ${importedTransactions.length} branch${importedTransactions.length === 1 ? "" : "es"}.`);
+    });
+  }, []);
+
   const handleSetSandboxMode = (value: boolean) => {
     setIsSandboxMode(value);
     window.localStorage.setItem("rumahbudget.isSandboxMode", String(value));
@@ -389,6 +498,15 @@ export default function Home() {
     const updated = sandboxTransactions.filter((tx) => tx.id !== id);
     setSandboxTransactions(updated);
     window.localStorage.setItem("rumahbudget.sandboxTransactions", JSON.stringify(updated));
+  };
+
+  const handleShareSandboxTransactions = () => {
+    if (sandboxTransactions.length === 0) {
+      return "";
+    }
+
+    const payload = encodeSandboxSharePayload(sandboxTransactions);
+    return `${window.location.origin}/?${SANDBOX_IMPORT_PARAM}=${payload}`;
   };
 
   const loadExpensesFromSupabase = useCallback(async () => {
@@ -3087,6 +3205,8 @@ export default function Home() {
                 isBalanceHidden={isBalanceHidden}
                 isSandboxMode={isSandboxMode}
                 onToggleSandboxMode={handleSetSandboxMode}
+                onCreateShareUrl={handleShareSandboxTransactions}
+                importNotice={sandboxImportNotice}
               />
             ) : null}
 
