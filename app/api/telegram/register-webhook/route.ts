@@ -7,15 +7,56 @@ type RegisterWebhookBody = {
   botToken?: string;
 };
 
+type SupabaseAuthUser = {
+  id: string;
+  email?: string | null;
+};
+
 function normalizeBaseUrl(value: string) {
   return value.trim().replace(/\/+$/, "");
 }
 
+async function getUserFromAccessToken(
+  supabaseUrl: string,
+  supabaseAnonKey: string,
+  accessToken: string,
+) {
+  const authUrl = `${supabaseUrl.replace(/\/+$/, "")}/auth/v1/user`;
+  const res = await fetch(authUrl, {
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    return {
+      error: detail || `Supabase Auth rejected the session token with status ${res.status}.`,
+      user: null,
+    };
+  }
+
+  const user = (await res.json()) as SupabaseAuthUser;
+  if (!user?.id) {
+    return {
+      error: "Supabase Auth returned an empty user.",
+      user: null,
+    };
+  }
+
+  return {
+    error: "",
+    user,
+  };
+}
+
 export async function POST(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl || !supabaseServiceKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
     return Response.json(
       { error: "Supabase service role configuration is missing on server." },
       { status: 500 },
@@ -56,11 +97,21 @@ export async function POST(request: Request) {
     },
   });
 
-  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
-  const user = authData.user;
+  const { error: authError, user } = await getUserFromAccessToken(
+    supabaseUrl,
+    supabaseAnonKey,
+    accessToken,
+  );
 
   if (authError || !user) {
-    return Response.json({ error: "Invalid Supabase session token." }, { status: 401 });
+    return Response.json(
+      {
+        error:
+          "Invalid Supabase session token. Please log out, log back in, then try registering the webhook again.",
+        detail: authError,
+      },
+      { status: 401 },
+    );
   }
 
   const { data: existingPreference, error: selectError } = await supabaseAdmin

@@ -405,6 +405,12 @@ export default function EmailReportPreferences({
     setTelegramWebhookStatus("");
 
     try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData.user) {
+        setTelegramWebhookStatus("Error: Please log out, log back in, then register the webhook again.");
+        return;
+      }
+
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
 
