@@ -375,7 +375,9 @@ export default function EmailReportPreferences({
   }
 
   async function handleRegisterWebhook() {
-    if (!telegramBotToken.trim()) {
+    const trimmedBotToken = telegramBotToken.trim();
+
+    if (!trimmedBotToken) {
       setTelegramWebhookStatus("Error: Bot Token cannot be empty.");
       return;
     }
@@ -388,9 +390,14 @@ export default function EmailReportPreferences({
       return;
     }
 
-    const baseUrl = webhookOverrideUrl.trim() || origin;
+    const baseUrl = (webhookOverrideUrl.trim() || origin).replace(/\/+$/, "");
     if (!baseUrl.startsWith("https://")) {
       setTelegramWebhookStatus("Error: Webhook URL must start with https://");
+      return;
+    }
+
+    if (!supabase) {
+      setTelegramWebhookStatus(`Error: ${missingSupabaseEnvMessage}`);
       return;
     }
 
@@ -398,18 +405,34 @@ export default function EmailReportPreferences({
     setTelegramWebhookStatus("");
 
     try {
-      const webhookUrl = `${baseUrl}/api/telegram`;
-      const registerUrl = `https://api.telegram.org/bot${telegramBotToken.trim()}/setWebhook?url=${encodeURIComponent(
-        webhookUrl
-      )}`;
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
 
-      const res = await fetch(registerUrl);
+      if (sessionError || !accessToken) {
+        setTelegramWebhookStatus("Error: Please sign in again before registering the webhook.");
+        return;
+      }
+
+      const res = await fetch("/api/telegram/register-webhook", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          baseUrl,
+          botToken: trimmedBotToken,
+        }),
+      });
       const data = await res.json();
 
       if (data.ok) {
-        setTelegramWebhookStatus(`Success: Webhook registered. ${data.description || ""}`);
+        window.localStorage.setItem(`rumahbudget.telegram_bot_token.${user.id}`, trimmedBotToken);
+        window.localStorage.setItem(`rumahbudget.webhook_override_url.${user.id}`, webhookOverrideUrl.trim());
+        setDbSupportsTelegram(true);
+        setTelegramWebhookStatus(`Success: Webhook registered and token saved. ${data.description || ""}`);
       } else {
-        setTelegramWebhookStatus(`Error: ${data.description || "Failed to register webhook."}`);
+        setTelegramWebhookStatus(`Error: ${data.error || data.description || "Failed to register webhook."}`);
       }
     } catch (err) {
       setTelegramWebhookStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
