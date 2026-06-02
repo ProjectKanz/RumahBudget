@@ -338,3 +338,115 @@ input[type="number"] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Sandbox Mode Active Theme Overrides */
+.sandbox-active {
+  /* Dynamic color theme variables mapping */
+  --color-cyan-50: var(--color-amber-50) !important;
+  --color-cyan-100: var(--color-amber-100) !important;
+  --color-cyan-200: var(--color-amber-200) !important;
+  --color-cyan-300: var(--color-amber-300) !important;
+  --color-cyan-400: var(--color-amber-400) !important;
+  --color-cyan-500: var(--color-amber-500) !important;
+  --color-cyan-600: var(--color-amber-600) !important;
+  --color-cyan-700: var(--color-amber-700) !important;
+  --color-cyan-800: var(--color-amber-800) !important;
+  --color-cyan-900: var(--color-amber-900) !important;
+  --color-cyan-950: var(--color-amber-950) !important;
+
+  --color-lime-50: var(--color-orange-50) !important;
+  --color-lime-100: var(--color-orange-100) !important;
+  --color-lime-200: var(--color-orange-200) !important;
+  --color-lime-300: var(--color-orange-300) !important;
+  --color-lime-400: var(--color-orange-400) !important;
+  --color-lime-500: var(--color-orange-500) !important;
+  --color-lime-600: var(--color-orange-600) !important;
+  --color-lime-700: var(--color-orange-700) !important;
+  --color-lime-800: var(--color-orange-800) !important;
+  --color-lime-900: var(--color-orange-900) !important;
+  --color-lime-950: var(--color-orange-950) !important;
+
+  background:
+    radial-gradient(circle at 18% 4%, rgba(245, 158, 11, 0.12), transparent 28rem),
+    radial-gradient(circle at 86% 12%, rgba(234, 88, 12, 0.11), transparent 26rem),
+    linear-gradient(180deg, #0a0500 0%, #050200 100%) !important;
+}
+
+.sandbox-active::before {
+  background:
+    linear-gradient(rgba(245, 158, 11, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245, 158, 11, 0.05) 1px, transparent 1px) !important;
+}
+
+.sandbox-active .neo-title {
+  text-shadow:
+    0 0 18px rgba(245, 158, 11, 0.3),
+    0 0 36px rgba(234, 88, 12, 0.16) !important;
+}
+
+.sandbox-active .cockpit-panel,
+.sandbox-active .cockpit-card,
+.sandbox-active .cockpit-nav {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.026)) padding-box,
+    linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(234, 88, 12, 0.11), rgba(255, 255, 255, 0.04)) border-box !important;
+}
+
+.sandbox-active .cockpit-panel-prominent {
+  box-shadow:
+    0 0 0 1px rgba(245, 158, 11, 0.1),
+    0 24px 90px rgba(245, 158, 11, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.sandbox-active .cockpit-card:hover,
+.sandbox-active .cockpit-panel:hover {
+  box-shadow:
+    0 18px 60px rgba(245, 158, 11, 0.08),
+    0 0 42px rgba(234, 88, 12, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.sandbox-active .cockpit-nav-active {
+  background:
+    linear-gradient(90deg, rgba(245, 158, 11, 0.96), rgba(234, 88, 12, 0.9)),
+    #f59e0b !important;
+  color: #000000 !important;
+}
+
+.sandbox-active .signature-console {
+  box-shadow:
+    0 0 0 1px rgba(245, 158, 11, 0.12),
+    0 28px 110px rgba(245, 158, 11, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.sandbox-active .signature-console::after {
+  background: linear-gradient(
+    115deg,
+    transparent 0 34%,
+    rgba(245, 158, 11, 0.09) 42%,
+    transparent 52% 100%
+  ) !important;
+}
+
+.sandbox-active .numeric-value,
+.sandbox-active input[type="number"] {
+  color: #fffbeb !important;
+  text-shadow: 0 0 14px rgba(245, 158, 11, 0.16) !important;
+}
+
+.sandbox-active nav button.bg-cyan-300,
+.sandbox-active nav button[class*="bg-cyan-300"] {
+  background-color: var(--color-amber-500, #f59e0b) !important;
+  color: #000000 !important;
+  box-shadow: 0 0 18px rgba(245, 158, 11, 0.38) !important;
+}
+
+.sandbox-active nav,
+.sandbox-active nav[class*="border-cyan-300"],
+.sandbox-active nav[class*="shadow-[0_0_36px_rgba(34,211,238"] {
+  border-color: rgba(245, 158, 11, 0.2) !important;
+  box-shadow: 0 0 36px rgba(245, 158, 11, 0.12) !important;
+}
+

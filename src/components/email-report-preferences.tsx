@@ -13,12 +13,14 @@ import { FormEvent, useEffect, useState } from "react";
 
 type EmailReportPreferencesProps = {
   user: User;
+  onWageChange?: (wage: number) => void;
 };
 
 type ReportPreferenceRow = {
   weekly_enabled?: boolean | null;
   monthly_enabled?: boolean | null;
   recipient_email?: string | null;
+  net_hourly_wage?: number | null;
 };
 
 function createSupabaseTimeout() {
@@ -41,10 +43,15 @@ function getSupabaseErrorMessage(error: unknown, fallbackMessage: string) {
 
 export default function EmailReportPreferences({
   user,
+  onWageChange,
 }: EmailReportPreferencesProps) {
   const [weeklyEnabled, setWeeklyEnabled] = useState(false);
   const [monthlyEnabled, setMonthlyEnabled] = useState(false);
   const [recipientEmail, setRecipientEmail] = useState(user.email ?? "");
+  const [netHourlyWage, setNetHourlyWage] = useState<number>(0);
+  const [calcSalary, setCalcSalary] = useState("");
+  const [calcHours, setCalcHours] = useState("");
+  const [dbSupportsWage, setDbSupportsWage] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -65,37 +72,72 @@ export default function EmailReportPreferences({
       }
 
       const timeout = createSupabaseTimeout();
+      let data: ReportPreferenceRow | null = null;
+      let loadError: { message: string; code?: string } | null = null;
+      let isWageSupported = true;
 
       try {
-        const { data, error: loadError } = await supabase
+        const res = await supabase
           .from("report_preferences")
-          .select("weekly_enabled, monthly_enabled, recipient_email")
+          .select("weekly_enabled, monthly_enabled, recipient_email, net_hourly_wage")
           .eq("user_id", user.id)
           .abortSignal(timeout.signal)
           .maybeSingle();
 
+        if (res.error) {
+          if (res.error.code === "42703" || (res.error.message && res.error.message.includes("net_hourly_wage"))) {
+            isWageSupported = false;
+            const fallbackRes = await supabase
+              .from("report_preferences")
+              .select("weekly_enabled, monthly_enabled, recipient_email")
+              .eq("user_id", user.id)
+              .abortSignal(timeout.signal)
+              .maybeSingle();
+
+            if (fallbackRes.error) {
+              loadError = fallbackRes.error;
+            } else {
+              data = fallbackRes.data as ReportPreferenceRow | null;
+            }
+          } else {
+            loadError = res.error;
+          }
+        } else {
+          data = res.data as ReportPreferenceRow | null;
+        }
+
         if (!isMounted) {
           return;
         }
+
+        setDbSupportsWage(isWageSupported);
 
         if (loadError) {
           setError(loadError.message);
           return;
         }
 
-        const preferences = data as ReportPreferenceRow | null;
+        setWeeklyEnabled(Boolean(data?.weekly_enabled));
+        setMonthlyEnabled(Boolean(data?.monthly_enabled));
+        setRecipientEmail(data?.recipient_email ?? user.email ?? "");
 
-        setWeeklyEnabled(Boolean(preferences?.weekly_enabled));
-        setMonthlyEnabled(Boolean(preferences?.monthly_enabled));
-        setRecipientEmail(preferences?.recipient_email ?? user.email ?? "");
-      } catch (loadError) {
+        let loadedWage = 0;
+        if (isWageSupported && data && typeof data.net_hourly_wage === "number") {
+          loadedWage = data.net_hourly_wage;
+        } else {
+          const localWage = window.localStorage.getItem(`rumahbudget.net_hourly_wage.${user.id}`);
+          loadedWage = localWage ? Number(localWage) : 0;
+        }
+        setNetHourlyWage(loadedWage);
+        onWageChange?.(loadedWage);
+      } catch (err) {
         if (!isMounted) {
           return;
         }
 
         setError(
           getSupabaseErrorMessage(
-            loadError,
+            err,
             "Failed to load email report settings.",
           ),
         );
@@ -113,7 +155,7 @@ export default function EmailReportPreferences({
     return () => {
       isMounted = false;
     };
-  }, [user.email, user.id]);
+  }, [user.email, user.id, onWageChange]);
 
   function updateRecipientEmail(nextEmail: string) {
     setRecipientEmail(nextEmail);
@@ -143,40 +185,83 @@ export default function EmailReportPreferences({
     setError("");
 
     const timeout = createSupabaseTimeout();
+    let saveError: { message: string; code?: string } | null = null;
+    let localSaveOnly = !dbSupportsWage;
 
-    try {
-      const { error: saveError } = await supabase
-        .from("report_preferences")
-        .upsert(
-          {
-            user_id: user.id,
-            weekly_enabled: weeklyEnabled,
-            monthly_enabled: monthlyEnabled,
-            recipient_email: recipientEmail.trim(),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id" },
-        )
-        .abortSignal(timeout.signal);
+    if (!localSaveOnly) {
+      try {
+        const { error: upsertError } = await supabase
+          .from("report_preferences")
+          .upsert(
+            {
+              user_id: user.id,
+              weekly_enabled: weeklyEnabled,
+              monthly_enabled: monthlyEnabled,
+              recipient_email: recipientEmail.trim(),
+              net_hourly_wage: netHourlyWage,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" },
+          )
+          .abortSignal(timeout.signal);
 
-      if (saveError) {
-        setError(saveError.message);
-        return;
+        if (upsertError) {
+          if (upsertError.code === "42703" || (upsertError.message && upsertError.message.includes("net_hourly_wage"))) {
+            setDbSupportsWage(false);
+            localSaveOnly = true;
+          } else {
+            saveError = upsertError;
+          }
+        }
+      } catch (err) {
+        saveError = err instanceof Error ? err : { message: String(err) };
       }
+    }
 
-      setRecipientEmail(recipientEmail.trim());
-      setMessage("Email report settings saved.");
-    } catch (saveError) {
+    if (localSaveOnly) {
+      try {
+        const { error: upsertError } = await supabase
+          .from("report_preferences")
+          .upsert(
+            {
+              user_id: user.id,
+              weekly_enabled: weeklyEnabled,
+              monthly_enabled: monthlyEnabled,
+              recipient_email: recipientEmail.trim(),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" },
+          )
+          .abortSignal(timeout.signal);
+
+        if (upsertError) {
+          saveError = upsertError;
+        } else {
+          window.localStorage.setItem(`rumahbudget.net_hourly_wage.${user.id}`, String(netHourlyWage));
+        }
+      } catch (err) {
+        saveError = err instanceof Error ? err : { message: String(err) };
+      }
+    } else {
+      window.localStorage.setItem(`rumahbudget.net_hourly_wage.${user.id}`, String(netHourlyWage));
+    }
+
+    setIsSaving(false);
+    timeout.clear();
+
+    if (saveError) {
       setError(
         getSupabaseErrorMessage(
           saveError,
           "Failed to save email report settings.",
         ),
       );
-    } finally {
-      timeout.clear();
-      setIsSaving(false);
+      return;
     }
+
+    setRecipientEmail(recipientEmail.trim());
+    onWageChange?.(netHourlyWage);
+    setMessage("Email report settings saved.");
   }
 
   return (
@@ -251,6 +336,79 @@ export default function EmailReportPreferences({
               placeholder={user.email ?? "name@email.com"}
             />
           </label>
+
+          <div className="border-t border-white/10 pt-5">
+            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-cyan-300">
+              Value-Based Budgeting (Life Energy)
+            </h3>
+            <p className="mt-1 text-xs text-slate-400">
+              Set your net hourly wage to calculate the &quot;Life Energy&quot; (hours of work) spent on each purchase.
+            </p>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-slate-300">
+                Net Hourly Wage (Rp)
+                <SharpInput
+                  type="number"
+                  min="0"
+                  value={netHourlyWage === 0 ? "" : netHourlyWage}
+                  disabled={isLoading || isSaving}
+                  onChange={(event) => {
+                    const val = event.target.value === "" ? 0 : Number(event.target.value);
+                    setNetHourlyWage(val);
+                    setMessage("");
+                  }}
+                  placeholder="Rp 0"
+                />
+              </label>
+
+              <div className="border border-white/10 bg-white/[0.02] p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Wage Calculator Helper
+                </p>
+                <div className="mt-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block text-[0.75rem] font-medium text-slate-400">
+                      Monthly Salary
+                      <input
+                        className="mt-1 w-full border border-white/10 bg-black px-2 py-1 text-xs text-white focus:border-cyan-300 focus:outline-none font-mono"
+                        type="number"
+                        min="0"
+                        value={calcSalary}
+                        placeholder="e.g. 8000000"
+                        onChange={(e) => setCalcSalary(e.target.value)}
+                      />
+                    </label>
+                    <label className="block text-[0.75rem] font-medium text-slate-400">
+                      Hours per Month
+                      <input
+                        className="mt-1 w-full border border-white/10 bg-black px-2 py-1 text-xs text-white focus:border-cyan-300 focus:outline-none font-mono"
+                        type="number"
+                        min="1"
+                        value={calcHours}
+                        placeholder="e.g. 160"
+                        onChange={(e) => setCalcHours(e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <SharpButton
+                    type="button"
+                    className="w-full !py-1 text-xs"
+                    onClick={() => {
+                      const sal = Number(calcSalary);
+                      const hrs = Number(calcHours);
+                      if (sal > 0 && hrs > 0) {
+                        setNetHourlyWage(Math.round(sal / hrs));
+                        setMessage("");
+                      }
+                    }}
+                  >
+                    Calculate &amp; Apply
+                  </SharpButton>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div className="flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center">
             <SharpButton

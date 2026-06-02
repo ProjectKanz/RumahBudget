@@ -35,6 +35,7 @@ type ExpenseFormProps = {
   moneyAccounts: MoneyAccount[];
   onAddExpense: (expense: Expense) => Promise<boolean>;
   supabaseError: string;
+  netHourlyWage?: number;
 };
 
 export default function ExpenseForm({
@@ -43,6 +44,7 @@ export default function ExpenseForm({
   moneyAccounts,
   onAddExpense,
   supabaseError,
+  netHourlyWage = 0,
 }: ExpenseFormProps) {
   const [amount, setAmount] = useState("");
   const [accountId, setAccountId] = useState("");
@@ -136,6 +138,11 @@ export default function ExpenseForm({
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
           />
+          {netHourlyWage > 0 && Number(amount) > 0 && (
+            <span className="mt-1 block text-xs font-mono text-cyan-300">
+              Equivalent Life Energy: {(Number(amount) / netHourlyWage).toFixed(1)} hours of work
+            </span>
+          )}
         </label>
 
         <label className={labelClassName}>

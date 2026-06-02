@@ -24,6 +24,9 @@ import OnboardingTutorial, {
 import ReportPreview from "@/src/components/report-preview";
 import TransactionHistory from "@/src/components/transaction-history";
 import TransferMoney from "@/src/components/transfer-money";
+import SurvivalMatrix from "@/src/components/survival-matrix";
+import SystemDiagnostics from "@/src/components/system-diagnostics";
+import SandboxControls from "@/src/components/sandbox-controls";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import type { EmailReport } from "@/src/types/email-report";
@@ -34,13 +37,73 @@ import type {
   MoneyAccountType,
 } from "@/src/types/money-account";
 import type { Transfer } from "@/src/types/transfer";
-import type { User } from "@supabase/supabase-js";
+import type { SandboxTransaction } from "@/src/types/sandbox";
+import { AuthApiError, type User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const balancePrivacyStorageKey = "rumahbudget.hideBalances";
 
 function getOnboardingStorageKey(userId: string) {
   return `rumahbudget.onboardingCompleted.${userId}`;
+}
+
+function RunwayGaugeSVG({ months, isSandboxMode }: { months: number; isSandboxMode?: boolean }) {
+  const isInfinite = !Number.isFinite(months) || months === Infinity;
+  const maxTarget = 12; // 12 months is 100% capacity target
+  const percent = isInfinite ? 100 : Math.min(100, Math.max(0, (months / maxTarget) * 100));
+
+  const size = 64;
+  const strokeWidth = 5;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (percent / 100) * circumference;
+
+  let color = isSandboxMode ? "#f59e0b" : "#22d3ee"; // amber vs cyan
+  if (isInfinite) {
+    color = isSandboxMode ? "#ea580c" : "#a3e635"; // orange vs lime
+  } else if (months < 3) {
+    color = "#fb7185"; // rose
+  } else if (months < 6) {
+    color = "#fbbf24"; // amber
+  } else if (months >= 12) {
+    color = isSandboxMode ? "#ea580c" : "#a3e635"; // orange vs lime
+  }
+
+  return (
+    <div className="relative flex items-center justify-center h-16 w-16 select-none shrink-0">
+      <svg className="transform -rotate-90 w-full h-full">
+        {/* Track circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          className="stroke-white/10"
+          strokeWidth={strokeWidth}
+          fill="transparent"
+        />
+        {/* Fill circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          fill="transparent"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          className="transition-all duration-1000 ease-out"
+          strokeLinecap="round"
+          style={{
+            filter: `drop-shadow(0 0 6px ${color}88)`,
+          }}
+        />
+      </svg>
+      {/* Center content */}
+      <span className="absolute text-[0.62rem] font-black font-mono tracking-tighter" style={{ color }}>
+        {isInfinite ? "∞" : `${months.toFixed(1)}M`}
+      </span>
+    </div>
+  );
 }
 
 type MonthlyStatus = {
@@ -58,6 +121,7 @@ type AppView =
   | "add"
   | "transactions"
   | "reports"
+  | "sandbox"
   | "settings";
 
 type OnboardingStepTarget = {
@@ -72,6 +136,7 @@ const appViews: { label: string; value: AppView }[] = [
   { label: "Add", value: "add" },
   { label: "Transactions", value: "transactions" },
   { label: "Reports", value: "reports" },
+  { label: "Sandbox", value: "sandbox" },
   { label: "Settings", value: "settings" },
 ];
 
@@ -209,6 +274,7 @@ export default function Home() {
   const [emailReports, setEmailReports] = useState<EmailReport[]>([]);
   const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccount[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [netHourlyWage, setNetHourlyWage] = useState<number>(0);
   const [expenseError, setExpenseError] = useState("");
   const [incomeError, setIncomeError] = useState("");
   const [emailReportError, setEmailReportError] = useState("");
@@ -226,6 +292,42 @@ export default function Home() {
   const [quickAddTab, setQuickAddTab] = useState<QuickAddTab>("income");
   const [highlightedSectionId, setHighlightedSectionId] = useState("");
   const [plannedSpend, setPlannedSpend] = useState("250000");
+  const [isSandboxMode, setIsSandboxMode] = useState(false);
+  const [sandboxTransactions, setSandboxTransactions] = useState<SandboxTransaction[]>([]);
+
+  useEffect(() => {
+    const storedSandboxMode = window.localStorage.getItem("rumahbudget.isSandboxMode");
+    const storedTransactions = window.localStorage.getItem("rumahbudget.sandboxTransactions");
+    queueMicrotask(() => {
+      if (storedSandboxMode) {
+        setIsSandboxMode(storedSandboxMode === "true");
+      }
+      if (storedTransactions) {
+        try {
+          setSandboxTransactions(JSON.parse(storedTransactions));
+        } catch (e) {
+          console.error("Failed to parse sandbox transactions", e);
+        }
+      }
+    });
+  }, []);
+
+  const handleSetSandboxMode = (value: boolean) => {
+    setIsSandboxMode(value);
+    window.localStorage.setItem("rumahbudget.isSandboxMode", String(value));
+  };
+
+  const handleAddSandboxTransaction = (newTx: SandboxTransaction) => {
+    const updated = [...sandboxTransactions, newTx];
+    setSandboxTransactions(updated);
+    window.localStorage.setItem("rumahbudget.sandboxTransactions", JSON.stringify(updated));
+  };
+
+  const handleDeleteSandboxTransaction = (id: string) => {
+    const updated = sandboxTransactions.filter((tx) => tx.id !== id);
+    setSandboxTransactions(updated);
+    window.localStorage.setItem("rumahbudget.sandboxTransactions", JSON.stringify(updated));
+  };
 
   const loadExpensesFromSupabase = useCallback(async () => {
     setIsExpenseLoading(true);
@@ -515,6 +617,52 @@ export default function Home() {
     }
   }, [authUser]);
 
+  const loadPreferencesFromSupabase = useCallback(async () => {
+    if (!authUser) {
+      setNetHourlyWage(0);
+      return;
+    }
+
+    if (!supabase) {
+      const localWage = window.localStorage.getItem(`rumahbudget.net_hourly_wage.${authUser.id}`);
+      setNetHourlyWage(localWage ? Number(localWage) : 0);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { data, error } = await supabase
+        .from("report_preferences")
+        .select("net_hourly_wage")
+        .eq("user_id", authUser.id)
+        .abortSignal(timeout.signal)
+        .maybeSingle();
+
+      if (error) {
+        if (error.code === "42703" || (error.message && error.message.includes("net_hourly_wage"))) {
+          const localWage = window.localStorage.getItem(`rumahbudget.net_hourly_wage.${authUser.id}`);
+          setNetHourlyWage(localWage ? Number(localWage) : 0);
+        } else {
+          console.error("Error loading wage preference:", error.message);
+        }
+        return;
+      }
+
+      if (data && typeof data.net_hourly_wage === "number") {
+        setNetHourlyWage(data.net_hourly_wage);
+      } else {
+        const localWage = window.localStorage.getItem(`rumahbudget.net_hourly_wage.${authUser.id}`);
+        setNetHourlyWage(localWage ? Number(localWage) : 0);
+      }
+    } catch {
+      const localWage = window.localStorage.getItem(`rumahbudget.net_hourly_wage.${authUser.id}`);
+      setNetHourlyWage(localWage ? Number(localWage) : 0);
+    } finally {
+      timeout.clear();
+    }
+  }, [authUser]);
+
   useEffect(() => {
     const storedBalancePrivacy = window.localStorage.getItem(
       balancePrivacyStorageKey,
@@ -555,18 +703,48 @@ export default function Home() {
 
       void supabase.auth
         .getSession()
-        .then(({ data }) => {
+        .then(({ data, error }) => {
           if (!isMounted) {
             return;
+          }
+
+          if (error) {
+            console.error("Session restore error:", error);
+            const isRefreshTokenError =
+              error instanceof AuthApiError ||
+              error.name === "AuthApiError" ||
+              error.message?.toLowerCase().includes("refresh token") ||
+              error.message?.toLowerCase().includes("invalid_grant") ||
+              error.message?.toLowerCase().includes("refresh_token");
+
+            if (isRefreshTokenError) {
+              if (supabase) {
+                void supabase.auth.signOut().catch(() => {});
+              }
+              
+              // Wipe any invalid local storage keys
+              const keysToRemove: string[] = [];
+              for (let i = 0; i < window.localStorage.length; i++) {
+                const key = window.localStorage.key(i);
+                if (key && (key.startsWith("sb-") || key.includes("auth-token"))) {
+                  keysToRemove.push(key);
+                }
+              }
+              keysToRemove.forEach((key) => window.localStorage.removeItem(key));
+
+              setAuthUser(null);
+              setIsAuthLoading(false);
+              return;
+            }
           }
 
           setAuthUser(data.session?.user ?? null);
         })
-        .catch(() => {
+        .catch((err) => {
           if (!isMounted) {
             return;
           }
-
+          console.error("Unexpected session catch error:", err);
           setAuthUser(null);
         })
         .finally(() => {
@@ -592,6 +770,7 @@ export default function Home() {
         setEmailReports([]);
         setMoneyAccounts([]);
         setTransfers([]);
+        setNetHourlyWage(0);
         setIsOnboardingOpen(false);
         setOnboardingStep(0);
       });
@@ -604,6 +783,7 @@ export default function Home() {
       void loadEmailReportsFromSupabase();
       void loadMoneyAccountsFromSupabase();
       void loadTransfersFromSupabase();
+      void loadPreferencesFromSupabase();
     });
   }, [
     authUser,
@@ -612,6 +792,7 @@ export default function Home() {
     loadIncomesFromSupabase,
     loadMoneyAccountsFromSupabase,
     loadTransfersFromSupabase,
+    loadPreferencesFromSupabase,
   ]);
 
   useEffect(() => {
@@ -704,15 +885,27 @@ export default function Home() {
     [activeIncomes],
   );
 
-  const totalExpense = useMemo(
-    () => monthlyExpenses.reduce((total, expense) => total + expense.amount, 0),
-    [monthlyExpenses],
-  );
+  const totalExpense = useMemo(() => {
+    const actual = monthlyExpenses.reduce((total, expense) => total + expense.amount, 0);
+    if (isSandboxMode) {
+      const sandboxOutflow = sandboxTransactions
+        .filter((tx) => tx.type === "expense" && tx.timing === "recurring")
+        .reduce((sum, tx) => sum + tx.amount, 0);
+      return actual + sandboxOutflow;
+    }
+    return actual;
+  }, [monthlyExpenses, isSandboxMode, sandboxTransactions]);
 
-  const totalIncome = useMemo(
-    () => monthlyIncomes.reduce((total, income) => total + income.amount, 0),
-    [monthlyIncomes],
-  );
+  const totalIncome = useMemo(() => {
+    const actual = monthlyIncomes.reduce((total, income) => total + income.amount, 0);
+    if (isSandboxMode) {
+      const sandboxInflow = sandboxTransactions
+        .filter((tx) => tx.type === "income" && tx.timing === "recurring")
+        .reduce((sum, tx) => sum + tx.amount, 0);
+      return actual + sandboxInflow;
+    }
+    return actual;
+  }, [monthlyIncomes, isSandboxMode, sandboxTransactions]);
 
   const moneyAccountBalances = useMemo(() => {
     const balances = moneyAccounts.reduce<Record<string, number>>(
@@ -764,15 +957,62 @@ export default function Home() {
     [moneyAccounts],
   );
 
-  const totalBalance = useMemo(
-    () =>
-      moneyAccounts.reduce(
-        (total, account) =>
-          total + (moneyAccountBalances[account.id] ?? account.initialBalance),
-        0,
-      ),
-    [moneyAccountBalances, moneyAccounts],
-  );
+  const totalBalance = useMemo(() => {
+    const actual = moneyAccounts.reduce(
+      (total, account) =>
+        total + (moneyAccountBalances[account.id] ?? account.initialBalance),
+      0,
+    );
+    if (isSandboxMode) {
+      const sandboxNet = sandboxTransactions
+        .filter((tx) => tx.timing === "recurring")
+        .reduce((sum, tx) => {
+          if (tx.type === "income") return sum + tx.amount;
+          if (tx.type === "expense") return sum - tx.amount;
+          return sum;
+        }, 0);
+      return actual + sandboxNet;
+    }
+    return actual;
+  }, [moneyAccountBalances, moneyAccounts, isSandboxMode, sandboxTransactions]);
+
+  const averageMonthlyBurn = useMemo(() => {
+    if (activeExpenses.length === 0 && (!isSandboxMode || sandboxTransactions.filter(t => t.type === "expense").length === 0)) {
+      return 0;
+    }
+
+    const monthlyBurnMap = new Map<string, number>();
+    activeExpenses.forEach((expense) => {
+      if (expense.createdAt <= 0) return;
+      const date = new Date(expense.createdAt);
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      monthlyBurnMap.set(key, (monthlyBurnMap.get(key) || 0) + expense.amount);
+    });
+
+    const recurringSandboxOutflow = isSandboxMode
+      ? sandboxTransactions
+          .filter((tx) => tx.type === "expense" && tx.timing === "recurring")
+          .reduce((sum, tx) => sum + tx.amount, 0)
+      : 0;
+
+    if (monthlyBurnMap.size === 0) {
+      return recurringSandboxOutflow;
+    }
+
+    const totalAllExpenses = Array.from(monthlyBurnMap.values()).reduce(
+      (sum, val) => sum + val,
+      0,
+    );
+
+    return (totalAllExpenses / monthlyBurnMap.size) + recurringSandboxOutflow;
+  }, [activeExpenses, isSandboxMode, sandboxTransactions]);
+
+  const survivalRunwayMonths = useMemo(() => {
+    if (averageMonthlyBurn === 0) {
+      return Infinity;
+    }
+    return totalBalance / averageMonthlyBurn;
+  }, [totalBalance, averageMonthlyBurn]);
 
   const remainingBalance = totalIncome - totalExpense;
   const expenseRatio = totalIncome > 0 ? totalExpense / totalIncome : 0;
@@ -858,7 +1098,9 @@ export default function Home() {
       ? "#fb7185"
       : spendGaugePercent <= 45
         ? "#fbbf24"
-        : "#22d3ee";
+        : isSandboxMode
+          ? "#f59e0b"
+          : "#22d3ee";
   const spendSignal =
     safePlannedSpendAmount <= 0
       ? {
@@ -877,7 +1119,7 @@ export default function Home() {
         : totalIncome === 0 && totalExpense > 0
           ? {
               label: "Balance-funded",
-              tone: "text-cyan-200",
+              tone: isSandboxMode ? "text-amber-200" : "text-cyan-200",
               description:
                 "Possible, but this month has no recorded income, so it comes from existing balance.",
             }
@@ -1405,7 +1647,7 @@ export default function Home() {
   }
 
   return (
-    <main className="rb-app min-h-screen overflow-x-hidden bg-black text-white">
+    <main className={`rb-app min-h-screen overflow-x-hidden bg-black text-white ${isSandboxMode ? "sandbox-active" : ""}`}>
       {isAuthLoading ? (
         <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-5 py-8 sm:px-6">
           <TerminalPanel className="!p-6 text-sm text-slate-300">
@@ -1437,8 +1679,8 @@ export default function Home() {
             <TerminalPanel isProminent className="!p-4 sm:!p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">
-                    Private Finance Cockpit
+                  <p className={`text-xs font-semibold uppercase tracking-[0.35em] ${isSandboxMode ? "text-amber-500" : "text-cyan-300"}`}>
+                    Private Finance Cockpit {isSandboxMode && "— SIMULATION ACTIVE"}
                   </p>
                   <h1 className="neo-title mt-2 text-4xl font-black tracking-tight text-white sm:text-6xl">
                     RumahBudget
@@ -1447,14 +1689,23 @@ export default function Home() {
                     Private money tracking with accounts, cashflow, transfers,
                     and financial reports in one clean cockpit.
                   </p>
-                  <div className="mt-4 flex flex-wrap gap-2 text-[0.68rem] font-black uppercase tracking-[0.22em]">
-                    <StatusChip tone="cyan">Live ledger</StatusChip>
-                    <StatusChip tone="lime">Spend signal</StatusChip>
-                    <StatusChip tone="fuchsia">Report ready</StatusChip>
+                  <div className="mt-4 flex flex-wrap items-center gap-2 text-[0.68rem] font-black uppercase tracking-[0.22em]">
+                    {isSandboxMode ? (
+                      <div className="animate-pulse text-amber-500 bg-amber-500/10 border border-amber-500/30 px-3 py-2 status-chip inline-flex items-center gap-1.5 shadow-[0_0_16px_rgba(245,158,11,0.25)]">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
+                        [SANDBOX MODE: SIMULATING]
+                      </div>
+                    ) : (
+                      <>
+                        <StatusChip tone="cyan">Live ledger</StatusChip>
+                        <StatusChip tone="lime">Spend signal</StatusChip>
+                        <StatusChip tone="fuchsia">Report ready</StatusChip>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                <div className="border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300 sm:min-w-72">
+                <div className="border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300 sm:min-w-72 flex flex-col gap-2">
                   <p className="leading-5">
                     Signed in as:{" "}
                     <span className="font-semibold text-white">
@@ -1477,6 +1728,35 @@ export default function Home() {
                     >
                       Log out
                     </SharpButton>
+                  </div>
+
+                  {/* Sandbox Mode Toggle */}
+                  <div className="border-t border-white/10 pt-2 flex items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <span className="text-[0.62rem] font-bold uppercase tracking-wider text-slate-400 block">
+                        Simulation Mode
+                      </span>
+                      <span className="text-[0.68rem] font-mono font-bold text-slate-200">
+                        {isSandboxMode ? "SANDBOX BRANCH" : "LIVE LEDGER"}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleSetSandboxMode(!isSandboxMode)}
+                      type="button"
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500/50 ${
+                        isSandboxMode
+                          ? "bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.5)]"
+                          : "bg-slate-800"
+                      }`}
+                      title="Toggle Scenario Sandbox"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
+                          isSandboxMode ? "translate-x-5 bg-white" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1507,7 +1787,7 @@ export default function Home() {
 
           <nav
             aria-label="Mobile app views"
-            className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-3 gap-1 border border-cyan-300/20 bg-black/90 p-2 shadow-[0_0_36px_rgba(34,211,238,0.18)] backdrop-blur-xl sm:hidden"
+            className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-4 gap-1 border border-cyan-300/20 bg-black/90 p-2 shadow-[0_0_36px_rgba(34,211,238,0.18)] backdrop-blur-xl sm:hidden"
           >
             {appViews.map((item) => (
               <button
@@ -1614,6 +1894,24 @@ export default function Home() {
                     />
 
                     <MetricCell
+                      className="sm:col-span-2"
+                      description="Equivalent hours of work spent this month based on hourly wage."
+                      label="Monthly Life Energy Spent"
+                      tone="cyan"
+                      value={
+                        netHourlyWage > 0 ? (
+                          <span className="font-mono text-cyan-300">
+                            {(totalExpense / netHourlyWage).toFixed(1)} hrs
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 text-sm font-mono">
+                            ---
+                          </span>
+                        )
+                      }
+                    />
+
+                    <MetricCell
                       className={`sm:col-span-2 ${monthlyStatusBadgeClass}`}
                       description={monthlyStatus.explanation}
                       label="Monthly Cashflow Status"
@@ -1630,6 +1928,35 @@ export default function Home() {
                         <span className={monthlyStatus.className}>
                           {monthlyStatus.label}
                         </span>
+                      }
+                    />
+
+                    <MetricCell
+                      className="sm:col-span-2"
+                      description={
+                        averageMonthlyBurn > 0
+                          ? `Survival runway based on an average monthly burn of ${isBalanceHidden ? hiddenBalanceLabel : formatCurrency(averageMonthlyBurn)}.`
+                          : "No expenses recorded. Runway is infinite."
+                      }
+                      label="Survival Runway"
+                      tone={
+                        survivalRunwayMonths === Infinity
+                          ? "lime"
+                          : survivalRunwayMonths < 3
+                            ? "rose"
+                            : survivalRunwayMonths < 6
+                              ? "amber"
+                              : "cyan"
+                      }
+                      action={<RunwayGaugeSVG months={survivalRunwayMonths} isSandboxMode={isSandboxMode} />}
+                      value={
+                        survivalRunwayMonths === Infinity ? (
+                          <span className="text-lime-300 font-mono">∞ Months</span>
+                        ) : (
+                          <span className="font-mono">
+                            {survivalRunwayMonths.toFixed(1)} Months
+                          </span>
+                        )
                       }
                     />
                   </div>
@@ -1833,6 +2160,21 @@ export default function Home() {
                   </TerminalPanel>
                 </section>
 
+                <SurvivalMatrix
+                  accounts={moneyAccounts}
+                  accountBalances={moneyAccountBalances}
+                  averageMonthlyBurn={averageMonthlyBurn}
+                  monthlyIncome={totalIncome}
+                  isBalanceHidden={isBalanceHidden}
+                />
+
+                <SystemDiagnostics
+                  accounts={moneyAccounts}
+                  accountBalances={moneyAccountBalances}
+                  expenses={activeExpenses}
+                  isBalanceHidden={isBalanceHidden}
+                />
+
                 <DashboardCharts
                   accountBalances={moneyAccountBalances}
                   expenses={activeExpenses}
@@ -1842,6 +2184,36 @@ export default function Home() {
                   isBalanceHidden={isBalanceHidden}
                   moneyAccounts={moneyAccounts}
                 />
+
+                <section className="mx-auto max-w-6xl px-5 pb-8 sm:px-6">
+                  <TerminalPanel className="border-amber-500/20 bg-black/40">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500 font-mono">
+                            Simulation Protocol
+                          </p>
+                          <span className={`inline-block h-2 w-2 rounded-full ${isSandboxMode ? 'bg-amber-500 animate-ping' : 'bg-slate-600'}`} />
+                        </div>
+                        <h2 className="mt-2 text-xl font-black text-white">
+                          Scenario Branching Sandbox
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-400">
+                          {isSandboxMode
+                            ? `Currently simulating ${sandboxTransactions.length} custom scenario branches. Your dashboard metrics represent modified projections.`
+                            : "Deactivated. All cockpit values represent your actual private ledger data. Open the console to simulate future financial paths."}
+                        </p>
+                      </div>
+                      <SharpButton
+                        onClick={() => openView("sandbox")}
+                        className="border-amber-500/35 text-amber-200 hover:bg-amber-500/10 min-h-10 px-4 py-2 text-xs font-bold uppercase shrink-0 font-mono"
+                        type="button"
+                      >
+                        {isSandboxMode ? "Manage Sandbox" : "Open Sandbox Console"}
+                      </SharpButton>
+                    </div>
+                  </TerminalPanel>
+                </section>
 
                 <section className="mx-auto max-w-6xl px-5 pb-8 sm:px-6">
                   <TerminalPanel className="!p-5">
@@ -1899,6 +2271,11 @@ export default function Home() {
                                 {activity.tone === "expense" ? "-" : ""}
                                 {formatCurrency(activity.amount)}
                               </NumberValue>
+                              {activity.tone === "expense" && netHourlyWage > 0 && (
+                                <span className="block text-right text-xs font-mono text-cyan-300/80 mt-0.5">
+                                  (~{(activity.amount / netHourlyWage).toFixed(1)} hrs)
+                                </span>
+                              )}
                             </p>
                           </article>
                         ))
@@ -1968,6 +2345,7 @@ export default function Home() {
                         moneyAccounts={moneyAccounts}
                         onAddExpense={addExpense}
                         supabaseError={expenseError}
+                        netHourlyWage={netHourlyWage}
                       />
                     ) : null}
 
@@ -1995,6 +2373,25 @@ export default function Home() {
                 onDeleteExpense={deleteExpense}
                 onDeleteIncome={deleteIncome}
                 onDeleteTransfer={deleteTransfer}
+                netHourlyWage={netHourlyWage}
+              />
+            ) : null}
+
+            {activeView === "sandbox" ? (
+              <SandboxControls
+                sandboxTransactions={sandboxTransactions}
+                onAddSandboxTransaction={handleAddSandboxTransaction}
+                onDeleteSandboxTransaction={handleDeleteSandboxTransaction}
+                actualTotalBalance={moneyAccounts.reduce(
+                  (total, account) =>
+                    total + (moneyAccountBalances[account.id] ?? account.initialBalance),
+                  0,
+                )}
+                actualMonthlyIncome={monthlyIncomes.reduce((total, income) => total + income.amount, 0)}
+                actualMonthlyExpense={monthlyExpenses.reduce((total, expense) => total + expense.amount, 0)}
+                isBalanceHidden={isBalanceHidden}
+                isSandboxMode={isSandboxMode}
+                onToggleSandboxMode={handleSetSandboxMode}
               />
             ) : null}
 
@@ -2046,7 +2443,7 @@ export default function Home() {
                   </TerminalPanel>
                 </section>
 
-                <EmailReportPreferences user={authUser} />
+                <EmailReportPreferences user={authUser} onWageChange={setNetHourlyWage} />
               </>
             ) : null}
           </div>

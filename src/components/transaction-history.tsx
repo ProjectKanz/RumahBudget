@@ -81,6 +81,7 @@ type TransactionHistoryProps = {
   onDeleteExpense: (id: string) => void | Promise<void>;
   onDeleteIncome: (id: string) => void | Promise<void>;
   onDeleteTransfer: (id: string) => void | Promise<void>;
+  netHourlyWage?: number;
 };
 
 export default function TransactionHistory({
@@ -92,6 +93,7 @@ export default function TransactionHistory({
   onDeleteExpense,
   onDeleteIncome,
   onDeleteTransfer,
+  netHourlyWage = 0,
 }: TransactionHistoryProps) {
   const [filter, setFilter] = useState<TransactionFilter>("All");
 
@@ -248,6 +250,11 @@ export default function TransactionHistory({
                         {isTransfer ? "" : isIncome ? "+" : "-"}
                         {formatCurrency(transaction.amount)}
                       </NumberValue>
+                      {transaction.type === "Expenses" && netHourlyWage > 0 && (
+                        <span className="ml-2 text-sm font-mono text-cyan-300/80">
+                          (~{(transaction.amount / netHourlyWage).toFixed(1)} hrs)
+                        </span>
+                      )}
                     </p>
 
                     <p className="mt-1 text-sm text-slate-300">
