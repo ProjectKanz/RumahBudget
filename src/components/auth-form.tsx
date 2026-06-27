@@ -13,6 +13,18 @@ type AuthFormProps = {
   userEmail?: string;
 };
 
+function getAuthRequestErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    if (error.message.toLowerCase().includes("failed to fetch")) {
+      return "Cannot reach Supabase. Check your internet/DNS connection and confirm the Supabase project is active.";
+    }
+
+    return error.message;
+  }
+
+  return "Authentication request failed. Please try again.";
+}
+
 export default function AuthForm({ userEmail }: AuthFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,19 +42,23 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
     setIsSubmitting(true);
     setMessage("");
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    setIsSubmitting(false);
+      if (error) {
+        setMessage(error.message);
+        return;
+      }
 
-    if (error) {
-      setMessage(error.message);
-      return;
+      setPassword("");
+    } catch (error) {
+      setMessage(getAuthRequestErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setPassword("");
   }
 
   async function signUp() {
@@ -54,20 +70,24 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
     setIsSubmitting(true);
     setMessage("");
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
 
-    setIsSubmitting(false);
+      if (error) {
+        setMessage(error.message);
+        return;
+      }
 
-    if (error) {
-      setMessage(error.message);
-      return;
+      setPassword("");
+      setMessage("Account created. Check your email if confirmation is required.");
+    } catch (error) {
+      setMessage(getAuthRequestErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setPassword("");
-    setMessage("Account created. Check your email if confirmation is required.");
   }
 
   async function logout() {
@@ -79,12 +99,16 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
     setIsSubmitting(true);
     setMessage("");
 
-    const { error } = await supabase.auth.signOut();
+    try {
+      const { error } = await supabase.auth.signOut();
 
-    setIsSubmitting(false);
-
-    if (error) {
-      setMessage(error.message);
+      if (error) {
+        setMessage(error.message);
+      }
+    } catch (error) {
+      setMessage(getAuthRequestErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
