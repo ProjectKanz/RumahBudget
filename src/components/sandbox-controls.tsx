@@ -13,7 +13,7 @@ import {
 } from "@/src/components/cockpit-ui";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import type { SandboxTransaction } from "@/src/types/sandbox";
-import { FormEvent, useState, useMemo } from "react";
+import { FormEvent, useCallback, useState, useMemo } from "react";
 
 type SandboxControlsProps = {
   sandboxTransactions: SandboxTransaction[];
@@ -104,7 +104,7 @@ export default function SandboxControls({
   }, [actualTotalBalance, actualMonthlyIncome, actualMonthlyExpense, sandboxTransactions, monthsList]);
 
   // Find scale bounds for chart SVG
-  const { maxVal, minVal, yMin, yMax } = useMemo(() => {
+  const { yMin, yMax } = useMemo(() => {
     const balances = projectionData.map((d) => d.balance);
     const maxVal = Math.max(...balances, actualTotalBalance, 1);
     const minVal = Math.min(...balances, actualTotalBalance, 0);
@@ -129,30 +129,30 @@ export default function SandboxControls({
   const chartWidth = width - paddingLeft - paddingRight;
   const chartHeight = height - paddingTop - paddingBottom;
 
-  const getX = (index: number) => paddingLeft + (index * chartWidth) / 12;
-  const getY = (val: number) => {
+  const getX = useCallback((index: number) => paddingLeft + (index * chartWidth) / 12, [chartWidth]);
+  const getY = useCallback((val: number) => {
     const range = yMax - yMin;
     if (range === 0) return paddingTop + chartHeight / 2;
     return paddingTop + chartHeight - ((val - yMin) / range) * chartHeight;
-  };
+  }, [chartHeight, yMax, yMin]);
 
   const pathD = useMemo(() => {
     return projectionData
       .map((d, i) => `${i === 0 ? "M" : "L"} ${getX(i)} ${getY(d.balance)}`)
       .join(" ");
-  }, [projectionData, yMin, yMax]);
+  }, [getX, getY, projectionData]);
 
   const areaD = useMemo(() => {
     if (!pathD) return "";
     return `${pathD} L ${getX(12)} ${getY(yMin)} L ${getX(0)} ${getY(yMin)} Z`;
-  }, [pathD, yMin, yMax]);
+  }, [getX, getY, pathD, yMin]);
 
   const zeroY = useMemo(() => {
     if (yMin < 0 && yMax > 0) {
       return getY(0);
     }
     return null;
-  }, [yMin, yMax]);
+  }, [getY, yMin, yMax]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

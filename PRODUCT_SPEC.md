@@ -2,7 +2,7 @@
 
 ## Product Goal
 
-RumahBudget is a mobile-first personal expense tracker with optional future family sharing. The goal is to help household users record daily expenses quickly, monitor monthly spending, and receive weekly or monthly spending summaries by email.
+RumahBudget is a mobile-first personal finance cockpit with optional future family sharing. The goal is to help household users record daily money movement quickly, monitor monthly spending and cashflow, simulate short-term financial scenarios, and receive weekly or monthly spending summaries by email.
 
 ## Target Users
 
@@ -191,7 +191,48 @@ Next milestone: **V0.5 Production Email Readiness / Verified Domain or Family Sh
 - Track category
 - Track payment method
 
-### V0.5 Budget Control
+### V0.5 Portfolio Readiness and Scenario Planning
+
+Status: Completed / portfolio documentation aligned
+
+- Scenario Branching Sandbox for simulated future income, expenses, and transfers
+- Survival Runway and Spend Signal style dashboard readings
+- System Diagnostics for repeated expense and pressure patterns
+- Command palette for fast navigation and quick entry
+- Recurring commitments extension for subscriptions, rent, installments, and pay-later obligations
+- Optional Telegram extension for chat-based expense/income logging
+- Documentation now separates demo-ready core features from experimental extensions
+
+Limitations:
+
+- Telegram requires bot setup and supporting database columns
+- Recurring commitments require the `recurring_commitments` table
+- Extension fields such as `net_hourly_wage`, `telegram_bot_token`, and `telegram_chat_id` require database migration support
+- Offline queueing should be tested carefully before being positioned as production-ready sync
+
+### V0.6 Money Allocation + Portfolio Watch
+
+Status: Implemented as V1-V3 local/manual product-validation slice
+
+- Allocation view added to the authenticated cockpit navigation.
+- V1 manual allocation template supports a default 50 / 30 / 20 split and editable percentages.
+- User can record incoming money, preview allocation, adjust split amounts manually, save bucket allocations, or skip allocation into Unallocated Cash.
+- Bucket dashboard shows Living, Investment Cash, Emergency Fund, Sinking Fund, Trading Lab, Lifestyle, Giving / Family, and Unallocated balances.
+- Emergency Fund progress is calculated against a local target.
+- Investment tracker separates allocation from actual investing: Investment Cash is only reduced when a buy transaction is recorded from that bucket.
+- User can record BTC, BBCA, and BBRI buy transactions with buy price, amount invested, quantity, fee, source bucket, and note.
+- Manual current price snapshots calculate current value, average buy price, unrealized profit/loss, unrealized profit/loss percentage, and portfolio allocation percentage.
+- V2 price provider abstraction exists with manual, mock/static, unsupported, and BTC latest provider modes.
+- V3 safe latest-price route supports BTC/IDR through a server-side public CoinGecko request.
+
+Limitations:
+
+- Allocation and portfolio records are stored in browser localStorage first; no Supabase persistence or RLS-backed migration yet.
+- BBCA/BBRI live prices are intentionally not enabled until a reliable licensed IDX market-data provider is selected.
+- BTC latest price is not guaranteed real-time and should not be treated as financial advice.
+- Existing core ledger balances remain account-based and are not automatically rewritten by allocation records.
+
+### Future Budget Control
 
 - Set monthly budget per category
 - Show budget usage percentage
@@ -207,6 +248,7 @@ Next milestone: **V0.5 Production Email Readiness / Verified Domain or Family Sh
 - Bank account integration
 - OCR
 - Complex financial planning
+- Production Telegram delivery until extension migrations and bot setup are finalized
 
 ## Default Categories
 

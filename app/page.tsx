@@ -28,6 +28,7 @@ import SurvivalMatrix from "@/src/components/survival-matrix";
 import SystemDiagnostics from "@/src/components/system-diagnostics";
 import SandboxControls from "@/src/components/sandbox-controls";
 import CommandK from "@/src/components/command-k";
+import MoneyAllocationWatch from "@/src/components/money-allocation-watch";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import type { EmailReport } from "@/src/types/email-report";
@@ -204,6 +205,7 @@ type AppView =
   | "add"
   | "transactions"
   | "reports"
+  | "allocation"
   | "sandbox"
   | "settings";
 
@@ -219,6 +221,7 @@ const appViews: { label: string; value: AppView }[] = [
   { label: "Add", value: "add" },
   { label: "Transactions", value: "transactions" },
   { label: "Reports", value: "reports" },
+  { label: "Allocation", value: "allocation" },
   { label: "Sandbox", value: "sandbox" },
   { label: "Settings", value: "settings" },
 ];
@@ -293,6 +296,51 @@ type SupabaseTransferRow = {
   created_at?: string | null;
 };
 
+type SupabaseRecurringCommitmentRow = {
+  id?: string | number;
+  user_id?: string | null;
+  account_id?: string | null;
+  name?: string | null;
+  amount?: number | string | null;
+  category?: string | null;
+  commitment_type?: string | null;
+  due_day?: number | string | null;
+  is_auto_deduct?: boolean | null;
+  disable_reminders?: boolean | null;
+  last_processed?: string | null;
+  created_at?: string | null;
+};
+
+type OfflineQueueItem =
+  | {
+      type: "expense";
+      data: {
+        accountId: string;
+        amount: number;
+        category: string;
+        paymentMethod: string;
+        note: string;
+      };
+    }
+  | {
+      type: "income";
+      data: {
+        accountId: string;
+        amount: number;
+        source: string;
+        note: string;
+      };
+    }
+  | {
+      type: "transfer";
+      data: {
+        fromAccountId: string;
+        toAccountId: string;
+        amount: number;
+        note: string;
+      };
+    };
+
 type RecentActivityItem = {
   id: string;
   accountLabel: string;
@@ -314,6 +362,18 @@ function isMoneyAccountType(value: unknown): value is MoneyAccountType {
     value === "Cash" ||
     value === "Investment" ||
     value === "Other"
+  );
+}
+
+function isRecurringCommitmentType(
+  value: unknown,
+): value is RecurringCommitment["commitmentType"] {
+  return (
+    value === "subscription" ||
+    value === "installment" ||
+    value === "paylater" ||
+    value === "rent" ||
+    value === "other"
   );
 }
 
@@ -422,38 +482,6 @@ export default function Home() {
       }
     });
   }, []);
-
-  // Offline status & Queue handler
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const updateOnlineStatus = () => {
-      const isOnline = navigator.onLine;
-      setIsOfflineActive(!isOnline);
-
-      if (isOnline) {
-        void syncOfflineQueue();
-      }
-    };
-
-    const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
-    if (queueJson) {
-      try {
-        const q = JSON.parse(queueJson);
-        setOfflineQueueCount(q.length);
-      } catch {}
-    }
-
-    setIsOfflineActive(!navigator.onLine);
-
-    window.addEventListener("online", updateOnlineStatus);
-    window.addEventListener("offline", updateOnlineStatus);
-
-    return () => {
-      window.removeEventListener("online", updateOnlineStatus);
-      window.removeEventListener("offline", updateOnlineStatus);
-    };
-  }, [authUser]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -924,14 +952,16 @@ export default function Home() {
         return;
       }
 
-      const nextCommitments = (data || []).map((c: any) => ({
+      const nextCommitments = ((data as SupabaseRecurringCommitmentRow[]) || []).map((c): RecurringCommitment => ({
         id: String(c.id ?? crypto.randomUUID()),
         userId: c.user_id ?? authUser.id,
         accountId: c.account_id ?? null,
         name: c.name ?? "Untitled commitment",
         amount: Number(c.amount ?? 0),
         category: c.category ?? "Other",
-        commitmentType: c.commitment_type ?? "other",
+        commitmentType: isRecurringCommitmentType(c.commitment_type)
+          ? c.commitment_type
+          : "other",
         dueDay: Number(c.due_day ?? 1),
         isAutoDeduct: Boolean(c.is_auto_deduct),
         disableReminders: Boolean(c.disable_reminders),
@@ -1035,11 +1065,11 @@ export default function Home() {
     }
   }
 
-  const syncOfflineQueue = async () => {
+  const syncOfflineQueue = useCallback(async () => {
     const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
     if (!queueJson) return;
 
-    let queue: { type: string; data: any }[] = [];
+    let queue: OfflineQueueItem[] = [];
     try {
       queue = JSON.parse(queueJson);
     } catch {
@@ -1103,9 +1133,49 @@ export default function Home() {
         setOnlineSuccessMessage("");
       }, 5000);
     }
-  };
+  }, [
+    authUser,
+    loadExpensesFromSupabase,
+    loadIncomesFromSupabase,
+    loadMoneyAccountsFromSupabase,
+    loadTransfersFromSupabase,
+  ]);
 
-  const syncAutoDeducts = async (commitmentsToProcess: RecurringCommitment[]) => {
+  // Offline status & Queue handler
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateOnlineStatus = () => {
+      const isOnline = navigator.onLine;
+      setIsOfflineActive(!isOnline);
+
+      if (isOnline) {
+        void syncOfflineQueue();
+      }
+    };
+
+    queueMicrotask(() => {
+      const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
+      if (queueJson) {
+        try {
+          const q = JSON.parse(queueJson) as OfflineQueueItem[];
+          setOfflineQueueCount(q.length);
+        } catch {}
+      }
+
+      setIsOfflineActive(!navigator.onLine);
+    });
+
+    window.addEventListener("online", updateOnlineStatus);
+    window.addEventListener("offline", updateOnlineStatus);
+
+    return () => {
+      window.removeEventListener("online", updateOnlineStatus);
+      window.removeEventListener("offline", updateOnlineStatus);
+    };
+  }, [authUser, syncOfflineQueue]);
+
+  const syncAutoDeducts = useCallback(async (commitmentsToProcess: RecurringCommitment[]) => {
     setIsAutoDeducting(true);
     try {
       for (const c of commitmentsToProcess) {
@@ -1136,7 +1206,7 @@ export default function Home() {
             owner: authUser?.email ?? "Offline user",
             userId: authUser?.id ?? "",
             accountId: expenseAccountId,
-            createdAt: Date.now(),
+            createdAt: new Date().getTime(),
             amount: c.amount,
             category: c.category,
             paymentMethod: "Debit Card",
@@ -1174,7 +1244,13 @@ export default function Home() {
     } finally {
       setIsAutoDeducting(false);
     }
-  };
+  }, [
+    authUser,
+    dbSupportsCommitments,
+    loadCommitmentsFromSupabase,
+    loadExpensesFromSupabase,
+    moneyAccounts,
+  ]);
 
   async function recordCommitmentPayment(c: RecurringCommitment) {
     const expenseAccountId = c.accountId || (moneyAccounts[0]?.id ?? "");
@@ -1206,7 +1282,7 @@ export default function Home() {
           owner: authUser?.email ?? "Offline user",
           userId: authUser?.id ?? "",
           accountId: expenseAccountId,
-          createdAt: Date.now(),
+          createdAt: new Date().getTime(),
           amount: c.amount,
           category: c.category,
           paymentMethod: "Debit Card",
@@ -1416,9 +1492,11 @@ export default function Home() {
 
     if (toAutoDeduct.length > 0) {
       hasScannedAutoDeducts.current = true;
-      void syncAutoDeducts(toAutoDeduct);
+      queueMicrotask(() => {
+        void syncAutoDeducts(toAutoDeduct);
+      });
     }
-  }, [authUser, isMoneyAccountLoading, commitments, isAutoDeducting]);
+  }, [authUser, isMoneyAccountLoading, commitments, isAutoDeducting, syncAutoDeducts]);
 
   useEffect(() => {
     if (!authUser || !isHydrated) {
@@ -3187,6 +3265,14 @@ export default function Home() {
                 onDeleteIncome={deleteIncome}
                 onDeleteTransfer={deleteTransfer}
                 netHourlyWage={netHourlyWage}
+              />
+            ) : null}
+
+            {activeView === "allocation" ? (
+              <MoneyAllocationWatch
+                accounts={moneyAccounts}
+                isBalanceHidden={isBalanceHidden}
+                userId={authUser.id}
               />
             ) : null}
 

@@ -31,6 +31,7 @@ const commitmentTypes = [
 ];
 
 const labelClassName = "text-sm font-medium text-slate-300";
+type CommitmentType = RecurringCommitment["commitmentType"];
 
 type RecurringCommitmentsProps = {
   commitments: RecurringCommitment[];
@@ -56,7 +57,7 @@ export default function RecurringCommitments({
   const [dueDay, setDueDay] = useState("");
   const [category, setCategory] = useState(categories[0].value);
   const [accountId, setAccountId] = useState("");
-  const [commitmentType, setCommitmentType] = useState(commitmentTypes[0].value);
+  const [commitmentType, setCommitmentType] = useState<CommitmentType>("subscription");
   const [isAutoDeduct, setIsAutoDeduct] = useState(false);
   const [disableReminders, setDisableReminders] = useState(false);
 
@@ -96,7 +97,7 @@ export default function RecurringCommitments({
         dueDay: day,
         category,
         accountId: selectedAccountId || null,
-        commitmentType: commitmentType as any,
+        commitmentType,
         isAutoDeduct,
         disableReminders,
       });
@@ -172,7 +173,7 @@ export default function RecurringCommitments({
             Commitment Type
             <SharpSelect
               value={commitmentType}
-              onChange={(e) => setCommitmentType(e.target.value)}
+              onChange={(e) => setCommitmentType(e.target.value as CommitmentType)}
               disabled={isLoading || isSaving}
             >
               {commitmentTypes.map((t) => (

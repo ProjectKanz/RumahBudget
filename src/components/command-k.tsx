@@ -7,7 +7,7 @@ import type { Income } from "@/src/types/income";
 
 const CATEGORIES = ["Groceries", "Transportation", "Bills", "Education", "Health", "Other"];
 
-type AppView = "overview" | "accounts" | "add" | "transactions" | "reports" | "sandbox" | "settings";
+type AppView = "overview" | "accounts" | "add" | "transactions" | "reports" | "allocation" | "sandbox" | "settings";
 
 type CommandKProps = {
   accounts: MoneyAccount[];
@@ -28,7 +28,7 @@ type CommandKProps = {
 };
 
 const COMMANDS = [
-  { name: "/view", description: "Switch views (overview, accounts, add, transactions, reports, sandbox, settings)", usage: "/view <tab>" },
+  { name: "/view", description: "Switch views (overview, accounts, add, transactions, reports, allocation, sandbox, settings)", usage: "/view <tab>" },
   { name: "/expense", description: "Quick insert expense with amount, category, and optional note", usage: "/expense <amount> <category> [note]" },
   { name: "/income", description: "Quick insert income with amount, source, and optional note", usage: "/income <amount> <source> [note]" },
   { name: "/sandbox", description: "Toggle Scenario Branching Sandbox mode", usage: "/sandbox" },
@@ -136,12 +136,12 @@ export default function CommandK({
 
     if (commandName === "/view") {
       const viewArg = (args[0] || "").toLowerCase() as AppView;
-      const validViews: AppView[] = ["overview", "accounts", "add", "transactions", "reports", "sandbox", "settings"];
+      const validViews: AppView[] = ["overview", "accounts", "add", "transactions", "reports", "allocation", "sandbox", "settings"];
       if (validViews.includes(viewArg)) {
         setActiveView(viewArg);
         showSuccess(`Switched to ${viewArg} view`);
       } else {
-        setErrorMsg("Invalid view tab name. Try: overview, accounts, add, transactions, reports, sandbox, settings");
+        setErrorMsg("Invalid view tab name. Try: overview, accounts, add, transactions, reports, allocation, sandbox, settings");
       }
       return;
     }

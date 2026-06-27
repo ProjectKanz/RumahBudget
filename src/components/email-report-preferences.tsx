@@ -25,6 +25,21 @@ type ReportPreferenceRow = {
   telegram_chat_id?: string | null;
 };
 
+type ReportPreferencePayload = {
+  user_id: string;
+  weekly_enabled?: boolean;
+  monthly_enabled?: boolean;
+  recipient_email?: string;
+  net_hourly_wage?: number;
+  telegram_bot_token?: string;
+  updated_at: string;
+};
+
+type PreferenceSaveError = {
+  message: string;
+  code?: string;
+};
+
 function createSupabaseTimeout() {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 10000);
@@ -74,9 +89,11 @@ export default function EmailReportPreferences({
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setIsLocalhost(window.location.origin.startsWith("http://localhost"));
-      const localOverrideUrl = window.localStorage.getItem(`rumahbudget.webhook_override_url.${user.id}`) ?? "";
-      setWebhookOverrideUrl(localOverrideUrl);
+      queueMicrotask(() => {
+        setIsLocalhost(window.location.origin.startsWith("http://localhost"));
+        const localOverrideUrl = window.localStorage.getItem(`rumahbudget.webhook_override_url.${user.id}`) ?? "";
+        setWebhookOverrideUrl(localOverrideUrl);
+      });
     }
   }, [user.id]);
 
@@ -227,12 +244,12 @@ export default function EmailReportPreferences({
     setError("");
 
     const timeout = createSupabaseTimeout();
-    let saveError: { message: string; code?: string } | null = null;
+    let saveError: PreferenceSaveError | null = null;
     let localSaveOnly = !dbSupportsWage;
 
     if (!localSaveOnly) {
       try {
-        const payload: any = {
+        const payload: ReportPreferencePayload = {
           user_id: user.id,
           weekly_enabled: weeklyEnabled,
           monthly_enabled: monthlyEnabled,
@@ -265,7 +282,7 @@ export default function EmailReportPreferences({
 
     if (localSaveOnly) {
       try {
-        const payload: any = {
+        const payload: ReportPreferencePayload = {
           user_id: user.id,
           weekly_enabled: weeklyEnabled,
           monthly_enabled: monthlyEnabled,
@@ -321,11 +338,11 @@ export default function EmailReportPreferences({
     setTelegramError("");
 
     const timeout = createSupabaseTimeout();
-    let saveError: any = null;
+    let saveError: PreferenceSaveError | null = null;
 
     try {
       if (dbSupportsTelegram) {
-        const payload: any = {
+        const payload: ReportPreferencePayload = {
           user_id: user.id,
           telegram_bot_token: telegramBotToken.trim(),
           updated_at: new Date().toISOString(),
@@ -358,7 +375,7 @@ export default function EmailReportPreferences({
         window.localStorage.setItem(`rumahbudget.telegram_bot_token.${user.id}`, telegramBotToken.trim());
       }
     } catch (err) {
-      saveError = err;
+      saveError = err instanceof Error ? err : { message: String(err) };
     } finally {
       setIsSavingTelegram(false);
       timeout.clear();
