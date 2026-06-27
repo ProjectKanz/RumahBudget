@@ -31,6 +31,12 @@ import CommandK from "@/src/components/command-k";
 import MoneyAllocationWatch from "@/src/components/money-allocation-watch";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
+import {
+  AUTH_SESSION_RESTORE_TIMEOUT_MS,
+  clearSupabaseAuthStorage,
+  isRecoverableSupabaseAuthError,
+  withTimeout,
+} from "@/src/lib/supabase-auth-recovery";
 import type { EmailReport } from "@/src/types/email-report";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
@@ -40,7 +46,7 @@ import type {
 } from "@/src/types/money-account";
 import type { Transfer } from "@/src/types/transfer";
 import type { SandboxTransaction } from "@/src/types/sandbox";
-import { AuthApiError, type User } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RecurringCommitments from "@/src/components/recurring-commitments";
 import type { RecurringCommitment } from "@/src/types/recurring-commitment";
@@ -1375,8 +1381,10 @@ export default function Home() {
 
       unsubscribe = () => subscription.unsubscribe();
 
-      void supabase.auth
-        .getSession()
+      void withTimeout(
+        supabase.auth.getSession(),
+        AUTH_SESSION_RESTORE_TIMEOUT_MS,
+      )
         .then(({ data, error }) => {
           if (!isMounted) {
             return;
@@ -1384,27 +1392,12 @@ export default function Home() {
 
           if (error) {
             console.error("Session restore error:", error);
-            const isRefreshTokenError =
-              error instanceof AuthApiError ||
-              error.name === "AuthApiError" ||
-              error.message?.toLowerCase().includes("refresh token") ||
-              error.message?.toLowerCase().includes("invalid_grant") ||
-              error.message?.toLowerCase().includes("refresh_token");
-
-            if (isRefreshTokenError) {
+            if (isRecoverableSupabaseAuthError(error)) {
               if (supabase) {
                 void supabase.auth.signOut().catch(() => {});
               }
-              
-              // Wipe any invalid local storage keys
-              const keysToRemove: string[] = [];
-              for (let i = 0; i < window.localStorage.length; i++) {
-                const key = window.localStorage.key(i);
-                if (key && (key.startsWith("sb-") || key.includes("auth-token"))) {
-                  keysToRemove.push(key);
-                }
-              }
-              keysToRemove.forEach((key) => window.localStorage.removeItem(key));
+
+              clearSupabaseAuthStorage();
 
               setAuthUser(null);
               setIsAuthLoading(false);
@@ -1419,6 +1412,15 @@ export default function Home() {
             return;
           }
           console.error("Unexpected session catch error:", err);
+
+          if (isRecoverableSupabaseAuthError(err)) {
+            if (supabase) {
+              void supabase.auth.signOut().catch(() => {});
+            }
+
+            clearSupabaseAuthStorage();
+          }
+
           setAuthUser(null);
         })
         .finally(() => {

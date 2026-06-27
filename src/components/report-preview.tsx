@@ -11,9 +11,12 @@ import {
 } from "@/src/components/cockpit-ui";
 import { formatCurrency } from "@/src/lib/format";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
+import {
+  clearSupabaseAuthStorage,
+  isRecoverableSupabaseAuthError,
+} from "@/src/lib/supabase-auth-recovery";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
-import { AuthApiError } from "@supabase/supabase-js";
 import { useMemo, useState } from "react";
 
 type ReportType = "weekly" | "monthly";
@@ -226,20 +229,15 @@ export default function ReportPreview({
       } = await supabase.auth.getSession();
 
       if (error) {
-        console.error("Session retrieval error:", error, "Is AuthApiError:", error instanceof AuthApiError);
-        if (supabase) {
-          void supabase.auth.signOut().catch(() => {});
-        }
+        console.error("Session retrieval error:", error);
 
-        // Wipe any invalid local storage keys
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < window.localStorage.length; i++) {
-          const key = window.localStorage.key(i);
-          if (key && (key.startsWith("sb-") || key.includes("auth-token"))) {
-            keysToRemove.push(key);
+        if (isRecoverableSupabaseAuthError(error)) {
+          if (supabase) {
+            void supabase.auth.signOut().catch(() => {});
           }
+
+          clearSupabaseAuthStorage();
         }
-        keysToRemove.forEach((key) => window.localStorage.removeItem(key));
 
         setSendError(error.message || "Session error. Please log in again.");
         setIsSending(false);
