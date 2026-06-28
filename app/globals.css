@@ -485,6 +485,92 @@ input[type="number"] {
   transform: perspective(1000px) rotateX(0deg) rotateY(0deg) scale(1);
 }
 
+/* ==========================================================================
+   RumahBudget v2 — Calm premium fintech concept (scoped to .rb2)
+   ========================================================================== */
+.rb2 {
+  --rb2-accent: #22d3ee;
+  --rb2-positive: #4ade80;
+  --rb2-warning: #fbbf24;
+  --rb2-danger: #fb7185;
+  background:
+    radial-gradient(1200px 600px at 12% -8%, rgba(34, 211, 238, 0.08), transparent 60%),
+    radial-gradient(1000px 540px at 100% 0%, rgba(74, 222, 128, 0.05), transparent 55%),
+    linear-gradient(180deg, #0c1322 0%, #0a0f1b 48%, #080b14 100%);
+  color: #e6edf6;
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.rb2-num {
+  font-family: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.rb2-surface {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 1.25rem;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 18px 40px -28px rgba(0, 0, 0, 0.8);
+}
+
+.rb2-surface-soft {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 1rem;
+}
+
+.rb2-hero {
+  background:
+    radial-gradient(700px 320px at 0% 0%, rgba(34, 211, 238, 0.14), transparent 65%),
+    linear-gradient(180deg, rgba(34, 211, 238, 0.06), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(34, 211, 238, 0.16);
+  border-radius: 1.5rem;
+  box-shadow: 0 24px 60px -40px rgba(34, 211, 238, 0.45);
+}
+
+.rb2-interactive {
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.rb2-interactive:hover {
+  border-color: rgba(34, 211, 238, 0.28);
+  transform: translateY(-2px);
+}
+
+.rb2-track {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.rb2-track > span {
+  border-radius: 999px;
+  display: block;
+  height: 100%;
+}
+
+.rb2-cta {
+  background: linear-gradient(180deg, #2bdcf0, #19b6cc);
+  border-radius: 0.85rem;
+  box-shadow: 0 10px 26px -12px rgba(34, 211, 238, 0.7);
+  color: #04222a;
+  transition: filter 160ms ease, transform 160ms ease;
+}
+
+.rb2-cta:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rb2-interactive,
+  .rb2-cta {
+    transform: none !important;
+  }
+}
+
 /* Premium Ambient Glow Animations */
 @keyframes premiumPulse {
   0%, 100% {
