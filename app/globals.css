@@ -598,4 +598,238 @@ input[type="number"] {
   animation-delay: 10s;
 }
 
+/* ==========================================================================
+   RumahBudget — 3D PIXEL NEON identity (scoped to .pxn)
+   ========================================================================== */
+.pxn {
+  --pxn-bg: #0a0612;
+  --pxn-panel: #140b22;
+  --pxn-panel-2: #1b1030;
+  --pxn-line: rgba(168, 85, 247, 0.22);
+  --pxn-ink: #f3e9ff;
+  --pxn-dim: #a392c9;
+  --pxn-cyan: #2ee6ff;
+  --pxn-pink: #ff4fd8;
+  --pxn-purple: #a855f7;
+  --pxn-lime: #b6ff3a;
+  --pxn-amber: #ffb627;
+  --pxn-red: #ff5d73;
+
+  color: var(--pxn-ink);
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background-color: var(--pxn-bg);
+  background-image:
+    radial-gradient(900px 500px at 8% -6%, rgba(168, 85, 247, 0.20), transparent 60%),
+    radial-gradient(800px 460px at 100% 0%, rgba(46, 230, 255, 0.12), transparent 58%),
+    radial-gradient(700px 520px at 50% 120%, rgba(255, 79, 216, 0.14), transparent 60%),
+    linear-gradient(180deg, #0c0716 0%, #0a0612 60%, #080410 100%);
+  position: relative;
+}
+
+/* faint pixel grid overlay */
+.pxn-grid::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(168, 85, 247, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(168, 85, 247, 0.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.65), transparent 55%);
+  -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.65), transparent 55%);
+}
+
+.pxn-pixel {
+  font-family: var(--font-pixel), "Courier New", monospace;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.pxn-num {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Extruded pixel block — the core visual building unit */
+.pxn-block {
+  position: relative;
+  background:
+    linear-gradient(180deg, var(--pxn-panel-2), var(--pxn-panel));
+  border: 2px solid rgba(168, 85, 247, 0.45);
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 2px rgba(10, 6, 18, 0.9),
+    6px 6px 0 0 rgba(10, 6, 18, 0.85),
+    0 0 22px -6px rgba(168, 85, 247, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.pxn-block--cyan {
+  border-color: rgba(46, 230, 255, 0.55);
+  box-shadow:
+    0 0 0 2px rgba(10, 6, 18, 0.9),
+    6px 6px 0 0 rgba(10, 6, 18, 0.85),
+    0 0 26px -6px rgba(46, 230, 255, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.pxn-block--pink {
+  border-color: rgba(255, 79, 216, 0.55);
+  box-shadow:
+    0 0 0 2px rgba(10, 6, 18, 0.9),
+    6px 6px 0 0 rgba(10, 6, 18, 0.85),
+    0 0 26px -6px rgba(255, 79, 216, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.pxn-block--lime {
+  border-color: rgba(182, 255, 58, 0.5);
+  box-shadow:
+    0 0 0 2px rgba(10, 6, 18, 0.9),
+    6px 6px 0 0 rgba(10, 6, 18, 0.85),
+    0 0 26px -6px rgba(182, 255, 58, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.pxn-block--amber {
+  border-color: rgba(255, 182, 39, 0.55);
+  box-shadow:
+    0 0 0 2px rgba(10, 6, 18, 0.9),
+    6px 6px 0 0 rgba(10, 6, 18, 0.85),
+    0 0 26px -6px rgba(255, 182, 39, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.pxn-block--red {
+  border-color: rgba(255, 93, 115, 0.6);
+  box-shadow:
+    0 0 0 2px rgba(10, 6, 18, 0.9),
+    6px 6px 0 0 rgba(10, 6, 18, 0.85),
+    0 0 26px -6px rgba(255, 93, 115, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* soft inner panel (no extrude) for nested content */
+.pxn-inset {
+  background: rgba(10, 6, 18, 0.55);
+  border: 1px solid rgba(168, 85, 247, 0.18);
+  border-radius: 4px;
+}
+
+.pxn-interactive {
+  transition: transform 140ms steps(3, end), box-shadow 160ms ease, border-color 160ms ease;
+}
+.pxn-interactive:hover {
+  transform: translate(-2px, -2px);
+}
+
+/* Neon text glow helpers */
+.pxn-glow-cyan { color: var(--pxn-cyan); text-shadow: 0 0 10px rgba(46, 230, 255, 0.6), 0 0 2px rgba(46, 230, 255, 0.9); }
+.pxn-glow-pink { color: var(--pxn-pink); text-shadow: 0 0 10px rgba(255, 79, 216, 0.6), 0 0 2px rgba(255, 79, 216, 0.9); }
+.pxn-glow-lime { color: var(--pxn-lime); text-shadow: 0 0 10px rgba(182, 255, 58, 0.55), 0 0 2px rgba(182, 255, 58, 0.9); }
+.pxn-glow-amber { color: var(--pxn-amber); text-shadow: 0 0 10px rgba(255, 182, 39, 0.55), 0 0 2px rgba(255, 182, 39, 0.9); }
+.pxn-glow-purple { color: #c89bff; text-shadow: 0 0 10px rgba(168, 85, 247, 0.6), 0 0 2px rgba(168, 85, 247, 0.9); }
+
+/* Pixel progress bar — chunky stepped fill */
+.pxn-bar {
+  position: relative;
+  height: 14px;
+  background: rgba(10, 6, 18, 0.8);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.pxn-bar > span {
+  position: absolute;
+  inset: 2px auto 2px 2px;
+  display: block;
+  border-radius: 2px;
+  background-image: repeating-linear-gradient(
+    90deg,
+    currentColor 0,
+    currentColor 7px,
+    rgba(10, 6, 18, 0.55) 7px,
+    rgba(10, 6, 18, 0.55) 10px
+  );
+  box-shadow: 0 0 12px -2px currentColor;
+}
+
+/* Flow pipeline connector */
+.pxn-pipe {
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(46, 230, 255, 0.9) 0,
+    rgba(46, 230, 255, 0.9) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+  box-shadow: 0 0 10px rgba(46, 230, 255, 0.5);
+}
+.pxn-pipe-v {
+  background-image: repeating-linear-gradient(
+    180deg,
+    rgba(46, 230, 255, 0.9) 0,
+    rgba(46, 230, 255, 0.9) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+  box-shadow: 0 0 10px rgba(46, 230, 255, 0.5);
+}
+
+/* Pixel button */
+.pxn-btn {
+  position: relative;
+  border-radius: 4px;
+  border: 2px solid rgba(10, 6, 18, 0.9);
+  background: linear-gradient(180deg, #2ee6ff, #19b6e6);
+  color: #04222a;
+  box-shadow: 0 4px 0 0 #0b6076, 0 0 22px -4px rgba(46, 230, 255, 0.8);
+  transition: transform 120ms steps(2, end), box-shadow 120ms ease, filter 120ms ease;
+}
+.pxn-btn:hover { filter: brightness(1.05); }
+.pxn-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 0 #0b6076, 0 0 18px -4px rgba(46, 230, 255, 0.8); }
+
+.pxn-btn--pink { background: linear-gradient(180deg, #ff7fe4, #ff4fd8); box-shadow: 0 4px 0 0 #8a1f74, 0 0 22px -4px rgba(255, 79, 216, 0.8); color: #2a0322; }
+.pxn-btn--ghost { background: rgba(168, 85, 247, 0.12); color: var(--pxn-ink); box-shadow: 0 4px 0 0 rgba(10, 6, 18, 0.9); border-color: rgba(168, 85, 247, 0.4); }
+
+.pxn-chip {
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  border-radius: 3px;
+}
+
+/* scanline sheen for hero core */
+@keyframes pxnScan {
+  0% { transform: translateY(-120%); }
+  100% { transform: translateY(220%); }
+}
+.pxn-scan::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 40%;
+  background: linear-gradient(180deg, rgba(46, 230, 255, 0.12), transparent);
+  pointer-events: none;
+  animation: pxnScan 6s linear infinite;
+}
+
+@keyframes pxnFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.pxn-float { animation: pxnFloat 5s ease-in-out infinite; }
+
+@keyframes pxnBlink {
+  0%, 60%, 100% { opacity: 1; }
+  30% { opacity: 0.35; }
+}
+.pxn-blink { animation: pxnBlink 2.4s steps(1, end) infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pxn-scan::after,
+  .pxn-float,
+  .pxn-blink { animation: none; }
+  .pxn-interactive:hover { transform: none; }
+}
+
 
