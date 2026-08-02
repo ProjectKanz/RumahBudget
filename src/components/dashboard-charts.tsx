@@ -1,14 +1,10 @@
 "use client";
 
-import {
-  EmptyState,
-  NumberValue,
-  SectionHeader,
-  TerminalPanel,
-} from "@/src/components/cockpit-ui";
+import { EmptyState, NumberValue } from "@/src/components/cockpit-ui";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import type { Expense } from "@/src/types/expense";
 import type { MoneyAccount } from "@/src/types/money-account";
+import Image from "next/image";
 import { useMemo } from "react";
 
 const categoryLabels = new Map([
@@ -31,55 +27,59 @@ type DashboardChartsProps = {
   highlightClassName?: string;
   isBalanceHidden: boolean;
   moneyAccounts: MoneyAccount[];
+  remainingBalance: number;
+  totalExpense: number;
+  totalIncome: number;
 };
 
 function SimpleBarList({
   emptyMessage,
   isBalanceHidden = false,
   items,
+  tone,
 }: {
   emptyMessage: string;
   isBalanceHidden?: boolean;
   items: BarChartItem[];
+  tone: "account" | "expense";
 }) {
-  const maxValue = Math.max(...items.map((item) => Math.abs(item.value)), 0);
+  const maxValue = isBalanceHidden
+    ? 1
+    : Math.max(...items.map((item) => Math.abs(item.value)), 0);
 
   if (items.length === 0) {
-    return (
-      <EmptyState>
-        {emptyMessage}
-      </EmptyState>
-    );
+    return <EmptyState>{emptyMessage}</EmptyState>;
   }
 
   return (
-    <div className="space-y-4">
+    <ul className="rb-composition-list">
       {items.map((item) => {
-        const width =
-          maxValue > 0
+        const width = isBalanceHidden
+          ? 56
+          : maxValue > 0
             ? Math.max(8, (Math.abs(item.value) / maxValue) * 100)
             : 8;
 
         return (
-          <div key={item.label}>
-            <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-              <span className="font-medium text-slate-300">{item.label}</span>
-              <NumberValue className="shrink-0 text-slate-400">
+          <li className="rb-composition-item" key={item.label}>
+            <div className="rb-composition-item__copy">
+              <span>{item.label}</span>
+              <NumberValue>
                 {isBalanceHidden
                   ? hiddenBalanceLabel
                   : formatCurrency(item.value)}
               </NumberValue>
             </div>
-            <div className="h-3 overflow-hidden border border-white/10 bg-black/60">
+            <div className="rb-composition-track" aria-hidden="true">
               <div
-                className="h-full bg-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.35)] transition-all duration-700"
-                style={{ width: isBalanceHidden ? "48%" : `${width}%` }}
+                className={`rb-composition-track__fill rb-composition-track__fill--${tone}`}
+                style={{ width: `${width}%` }}
               />
             </div>
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ul>
   );
 }
 
@@ -89,6 +89,9 @@ export default function DashboardCharts({
   highlightClassName = "",
   isBalanceHidden,
   moneyAccounts,
+  remainingBalance,
+  totalExpense,
+  totalIncome,
 }: DashboardChartsProps) {
   const accountItems = useMemo(
     () =>
@@ -112,54 +115,139 @@ export default function DashboardCharts({
       .map(([label, value]) => ({ label, value }))
       .sort((firstItem, secondItem) => secondItem.value - firstItem.value);
   }, [expenses]);
+  const cashflowMaximum = isBalanceHidden
+    ? 1
+    : Math.max(
+        Math.abs(totalIncome),
+        Math.abs(totalExpense),
+        Math.abs(remainingBalance),
+        1,
+      );
+  const cashflowItems = [
+    {
+      label: "Pemasukan",
+      tone: isBalanceHidden ? "masked" : "income",
+      value: totalIncome,
+    },
+    {
+      label: "Pengeluaran",
+      tone: isBalanceHidden ? "masked" : "expense",
+      value: totalExpense,
+    },
+    {
+      label: "Selisih",
+      tone: isBalanceHidden
+        ? "masked"
+        : remainingBalance < 0
+          ? "negative"
+          : "net",
+      value: remainingBalance,
+    },
+  ];
 
   return (
     <section
-      className="mx-auto w-full max-w-6xl px-5 pb-8 sm:px-6"
+      className={`rb-vault-chart ${highlightClassName}`}
       id="dashboard-charts"
     >
-      <TerminalPanel
-        className={`!p-5 transition sm:!p-6 ${highlightClassName}`}
-      >
-        <SectionHeader
-          description={
-            <>
-            Transfers affect account balances only. Expense breakdown uses
-            expense transactions.
-            </>
-          }
-          eyebrow="Dashboard Charts"
-          title="Balance and expense overview"
-          tone="cyan"
-        />
-
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          <div className="cockpit-card border border-cyan-300/15 bg-black/25 p-5 transition hover:border-cyan-300/35">
-            <h3 className="text-lg font-black text-white">
-              Account Balance Overview
-            </h3>
-            <div className="mt-4">
-              <SimpleBarList
-                emptyMessage="No money accounts yet."
-                isBalanceHidden={isBalanceHidden}
-                items={accountItems}
-              />
-            </div>
-          </div>
-
-          <div className="cockpit-card border border-fuchsia-300/15 bg-black/25 p-5 transition hover:border-fuchsia-300/35">
-            <h3 className="text-lg font-black text-white">
-              All-time Expense Breakdown
-            </h3>
-            <div className="mt-4">
-              <SimpleBarList
-                emptyMessage="No expenses yet."
-                items={expenseItems}
-              />
-            </div>
-          </div>
+      <header className="rb-vault-chart__header">
+        <div>
+          <p className="ledger-eyebrow">Vault Split</p>
+          <h2 className="ledger-section-title">Peta arus kas rumah tangga</h2>
+          <p className="rb-vault-chart__description">
+            Pemasukan, pengeluaran, dan selisih untuk periode saat ini.
+            Komposisi akun dan kategori berdasarkan data tersimpan.
+          </p>
         </div>
-      </TerminalPanel>
+        <span className="ledger-state-tag">
+          {isBalanceHidden ? "Privasi aktif" : "Ringkasan data"}
+        </span>
+      </header>
+
+      <div
+        aria-label="Arus kas periode saat ini"
+        className="rb-cashflow-columns"
+        role="list"
+      >
+        {cashflowItems.map((item) => {
+          const stackLevelCount = isBalanceHidden
+            ? 4
+            : item.value === 0
+              ? 0
+              : Math.max(
+                  1,
+                  Math.round(
+                    (Math.abs(item.value) / cashflowMaximum) * 5,
+                  ),
+                );
+
+          return (
+            <div
+              className="rb-cashflow-column"
+              data-tone={item.tone}
+              key={item.label}
+              role="listitem"
+            >
+              <div className="rb-cashflow-column__plot" aria-hidden="true">
+                <div className="rb-cashflow-column__stack">
+                  {Array.from({ length: stackLevelCount }, (_, levelIndex) => (
+                    <Image
+                      alt=""
+                      className="rb-cashflow-column__cash"
+                      draggable={false}
+                      height={128}
+                      key={`${item.label}-${levelIndex}`}
+                      src="/assets/rumahbudget/pixel-cash.png"
+                      unoptimized
+                      width={128}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="rb-cashflow-column__copy">
+                <span>{item.label}</span>
+                <NumberValue>
+                  {isBalanceHidden
+                    ? hiddenBalanceLabel
+                    : formatCurrency(item.value)}
+                </NumberValue>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="rb-vault-composition">
+        <section aria-labelledby="account-composition-title">
+          <div className="rb-vault-composition__header">
+            <h3 id="account-composition-title">Komposisi akun</h3>
+            <span>{accountItems.length} akun</span>
+          </div>
+          <div className="rb-vault-composition__content">
+            <SimpleBarList
+              emptyMessage="Belum ada akun uang."
+              isBalanceHidden={isBalanceHidden}
+              items={accountItems}
+              tone="account"
+            />
+          </div>
+        </section>
+
+        <section aria-labelledby="expense-composition-title">
+          <div className="rb-vault-composition__header">
+            <h3 id="expense-composition-title">Kategori pengeluaran</h3>
+            <span>{expenseItems.length} kategori</span>
+          </div>
+          <div className="rb-vault-composition__content">
+            <SimpleBarList
+              emptyMessage="Belum ada pengeluaran."
+              isBalanceHidden={isBalanceHidden}
+              items={expenseItems}
+              tone="expense"
+            />
+          </div>
+        </section>
+      </div>
     </section>
   );
 }

@@ -7,6 +7,7 @@ import {
   TerminalPanel,
 } from "@/src/components/cockpit-ui";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
+import Image from "next/image";
 import { FormEvent, useState } from "react";
 
 type AuthFormProps = {
@@ -16,13 +17,13 @@ type AuthFormProps = {
 function getAuthRequestErrorMessage(error: unknown) {
   if (error instanceof Error) {
     if (error.message.toLowerCase().includes("failed to fetch")) {
-      return "Cannot reach Supabase. Check your internet/DNS connection and confirm the Supabase project is active.";
+      return "RumahBudget tidak dapat menjangkau layanan akun. Periksa koneksi internet dan status proyek Supabase.";
     }
 
     return error.message;
   }
 
-  return "Authentication request failed. Please try again.";
+  return "Permintaan akun gagal. Silakan coba lagi.";
 }
 
 export default function AuthForm({ userEmail }: AuthFormProps) {
@@ -82,7 +83,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
       }
 
       setPassword("");
-      setMessage("Account created. Check your email if confirmation is required.");
+      setMessage("Akun dibuat. Periksa email jika konfirmasi diperlukan.");
     } catch (error) {
       setMessage(getAuthRequestErrorMessage(error));
     } finally {
@@ -113,26 +114,34 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
   }
 
   return (
-    <section className="mx-auto flex min-h-screen w-full max-w-5xl items-center px-5 py-8 sm:px-6">
+    <section className="mx-auto flex min-h-screen w-full max-w-4xl items-center px-5 py-8 sm:px-6">
       <TerminalPanel isProminent className="w-full">
-        <div className="mb-6 grid gap-5 lg:grid-cols-[1fr_0.8fr] lg:items-end">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.35em] text-cyan-300">
-              Secure Cockpit Access
+        <div className="mb-6 grid gap-5 lg:grid-cols-[1fr_0.7fr] lg:items-end">
+          <div className="flex items-start gap-4">
+            <Image
+              alt=""
+              aria-hidden="true"
+              className="rb-auth-mark"
+              height={64}
+              src="/assets/rumahbudget/pixel-house.png"
+              width={64}
+            />
+            <div>
+            <p className="ledger-eyebrow">
+              Ledger privat rumah tangga
             </p>
             <h2 className="neo-title mt-3 text-3xl font-black tracking-tight text-white sm:text-5xl">
-              {userEmail ? "Active session" : "Enter RumahBudget"}
+              {userEmail ? "Sesi aktif" : "Masuk ke RumahBudget"}
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-              Sign in to unlock your private financial terminal.
+              Kelola saldo, transaksi, arus kas, dan laporan dalam satu ruang.
             </p>
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center text-[0.62rem] font-black uppercase tracking-[0.16em] text-slate-400">
-            <StatusChip tone="cyan">Secure</StatusChip>
-            <StatusChip tone="fuchsia">Synced</StatusChip>
-            <StatusChip tone="lime">
-              Private
-            </StatusChip>
+            <StatusChip tone="cyan">Saldo</StatusChip>
+            <StatusChip tone="fuchsia">Arus kas</StatusChip>
+            <StatusChip tone="lime">Laporan</StatusChip>
           </div>
         </div>
 
@@ -145,7 +154,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
         {userEmail ? (
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-slate-300">
-              Signed in as:{" "}
+              Masuk sebagai:{" "}
               <span className="font-semibold text-white">{userEmail}</span>
             </p>
             <SharpButton
@@ -154,7 +163,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
               disabled={isSubmitting}
               onClick={logout}
             >
-              Log out
+              Keluar
             </SharpButton>
           </div>
         ) : (
@@ -170,12 +179,12 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
             </label>
 
             <label className="text-sm font-medium text-slate-300">
-              Password
+              Kata sandi
               <SharpInput
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="At least 6 characters"
+                placeholder="Minimal 6 karakter"
               />
             </label>
 
@@ -185,7 +194,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
                 type="submit"
                 disabled={isSubmitting}
               >
-                Log in
+                Masuk
               </SharpButton>
               <SharpButton
                 className="border-fuchsia-300/25 text-fuchsia-100 hover:border-fuchsia-300/50 hover:bg-fuchsia-300/10"
@@ -193,7 +202,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
                 disabled={isSubmitting}
                 onClick={signUp}
               >
-                Sign up
+                Buat akun
               </SharpButton>
             </div>
           </form>

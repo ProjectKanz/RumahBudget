@@ -20,38 +20,38 @@ function cn(...classNames: Array<string | false | null | undefined>) {
 
 const toneText: Record<Tone, string> = {
   amber: "text-amber-200",
-  cyan: "text-cyan-100",
-  fuchsia: "text-fuchsia-100",
+  cyan: "text-slate-100",
+  fuchsia: "text-slate-100",
   lime: "text-lime-200",
   neutral: "text-slate-300",
-  rose: "text-rose-200",
+  rose: "text-orange-200",
 };
 
 const toneAccent: Record<Tone, string> = {
   amber: "text-amber-300",
-  cyan: "text-cyan-300",
-  fuchsia: "text-fuchsia-300",
+  cyan: "text-lime-300",
+  fuchsia: "text-amber-300",
   lime: "text-lime-300",
   neutral: "text-slate-300",
-  rose: "text-rose-300",
+  rose: "text-orange-300",
 };
 
 const toneBorder: Record<Tone, string> = {
-  amber: "border-amber-300/25",
-  cyan: "border-cyan-300/25",
-  fuchsia: "border-fuchsia-300/25",
-  lime: "border-lime-300/25",
-  neutral: "border-white/10",
-  rose: "border-rose-300/25",
+  amber: "ledger-tone-warning",
+  cyan: "ledger-tone-neutral",
+  fuchsia: "ledger-tone-neutral",
+  lime: "ledger-tone-positive",
+  neutral: "ledger-tone-neutral",
+  rose: "ledger-tone-danger",
 };
 
 const toneNotice: Record<Tone, string> = {
-  amber: "border-amber-300/30 bg-amber-300/10 text-amber-100",
-  cyan: "border-cyan-300/25 bg-cyan-300/10 text-cyan-100",
-  fuchsia: "border-fuchsia-300/25 bg-fuchsia-300/10 text-fuchsia-100",
-  lime: "border-lime-300/25 bg-lime-300/10 text-lime-100",
-  neutral: "border-white/10 bg-white/[0.03] text-slate-300",
-  rose: "border-rose-300/35 bg-rose-300/10 text-rose-100",
+  amber: "ledger-notice ledger-notice--warning",
+  cyan: "ledger-notice",
+  fuchsia: "ledger-notice",
+  lime: "ledger-notice ledger-notice--positive",
+  neutral: "ledger-notice",
+  rose: "ledger-notice ledger-notice--danger",
 };
 
 export function TerminalPanel({
@@ -62,8 +62,8 @@ export function TerminalPanel({
   return (
     <div
       className={cn(
-        "glass-frosted p-6 sm:p-8",
-        isProminent && "shadow-[0_0_36px_rgba(34,211,238,0.15)] border-cyan-300/30",
+        "ledger-panel p-6 sm:p-8",
+        isProminent && "ledger-panel--raised",
         className,
       )}
     >
@@ -98,12 +98,13 @@ export function SectionHeader({
         <p
           className={cn(
             "text-xs font-semibold uppercase tracking-[0.32em]",
+            "ledger-eyebrow",
             toneAccent[tone],
           )}
         >
           {eyebrow}
         </p>
-        <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
+        <h2 className="ledger-section-title mt-2">
           {title}
         </h2>
         {description ? (
@@ -133,7 +134,7 @@ export function MetricCell({
   value: ReactNode;
 }) {
   return (
-    <div className={cn("glass-frosted p-6", toneBorder[tone], className)}>
+    <div className={cn("ledger-panel p-6", toneBorder[tone], className)}>
       <div className="flex h-full flex-col gap-4">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -164,15 +165,15 @@ export function SharpButton({
 }) {
   const variantClass =
     variant === "primary"
-      ? "border-cyan-200/60 bg-cyan-300 text-slate-950 hover:bg-cyan-200 hover:shadow-[0_0_28px_rgba(34,211,238,0.22)]"
+      ? "ledger-button--primary"
       : variant === "danger"
-        ? "border-rose-300/35 text-rose-100 hover:border-rose-300/70 hover:bg-rose-300/10"
-        : "border-white/10 text-slate-200 hover:border-cyan-300/40 hover:bg-cyan-300/10";
+        ? "ledger-button--danger"
+        : "ledger-button--secondary";
 
   return (
     <button
       className={cn(
-        "min-h-11 border px-4 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-55",
+        "ledger-button min-h-11 px-4 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-55",
         variantClass,
         className,
       )}
@@ -190,7 +191,7 @@ export function SharpInput({
   return (
     <input
       className={cn(
-        "mt-2 min-h-12 w-full border border-white/10 bg-black/70 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/15 disabled:cursor-not-allowed disabled:opacity-60",
+        "ledger-input mt-2 min-h-12 w-full px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-60",
         className,
       )}
       {...props}
@@ -205,7 +206,7 @@ export function SharpSelect({
   return (
     <select
       className={cn(
-        "mt-2 min-h-12 w-full appearance-none border border-white/10 bg-black/70 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/15 disabled:cursor-not-allowed disabled:opacity-60",
+        "ledger-input mt-2 min-h-12 w-full appearance-none px-4 py-3 text-sm text-white outline-none transition disabled:cursor-not-allowed disabled:opacity-60",
         className,
       )}
       {...props}
@@ -221,7 +222,7 @@ export function StatusChip({
   return (
     <span
       className={cn(
-        "status-chip border px-3 py-2 text-[0.68rem] font-black uppercase tracking-[0.22em]",
+        "ledger-state-tag px-3 py-2 text-[0.68rem] font-black uppercase tracking-[0.12em]",
         toneBorder[tone],
         toneText[tone],
         className,
@@ -257,7 +258,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "border border-dashed border-cyan-300/20 bg-cyan-300/5 px-4 py-8 text-center text-sm text-slate-400",
+        "ledger-empty px-4 py-8 text-center text-sm text-slate-400",
         className,
       )}
     >
@@ -280,7 +281,7 @@ export function SegmentedControl<T extends string>({
   return (
     <div
       className={cn(
-        "grid w-full min-w-0 gap-2 border border-white/10 bg-black/30 p-1",
+        "ledger-tabs grid w-full min-w-0 gap-2 p-1",
         className,
       )}
     >
@@ -289,8 +290,8 @@ export function SegmentedControl<T extends string>({
           className={cn(
             "flex min-h-11 min-w-0 items-center justify-center overflow-hidden px-4 py-2 text-center text-xs font-black uppercase tracking-[0.06em] transition focus:outline-none focus:ring-2 focus:ring-cyan-300/50 sm:text-sm sm:tracking-[0.08em]",
             value === option.value
-              ? "cockpit-nav-active text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.22)]"
-              : "text-slate-300 hover:bg-white/10 hover:text-white",
+              ? "ledger-tab ledger-tab--active"
+              : "ledger-tab",
           )}
           key={option.value}
           type="button"
@@ -315,6 +316,6 @@ export function SystemReading({
   className = "",
 }: BaseProps) {
   return (
-    <div className={cn("system-reading border p-4", className)}>{children}</div>
+    <div className={cn("ledger-check border p-4", className)}>{children}</div>
   );
 }

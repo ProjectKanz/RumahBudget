@@ -160,7 +160,12 @@ export default function CommandK({
         setActiveView("overview");
         setTimeout(() => {
           const el = document.getElementById("system-diagnostics");
-          el?.scrollIntoView({ behavior: "smooth" });
+          const prefersReducedMotion = window.matchMedia(
+            "(prefers-reduced-motion: reduce)",
+          ).matches;
+          el?.scrollIntoView({
+            behavior: prefersReducedMotion ? "auto" : "smooth",
+          });
         }, 100);
         showSuccess("Navigated to Overview. Execute the scan there.");
       }

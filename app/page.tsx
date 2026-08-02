@@ -1,18 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import AuthForm from "@/src/components/auth-form";
 import {
-  MetricCell,
-  NumberValue,
   SectionHeader,
   SharpButton,
-  SharpInput,
   SegmentedControl,
-  StatusChip,
-  SystemReading,
   TerminalPanel,
 } from "@/src/components/cockpit-ui";
-import DashboardCharts from "@/src/components/dashboard-charts";
 import EmailReportHistory from "@/src/components/email-report-history";
 import EmailReportPreferences from "@/src/components/email-report-preferences";
 import ExpenseForm from "@/src/components/expense-form";
@@ -21,6 +16,7 @@ import MoneyAccounts from "@/src/components/money-accounts";
 import OnboardingTutorial, {
   onboardingStepCount,
 } from "@/src/components/onboarding-tutorial";
+import OverviewDashboard from "@/src/components/overview-dashboard";
 import ReportPreview from "@/src/components/report-preview";
 import TransactionHistory from "@/src/components/transaction-history";
 import TransferMoney from "@/src/components/transfer-money";
@@ -29,7 +25,8 @@ import SystemDiagnostics from "@/src/components/system-diagnostics";
 import SandboxControls from "@/src/components/sandbox-controls";
 import CommandK from "@/src/components/command-k";
 import MoneyAllocationWatch from "@/src/components/money-allocation-watch";
-import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
+import { calculateFinanceSnapshot } from "@/src/lib/finance-calculations";
+import { formatCurrency } from "@/src/lib/format";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import {
   AUTH_SESSION_RESTORE_TIMEOUT_MS,
@@ -55,65 +52,6 @@ const balancePrivacyStorageKey = "rumahbudget.hideBalances";
 
 function getOnboardingStorageKey(userId: string) {
   return `rumahbudget.onboardingCompleted.${userId}`;
-}
-
-function RunwayGaugeSVG({ months, isSandboxMode }: { months: number; isSandboxMode?: boolean }) {
-  const isInfinite = !Number.isFinite(months) || months === Infinity;
-  const maxTarget = 12; // 12 months is 100% capacity target
-  const percent = isInfinite ? 100 : Math.min(100, Math.max(0, (months / maxTarget) * 100));
-
-  const size = 64;
-  const strokeWidth = 5;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (percent / 100) * circumference;
-
-  let color = isSandboxMode ? "#f59e0b" : "#22d3ee"; // amber vs cyan
-  if (isInfinite) {
-    color = isSandboxMode ? "#ea580c" : "#a3e635"; // orange vs lime
-  } else if (months < 3) {
-    color = "#fb7185"; // rose
-  } else if (months < 6) {
-    color = "#fbbf24"; // amber
-  } else if (months >= 12) {
-    color = isSandboxMode ? "#ea580c" : "#a3e635"; // orange vs lime
-  }
-
-  return (
-    <div className="relative flex items-center justify-center h-16 w-16 select-none shrink-0">
-      <svg className="transform -rotate-90 w-full h-full">
-        {/* Track circle */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          className="stroke-white/10"
-          strokeWidth={strokeWidth}
-          fill="transparent"
-        />
-        {/* Fill circle */}
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={color}
-          strokeWidth={strokeWidth}
-          fill="transparent"
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-          className="transition-all duration-1000 ease-out"
-          strokeLinecap="round"
-          style={{
-            filter: `drop-shadow(0 0 6px ${color}88)`,
-          }}
-        />
-      </svg>
-      {/* Center content */}
-      <span className="absolute text-[0.62rem] font-black font-mono tracking-tighter" style={{ color }}>
-        {isInfinite ? "∞" : `${months.toFixed(1)}M`}
-      </span>
-    </div>
-  );
 }
 
 type MonthlyStatus = {
@@ -222,15 +160,44 @@ type OnboardingStepTarget = {
 };
 
 const appViews: { label: string; value: AppView }[] = [
-  { label: "Overview", value: "overview" },
-  { label: "Accounts", value: "accounts" },
-  { label: "Add", value: "add" },
-  { label: "Transactions", value: "transactions" },
-  { label: "Reports", value: "reports" },
-  { label: "Allocation", value: "allocation" },
-  { label: "Sandbox", value: "sandbox" },
-  { label: "Settings", value: "settings" },
+  { label: "Ringkasan", value: "overview" },
+  { label: "Akun", value: "accounts" },
+  { label: "Catat", value: "add" },
+  { label: "Transaksi", value: "transactions" },
+  { label: "Laporan", value: "reports" },
+  { label: "Alokasi", value: "allocation" },
+  { label: "Simulasi", value: "sandbox" },
+  { label: "Pengaturan", value: "settings" },
 ];
+
+const appViewGroups: Array<{
+  label: string;
+  views: AppView[];
+}> = [
+  { label: "Utama", views: ["overview"] },
+  { label: "Aktivitas", views: ["add", "transactions"] },
+  { label: "Akun", views: ["accounts", "reports"] },
+  { label: "Perencanaan", views: ["allocation", "sandbox"] },
+  { label: "Pengaturan", views: ["settings"] },
+];
+
+const mobilePrimaryViews: AppView[] = [
+  "overview",
+  "transactions",
+  "add",
+  "accounts",
+];
+
+const mobileMoreViews: AppView[] = [
+  "reports",
+  "allocation",
+  "sandbox",
+  "settings",
+];
+
+const headerDateFormatter = new Intl.DateTimeFormat("id-ID", {
+  dateStyle: "long",
+});
 
 const quickAddTabs: { label: string; value: QuickAddTab }[] = [
   { label: "Income", value: "income" },
@@ -356,11 +323,6 @@ type RecentActivityItem = {
   tone: "income" | "expense" | "transfer";
 };
 
-const activityDateFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
 function isMoneyAccountType(value: unknown): value is MoneyAccountType {
   return (
     value === "Bank" ||
@@ -401,20 +363,6 @@ function getSupabaseErrorMessage(error: unknown, fallbackMessage: string) {
   return error instanceof Error ? error.message : fallbackMessage;
 }
 
-function isCurrentMonthTimestamp(createdAt: number) {
-  if (!createdAt) {
-    return false;
-  }
-
-  const transactionDate = new Date(createdAt);
-  const today = new Date();
-
-  return (
-    transactionDate.getFullYear() === today.getFullYear() &&
-    transactionDate.getMonth() === today.getMonth()
-  );
-}
-
 function isCurrentMonthString(dateStr: string | null | undefined): boolean {
   if (!dateStr) {
     return false;
@@ -452,6 +400,7 @@ export default function Home() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [activeView, setActiveView] = useState<AppView>("overview");
+  const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
   const [autoStartScanTrigger, setAutoStartScanTrigger] = useState(0);
   const [quickAddTab, setQuickAddTab] = useState<QuickAddTab>("income");
   const [highlightedSectionId, setHighlightedSectionId] = useState("");
@@ -471,6 +420,59 @@ export default function Home() {
   const [onlineSuccessMessage, setOnlineSuccessMessage] = useState("");
   const [isAutoDeducting, setIsAutoDeducting] = useState(false);
   const hasScannedAutoDeducts = useRef(false);
+  const mobileMoreTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileMoreCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileMorePanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isMobileMoreOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    mobileMoreCloseButtonRef.current?.focus();
+
+    function handleMobileMoreKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsMobileMoreOpen(false);
+        window.requestAnimationFrame(() => mobileMoreTriggerRef.current?.focus());
+        return;
+      }
+
+      if (event.key !== "Tab" || !mobileMorePanelRef.current) {
+        return;
+      }
+
+      const focusableElements = Array.from(
+        mobileMorePanelRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements.at(-1);
+
+      if (!firstElement || !lastElement) {
+        return;
+      }
+
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleMobileMoreKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleMobileMoreKeyDown);
+    };
+  }, [isMobileMoreOpen]);
 
   useEffect(() => {
     const storedSandboxMode = window.localStorage.getItem("rumahbudget.isSandboxMode");
@@ -1261,7 +1263,7 @@ export default function Home() {
   async function recordCommitmentPayment(c: RecurringCommitment) {
     const expenseAccountId = c.accountId || (moneyAccounts[0]?.id ?? "");
     if (!expenseAccountId) {
-      alert("Please create a money account first.");
+      alert("Buat akun uang terlebih dahulu.");
       return;
     }
 
@@ -1279,7 +1281,7 @@ export default function Home() {
         });
 
         if (expError) {
-          alert(`Failed to save expense: ${expError.message}`);
+          alert(`Gagal menyimpan pengeluaran: ${expError.message}`);
           return;
         }
       } else {
@@ -1294,30 +1296,38 @@ export default function Home() {
           paymentMethod: "Debit Card",
           note: `Manual payment for commitment: ${c.name}`,
         };
-        setExpenses((prev) => [localExp, ...prev]);
+        setExpenses((previousExpenses) => [localExp, ...previousExpenses]);
       }
 
-      const nowStr = new Date().toISOString();
+      const processedAt = new Date().toISOString();
       if (supabase && dbSupportsCommitments) {
         await supabase
           .from("recurring_commitments")
-          .update({ last_processed: nowStr })
+          .update({ last_processed: processedAt })
           .eq("id", c.id);
       } else {
-        const localData = localStorage.getItem("rumahbudget.localCommitments");
+        const localData = localStorage.getItem(
+          "rumahbudget.localCommitments",
+        );
         if (localData) {
-          const localComs: RecurringCommitment[] = JSON.parse(localData);
-          const updated = localComs.map((lc) =>
-            lc.id === c.id ? { ...lc, lastProcessed: nowStr } : lc
+          const localCommitments: RecurringCommitment[] =
+            JSON.parse(localData);
+          const updatedCommitments = localCommitments.map((commitment) =>
+            commitment.id === c.id
+              ? { ...commitment, lastProcessed: processedAt }
+              : commitment,
           );
-          localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(updated));
+          localStorage.setItem(
+            "rumahbudget.localCommitments",
+            JSON.stringify(updatedCommitments),
+          );
         }
       }
 
       await loadExpensesFromSupabase();
       await loadCommitmentsFromSupabase();
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error(error);
     } finally {
       setIsAutoDeducting(false);
     }
@@ -1332,11 +1342,16 @@ export default function Home() {
     } else {
       const localData = localStorage.getItem("rumahbudget.localCommitments");
       if (localData) {
-        const localComs: RecurringCommitment[] = JSON.parse(localData);
-        const updated = localComs.map((lc) =>
-          lc.id === c.id ? { ...lc, disableReminders: true } : lc
+        const localCommitments: RecurringCommitment[] = JSON.parse(localData);
+        const updatedCommitments = localCommitments.map((commitment) =>
+          commitment.id === c.id
+            ? { ...commitment, disableReminders: true }
+            : commitment,
         );
-        localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(updated));
+        localStorage.setItem(
+          "rumahbudget.localCommitments",
+          JSON.stringify(updatedCommitments),
+        );
       }
     }
 
@@ -1561,9 +1576,15 @@ export default function Home() {
       }
 
       window.setTimeout(() => {
+        const prefersReducedMotion = window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        ).matches;
         document
           .getElementById(target.sectionId)
-          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+          ?.scrollIntoView({
+            behavior: prefersReducedMotion ? "auto" : "smooth",
+            block: "center",
+          });
         setHighlightedSectionId(target.sectionId);
       }, 80);
     });
@@ -1575,36 +1596,36 @@ export default function Home() {
   const signedInEmail = authUser?.email ?? "Signed-in account";
 
   const approachingCommitments = useMemo(() => {
-    const today = new Date();
-    const currentDay = today.getDate();
+    const currentDay = new Date().getDate();
 
-    return commitments.filter((c) => {
-      if (c.isAutoDeduct || c.disableReminders) return false;
-      if (isCurrentMonthString(c.lastProcessed)) return false;
+    return commitments.filter((commitment) => {
+      if (commitment.isAutoDeduct || commitment.disableReminders) {
+        return false;
+      }
 
-      const diff = c.dueDay - currentDay;
-      return diff <= 3;
+      if (isCurrentMonthString(commitment.lastProcessed)) {
+        return false;
+      }
+
+      return commitment.dueDay - currentDay <= 3;
     });
   }, [commitments]);
 
-  const monthlyExpenses = useMemo(
+  const financeSnapshot = useMemo(
     () =>
-      activeExpenses.filter((expense) =>
-        isCurrentMonthTimestamp(expense.createdAt),
-      ),
-    [activeExpenses],
+      calculateFinanceSnapshot({
+        accounts: moneyAccounts,
+        expenses: activeExpenses,
+        incomes: activeIncomes,
+        transfers,
+      }),
+    [activeExpenses, activeIncomes, moneyAccounts, transfers],
   );
-
-  const monthlyIncomes = useMemo(
-    () =>
-      activeIncomes.filter((income) =>
-        isCurrentMonthTimestamp(income.createdAt),
-      ),
-    [activeIncomes],
-  );
+  const monthlyExpenses = financeSnapshot.monthlyExpenses;
+  const monthlyIncomes = financeSnapshot.monthlyIncomes;
 
   const totalExpense = useMemo(() => {
-    const actual = monthlyExpenses.reduce((total, expense) => total + expense.amount, 0);
+    const actual = financeSnapshot.monthlyExpense;
     if (isSandboxMode) {
       const sandboxOutflow = sandboxTransactions
         .filter((tx) => tx.type === "expense" && tx.timing === "recurring")
@@ -1612,10 +1633,10 @@ export default function Home() {
       return actual + sandboxOutflow;
     }
     return actual;
-  }, [monthlyExpenses, isSandboxMode, sandboxTransactions]);
+  }, [financeSnapshot.monthlyExpense, isSandboxMode, sandboxTransactions]);
 
   const totalIncome = useMemo(() => {
-    const actual = monthlyIncomes.reduce((total, income) => total + income.amount, 0);
+    const actual = financeSnapshot.monthlyIncome;
     if (isSandboxMode) {
       const sandboxInflow = sandboxTransactions
         .filter((tx) => tx.type === "income" && tx.timing === "recurring")
@@ -1623,45 +1644,9 @@ export default function Home() {
       return actual + sandboxInflow;
     }
     return actual;
-  }, [monthlyIncomes, isSandboxMode, sandboxTransactions]);
+  }, [financeSnapshot.monthlyIncome, isSandboxMode, sandboxTransactions]);
 
-  const moneyAccountBalances = useMemo(() => {
-    const balances = moneyAccounts.reduce<Record<string, number>>(
-      (nextBalances, account) => ({
-        ...nextBalances,
-        [account.id]: account.initialBalance,
-      }),
-      {},
-    );
-
-    activeIncomes.forEach((income) => {
-      if (!income.accountId || !(income.accountId in balances)) {
-        return;
-      }
-
-      balances[income.accountId] += income.amount;
-    });
-
-    activeExpenses.forEach((expense) => {
-      if (!expense.accountId || !(expense.accountId in balances)) {
-        return;
-      }
-
-      balances[expense.accountId] -= expense.amount;
-    });
-
-    transfers.forEach((transfer) => {
-      if (transfer.toAccountId && transfer.toAccountId in balances) {
-        balances[transfer.toAccountId] += transfer.amount;
-      }
-
-      if (transfer.fromAccountId && transfer.fromAccountId in balances) {
-        balances[transfer.fromAccountId] -= transfer.amount;
-      }
-    });
-
-    return balances;
-  }, [activeExpenses, activeIncomes, moneyAccounts, transfers]);
+  const moneyAccountBalances = financeSnapshot.accountBalances;
 
   const accountNamesById = useMemo(
     () =>
@@ -1676,11 +1661,7 @@ export default function Home() {
   );
 
   const totalBalance = useMemo(() => {
-    const actual = moneyAccounts.reduce(
-      (total, account) =>
-        total + (moneyAccountBalances[account.id] ?? account.initialBalance),
-      0,
-    );
+    const actual = financeSnapshot.totalBalance;
     if (isSandboxMode) {
       const sandboxNet = sandboxTransactions
         .filter((tx) => tx.timing === "recurring")
@@ -1692,7 +1673,7 @@ export default function Home() {
       return actual + sandboxNet;
     }
     return actual;
-  }, [moneyAccountBalances, moneyAccounts, isSandboxMode, sandboxTransactions]);
+  }, [financeSnapshot.totalBalance, isSandboxMode, sandboxTransactions]);
 
   const averageMonthlyBurn = useMemo(() => {
     if (activeExpenses.length === 0 && (!isSandboxMode || sandboxTransactions.filter(t => t.type === "expense").length === 0)) {
@@ -1770,15 +1751,6 @@ export default function Home() {
               className: "text-lime-300",
             };
 
-  const monthlyStatusBadgeClass =
-    monthlyStatus.label === "Safe"
-      ? "border-lime-300/50 bg-lime-300/10 text-lime-200 shadow-[0_0_26px_rgba(190,242,100,0.18)]"
-      : monthlyStatus.label === "Warning"
-        ? "border-amber-300/50 bg-amber-300/10 text-amber-200 shadow-[0_0_26px_rgba(252,211,77,0.14)]"
-        : monthlyStatus.label === "Critical"
-          ? "border-pink-400/50 bg-pink-500/10 text-pink-200 shadow-[0_0_26px_rgba(244,114,182,0.16)]"
-          : "border-cyan-300/50 bg-cyan-300/10 text-cyan-100 shadow-[0_0_26px_rgba(34,211,238,0.16)]";
-
   const plannedSpendAmount = Number(plannedSpend);
   const safePlannedSpendAmount =
     Number.isFinite(plannedSpendAmount) && plannedSpendAmount > 0
@@ -1811,14 +1783,6 @@ export default function Home() {
           ),
         )
       : 0;
-  const spendGaugeColor =
-    spendGaugePercent <= 15
-      ? "#fb7185"
-      : spendGaugePercent <= 45
-        ? "#fbbf24"
-        : isSandboxMode
-          ? "#f59e0b"
-          : "#22d3ee";
   const spendSignal =
     safePlannedSpendAmount <= 0
       ? {
@@ -1870,12 +1834,6 @@ export default function Home() {
             (projectedExpenseRatio !== null && projectedExpenseRatio >= 0.7)
           ? "watch"
           : "clear";
-  const signalModeClass =
-    signalMode === "stop" || signalMode === "danger"
-      ? "border-rose-300/35 bg-rose-300/10 text-rose-100"
-      : signalMode === "watch"
-        ? "border-amber-300/35 bg-amber-300/10 text-amber-100"
-        : "border-lime-300/30 bg-lime-300/10 text-lime-100";
   const actionProtocol =
     signalMode === "stop"
       ? "Do not spend. This would deplete your Total Account Balance."
@@ -1935,12 +1893,6 @@ export default function Home() {
               : "clear",
     },
   ];
-  const checkToneClass: Record<SignalCheckState, string> = {
-    clear: "border-lime-300/25 bg-lime-300/10 text-lime-100",
-    critical: "border-rose-300/35 bg-rose-300/10 text-rose-100",
-    watch: "border-amber-300/35 bg-amber-300/10 text-amber-100",
-  };
-
   const recentActivity = useMemo<RecentActivityItem[]>(() => {
     const incomeActivity = activeIncomes.map((income) => ({
       accountLabel: accountNamesById[income.accountId] ?? "No account",
@@ -2406,14 +2358,26 @@ export default function Home() {
 
   function getSectionHighlightClass(sectionId: string) {
     return highlightedSectionId === sectionId
-      ? "ring-2 ring-cyan-300/80 ring-offset-2 ring-offset-slate-950 shadow-[0_0_34px_rgba(34,211,238,0.22)]"
+      ? "ledger-highlight"
       : "";
   }
 
   function openView(view: AppView) {
     setActiveView(view);
     setHighlightedSectionId("");
-    window.scrollTo({ behavior: "smooth", top: 0 });
+    setIsMobileMoreOpen(false);
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    window.scrollTo({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      top: 0,
+    });
+  }
+
+  function closeMobileMoreSheet() {
+    setIsMobileMoreOpen(false);
+    window.requestAnimationFrame(() => mobileMoreTriggerRef.current?.focus());
   }
 
   async function logout() {
@@ -2425,46 +2389,34 @@ export default function Home() {
   }
 
   return (
-    <main className={`rb-app min-h-screen overflow-x-hidden bg-black text-white ${isSandboxMode ? "sandbox-active" : ""}`}>
-      {isOfflineActive && (
-        <div className="bg-rose-600/95 text-white font-black text-xs uppercase tracking-widest text-center py-3 animate-pulse sticky top-0 z-50 shadow-[0_4px_20px_rgba(225,29,72,0.5)]">
-          ⚠️ [OFFLINE ACTIVE] Connection lost. {offlineQueueCount} transaction{offlineQueueCount !== 1 ? 's' : ''} pending sync.
-        </div>
-      )}
-      {onlineSuccessMessage && (
-        <div className="bg-lime-600 text-white font-black text-xs uppercase tracking-widest text-center py-3 sticky top-0 z-50 shadow-[0_4px_20px_rgba(101,163,13,0.5)]">
-          {onlineSuccessMessage}
-        </div>
-      )}
-      {isAutoDeducting && (
-        <div className="bg-fuchsia-600/90 text-white font-black text-xs uppercase tracking-widest text-center py-3 animate-pulse sticky top-0 z-50 shadow-[0_4px_20px_rgba(217,70,239,0.5)]">
-          ⚙️ Auto-Deducting commitments in progress. Syncing ledger...
-        </div>
-      )}
-      {/* Background Ambient Glow Blobs for dynamic glass blur */}
-      <div 
-        className="absolute top-[20%] left-[-10%] md:left-[5%] w-[35rem] md:w-[50rem] h-[35rem] md:h-[50rem] rounded-full pointer-events-none z-[0] blur-3xl opacity-80 animate-premium-pulse-slow"
-        style={{
-          background: "radial-gradient(circle, rgba(6, 182, 212, 0.1) 0%, transparent 70%)",
-        }}
-      />
-      <div 
-        className="absolute top-[50%] right-[-10%] md:right-[5%] w-[40rem] md:w-[55rem] h-[40rem] md:h-[55rem] rounded-full pointer-events-none z-[0] blur-3xl opacity-80 animate-premium-pulse-medium"
-        style={{
-          background: "radial-gradient(circle, rgba(168, 85, 247, 0.1) 0%, transparent 70%)",
-        }}
-      />
-      <div 
-        className="absolute top-[75%] left-[-5%] md:left-[10%] w-[30rem] md:w-[45rem] h-[30rem] md:h-[45rem] rounded-full pointer-events-none z-[0] blur-3xl opacity-80 animate-premium-pulse-fast"
-        style={{
-          background: "radial-gradient(circle, rgba(132, 204, 22, 0.05) 0%, transparent 70%)",
-        }}
-      />
+    <main
+      className={`rb-app ledger-app min-h-screen text-white ${
+        isSandboxMode ? "sandbox-active" : ""
+      }`}
+      id="main-content"
+    >
+      <div className="rb-status-stack">
+        {isOfflineActive ? (
+          <div className="rb-status rb-status--danger" role="alert">
+            Koneksi terputus. {offlineQueueCount} transaksi menunggu sinkronisasi.
+          </div>
+        ) : null}
+        {onlineSuccessMessage ? (
+          <div className="rb-status rb-status--success" role="status">
+            {onlineSuccessMessage}
+          </div>
+        ) : null}
+        {isAutoDeducting ? (
+          <div aria-busy="true" className="rb-status rb-status--warning" role="status">
+            Pembayaran berulang sedang diproses dan disinkronkan.
+          </div>
+        ) : null}
+      </div>
 
       {isAuthLoading ? (
         <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-5 py-8 sm:px-6">
           <TerminalPanel className="!p-6 text-sm text-slate-300">
-            Checking your session...
+            Memeriksa sesi...
           </TerminalPanel>
         </section>
       ) : null}
@@ -2488,569 +2440,365 @@ export default function Home() {
             onSkip={completeOnboarding}
           />
 
-          <section className="relative mx-auto max-w-6xl px-5 py-4 sm:px-6">
-            <TerminalPanel isProminent className="!p-4 sm:!p-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="rb-shell">
+            <aside className="rb-sidebar">
+              <div className="rb-brand">
+                <Image
+                  alt=""
+                  aria-hidden="true"
+                  className="rb-brand__mark"
+                  height={44}
+                  src="/assets/rumahbudget/pixel-house.png"
+                  width={44}
+                />
                 <div>
-                  <p className={`text-xs font-semibold uppercase tracking-[0.35em] ${isSandboxMode ? "text-amber-500" : "text-cyan-300"}`}>
-                    Private Finance Cockpit {isSandboxMode && "— SIMULATION ACTIVE"}
-                  </p>
-                  <h1 className="neo-title mt-2 text-4xl font-black tracking-tight text-white sm:text-6xl">
-                    RumahBudget
-                  </h1>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                    Private money tracking with accounts, cashflow, transfers,
-                    and financial reports in one clean cockpit.
-                  </p>
-                  <div className="mt-4 flex flex-wrap items-center gap-2 text-[0.68rem] font-black uppercase tracking-[0.22em]">
-                    {isSandboxMode ? (
-                      <div className="animate-pulse text-amber-500 bg-amber-500/10 border border-amber-500/30 px-3 py-2 status-chip inline-flex items-center gap-1.5 shadow-[0_0_16px_rgba(245,158,11,0.25)]">
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
-                        [SANDBOX MODE: SIMULATING]
-                      </div>
-                    ) : (
-                      <>
-                        <StatusChip tone="cyan">Live ledger</StatusChip>
-                        <StatusChip tone="lime">Spend signal</StatusChip>
-                        <StatusChip tone="fuchsia">Report ready</StatusChip>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <div className="border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300 sm:min-w-72 flex flex-col gap-2">
-                  <p className="leading-5">
-                    Signed in as:{" "}
-                    <span className="font-semibold text-white">
-                      {signedInEmail}
-                    </span>
-                  </p>
-                  <div className="flex gap-2">
-                    <SharpButton
-                      className="min-h-10 flex-1 px-3 py-2"
-                      type="button"
-                      onClick={() => openView("settings")}
-                    >
-                      Settings
-                    </SharpButton>
-                    <SharpButton
-                      className="min-h-10 flex-1 px-3 py-2"
-                      variant="danger"
-                      type="button"
-                      onClick={logout}
-                    >
-                      Log out
-                    </SharpButton>
-                  </div>
-
-                  {/* Sandbox Mode Toggle */}
-                  <div className="border-t border-white/10 pt-2 flex items-center justify-between gap-3">
-                    <div className="flex-1">
-                      <span className="text-[0.62rem] font-bold uppercase tracking-wider text-slate-400 block">
-                        Simulation Mode
-                      </span>
-                      <span className="text-[0.68rem] font-mono font-bold text-slate-200">
-                        {isSandboxMode ? "SANDBOX BRANCH" : "LIVE LEDGER"}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => handleSetSandboxMode(!isSandboxMode)}
-                      type="button"
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500/50 ${
-                        isSandboxMode
-                          ? "bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.5)]"
-                          : "bg-slate-800"
-                      }`}
-                      title="Toggle Scenario Sandbox"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${
-                          isSandboxMode ? "translate-x-5 bg-white" : "translate-x-0"
-                        }`}
-                      />
-                    </button>
-                  </div>
+                  <p className="rb-brand__name">RumahBudget</p>
+                  <p className="rb-brand__tagline">Keuangan rumah tangga</p>
                 </div>
               </div>
-            </TerminalPanel>
-          </section>
 
-          <div className="sticky top-0 z-30 hidden border-y border-cyan-300/10 bg-black/80 px-5 py-2 backdrop-blur-xl sm:block">
-            <nav
-              aria-label="Primary app views"
-              className="cockpit-nav mx-auto flex max-w-6xl gap-2 overflow-x-auto border border-white/10 bg-black/40 p-1.5"
-            >
-              {appViews.map((item) => (
+              <nav aria-label="Navigasi utama" className="rb-sidebar__nav">
+                {appViewGroups.map((group) => (
+                  <div className="rb-nav-group" key={group.label}>
+                    <p className="rb-nav-group__label">{group.label}</p>
+                    <div className="space-y-1">
+                      {group.views.map((view) => {
+                        const item = appViews.find(
+                          (candidate) => candidate.value === view,
+                        );
+
+                        if (!item) {
+                          return null;
+                        }
+
+                        return (
+                          <button
+                            aria-current={
+                              activeView === item.value ? "page" : undefined
+                            }
+                            className="rb-nav-item"
+                            key={item.value}
+                            type="button"
+                            onClick={() => openView(item.value)}
+                          >
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </nav>
+
+              <div className="rb-sidebar__footer">
+                <div className="rb-privacy-note">
+                  <strong>Privasi aktif</strong>
+                  <span>Data keuangan tetap berada di ruang akun Anda.</span>
+                </div>
+                <p className="truncate text-xs text-slate-400">{signedInEmail}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <SharpButton
+                    type="button"
+                    onClick={() => openView("settings")}
+                  >
+                    Pengaturan
+                  </SharpButton>
+                  <SharpButton variant="danger" type="button" onClick={logout}>
+                    Keluar
+                  </SharpButton>
+                </div>
+              </div>
+            </aside>
+
+            <div className="rb-main">
+              <header className="rb-topbar">
+                <div>
+                  <p className="ledger-eyebrow">
+                    {isSandboxMode ? "Mode simulasi" : "Ledger aktif"}
+                  </p>
+                  <p className="rb-topbar__title">
+                    {appViews.find((item) => item.value === activeView)?.label}
+                  </p>
+                </div>
+                <p className="rb-topbar__date">
+                  {headerDateFormatter.format(new Date())}
+                </p>
+                <div className="rb-topbar__actions">
+                  <button
+                    aria-pressed={isBalanceHidden}
+                    className="ledger-button ledger-button--secondary"
+                    type="button"
+                    onClick={() =>
+                      setIsBalanceHidden((currentValue) => !currentValue)
+                    }
+                  >
+                    {isBalanceHidden ? "Tampilkan nominal" : "Privasi"}
+                  </button>
+                  <button
+                    className="ledger-button ledger-button--primary"
+                    type="button"
+                    onClick={() => {
+                      setQuickAddTab("expense");
+                      openView("add");
+                    }}
+                  >
+                    Catat transaksi
+                  </button>
+                </div>
+              </header>
+
+              <div className="rb-mode-bar">
+                <div>
+                  <strong>
+                    {isSandboxMode ? "Simulasi aktif" : "Ledger asli"}
+                  </strong>
+                  <span>
+                    {isSandboxMode
+                      ? "Perubahan hanya memengaruhi proyeksi."
+                      : "Transaksi tersimpan pada ledger aktif."}
+                  </span>
+                </div>
                 <button
-                  className={`shrink-0 px-4 py-2 text-sm font-black uppercase tracking-[0.12em] transition focus:outline-none focus:ring-2 focus:ring-cyan-300/50 ${
-                    activeView === item.value
-                      ? "cockpit-nav-active text-slate-950 shadow-[0_0_28px_rgba(34,211,238,0.28)]"
-                      : "text-slate-300 hover:bg-white/10 hover:text-white"
-                  }`}
-                  key={item.value}
+                  aria-checked={isSandboxMode}
+                  aria-label="Gunakan mode simulasi"
+                  className="rb-switch"
+                  role="switch"
                   type="button"
-                  onClick={() => openView(item.value)}
+                  onClick={() => handleSetSandboxMode(!isSandboxMode)}
                 >
-                  {item.label}
+                  <span aria-hidden="true" />
                 </button>
-              ))}
-            </nav>
-          </div>
+              </div>
 
-          <nav
-            aria-label="Mobile app views"
-            className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-4 gap-1 border border-cyan-300/20 bg-black/90 p-2 shadow-[0_0_36px_rgba(34,211,238,0.18)] backdrop-blur-xl sm:hidden"
-          >
-            {appViews.map((item) => (
-              <button
-                className={`px-1 py-2 text-[0.68rem] font-bold transition ${
-                  activeView === item.value
-                    ? "bg-cyan-300 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.38)]"
-                    : "text-slate-400"
-                }`}
-                key={item.value}
-                type="button"
-                onClick={() => openView(item.value)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
+              <nav aria-label="Navigasi tablet" className="rb-tablet-nav">
+                {appViews.map((item) => (
+                  <button
+                    aria-current={
+                      activeView === item.value ? "page" : undefined
+                    }
+                    className="rb-nav-item"
+                    key={item.value}
+                    type="button"
+                    onClick={() => openView(item.value)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
 
-          <div className="pb-36 sm:pb-10">
+              <nav aria-label="Navigasi seluler" className="rb-mobile-nav">
+                {mobilePrimaryViews.map((view) => {
+                  const item = appViews.find(
+                    (candidate) => candidate.value === view,
+                  );
+
+                  if (!item) {
+                    return null;
+                  }
+
+                  return (
+                    <button
+                      aria-current={
+                        activeView === item.value ? "page" : undefined
+                      }
+                      className="rb-mobile-nav__item"
+                      key={item.value}
+                      type="button"
+                      onClick={() => openView(item.value)}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+                <button
+                  aria-controls="mobile-more-sheet"
+                  aria-expanded={isMobileMoreOpen}
+                  className={`rb-mobile-nav__item ${
+                    mobileMoreViews.includes(activeView) ? "is-active" : ""
+                  }`}
+                  ref={mobileMoreTriggerRef}
+                  type="button"
+                  onClick={() =>
+                    setIsMobileMoreOpen((currentValue) => !currentValue)
+                  }
+                >
+                  Lainnya
+                </button>
+              </nav>
+
+              {isMobileMoreOpen ? (
+                <div
+                  aria-label="Navigasi lainnya"
+                  aria-modal="true"
+                  className="rb-more-sheet"
+                  id="mobile-more-sheet"
+                  role="dialog"
+                >
+                  <button
+                    aria-label="Tutup navigasi lainnya"
+                    className="rb-more-sheet__backdrop"
+                    type="button"
+                    onClick={closeMobileMoreSheet}
+                  />
+                  <div className="rb-more-sheet__panel" ref={mobileMorePanelRef}>
+                    <div className="flex items-center justify-between gap-4">
+                      <h2 className="ledger-section-title">Menu lainnya</h2>
+                      <button
+                        className="ledger-button ledger-button--secondary"
+                        ref={mobileMoreCloseButtonRef}
+                        type="button"
+                        onClick={closeMobileMoreSheet}
+                      >
+                        Tutup
+                      </button>
+                    </div>
+                    <div className="mt-4 grid gap-2">
+                      {mobileMoreViews.map((view) => {
+                        const item = appViews.find(
+                          (candidate) => candidate.value === view,
+                        );
+
+                        if (!item) {
+                          return null;
+                        }
+
+                        return (
+                          <button
+                            aria-current={
+                              activeView === item.value ? "page" : undefined
+                            }
+                            className="rb-nav-item"
+                            key={item.value}
+                            type="button"
+                            onClick={() => openView(item.value)}
+                          >
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="rb-view-content pb-28 sm:pb-10">
             {activeView === "overview" ? (
               <>
-                <section
-                  className="mx-auto max-w-6xl px-5 pb-6 pt-5 sm:px-6"
-                  id="overview"
-                >
-                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.32em] text-lime-300">
-                        Overview
-                      </p>
-                      <h2 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
-                        Your money command center
-                      </h2>
-                    </div>
-                    <p className="max-w-xl text-sm leading-6 text-slate-400">
-                      Monthly cards use this calendar month. Total Account
-                      Balance is the sum of current balances across accounts.
-                    </p>
-                  </div>
+                <OverviewDashboard
+                  accountBalances={moneyAccountBalances}
+                  actionProtocol={actionProtocol}
+                  averageMonthlyBurn={averageMonthlyBurn}
+                  balanceAfterPlannedSpend={balanceAfterPlannedSpend}
+                  chartHighlightClassName={getSectionHighlightClass(
+                    "dashboard-charts",
+                  )}
+                  decisionChecks={decisionChecks}
+                  expenses={activeExpenses}
+                  highlightClassName={getSectionHighlightClass("overview")}
+                  isBalanceHidden={isBalanceHidden}
+                  isSandboxMode={isSandboxMode}
+                  monthlyStatus={monthlyStatus}
+                  moneyAccounts={moneyAccounts}
+                  netHourlyWage={netHourlyWage}
+                  onOpenQuickAdd={(tab) => {
+                    setQuickAddTab(tab);
+                    openView("add");
+                  }}
+                  onOpenView={openView}
+                  onToggleBalanceVisibility={() =>
+                    setIsBalanceHidden((currentValue) => !currentValue)
+                  }
+                  plannedSpend={plannedSpend}
+                  projectedMonthlyExpenses={projectedMonthlyExpenses}
+                  projectedNetCashflow={projectedNetCashflow}
+                  projectedRunwayDays={projectedRunwayDays}
+                  recentActivity={recentActivity}
+                  remainingBalance={remainingBalance}
+                  safePlannedSpendAmount={safePlannedSpendAmount}
+                  setPlannedSpend={setPlannedSpend}
+                  spendGaugePercent={spendGaugePercent}
+                  spendSignal={spendSignal}
+                  survivalRunwayMonths={survivalRunwayMonths}
+                  totalBalance={totalBalance}
+                  totalExpense={totalExpense}
+                  totalIncome={totalIncome}
+                />
 
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <MetricCell
-                      action={
-                        <SharpButton
-                          className="min-h-10 px-3 py-2"
-                          type="button"
-                          onClick={() =>
-                            setIsBalanceHidden(
-                              (currentValue) => !currentValue,
-                            )
-                          }
-                        >
-                          {isBalanceHidden ? "Show" : "Hide"}
-                        </SharpButton>
-                      }
-                      className={`sm:col-span-2 ${getSectionHighlightClass("overview")}`}
-                      description="Money currently stored across all money accounts."
-                      label="Total Account Balance"
-                      tone="cyan"
-                      value={
-                        isBalanceHidden
-                          ? hiddenBalanceLabel
-                          : formatCurrency(totalBalance)
-                      }
-                    />
-
-                    <MetricCell
-                      className="sm:col-span-2"
-                      description="Monthly income minus monthly expenses."
-                      label="Monthly Net Cashflow"
-                      tone="fuchsia"
-                      value={
-                        <span
-                          className={
-                            remainingBalance < 0
-                              ? "text-pink-200"
-                              : "text-white"
-                          }
-                        >
-                          {isBalanceHidden
-                            ? hiddenBalanceLabel
-                            : formatCurrency(remainingBalance)}
-                        </span>
-                      }
-                    />
-
-                    <MetricCell
-                      label="Monthly Income"
-                      tone="lime"
-                      value={
-                        <span className="text-lime-300">
-                          {formatCurrency(totalIncome)}
-                        </span>
-                      }
-                    />
-
-                    <MetricCell
-                      label="Monthly Expenses"
-                      tone="rose"
-                      value={
-                        <span className="text-pink-200">
-                          {formatCurrency(totalExpense)}
-                        </span>
-                      }
-                    />
-
-                    <MetricCell
-                      className="sm:col-span-2"
-                      description="Equivalent hours of work spent this month based on hourly wage."
-                      label="Monthly Life Energy Spent"
-                      tone="cyan"
-                      value={
-                        netHourlyWage > 0 ? (
-                          <span className="font-mono text-cyan-300">
-                            {(totalExpense / netHourlyWage).toFixed(1)} hrs
-                          </span>
-                        ) : (
-                          <span className="text-slate-500 text-sm font-mono">
-                            ---
-                          </span>
-                        )
-                      }
-                    />
-
-                    <MetricCell
-                      className={`sm:col-span-2 ${monthlyStatusBadgeClass}`}
-                      description={monthlyStatus.explanation}
-                      label="Monthly Cashflow Status"
-                      tone={
-                        monthlyStatus.label === "Safe"
-                          ? "lime"
-                          : monthlyStatus.label === "Warning"
-                            ? "amber"
-                            : monthlyStatus.label === "Critical"
-                              ? "rose"
-                              : "cyan"
-                      }
-                      value={
-                        <span className={monthlyStatus.className}>
-                          {monthlyStatus.label}
-                        </span>
-                      }
-                    />
-
-                    <MetricCell
-                      className="sm:col-span-2"
-                      description={
-                        averageMonthlyBurn > 0
-                          ? `Survival runway based on an average monthly burn of ${isBalanceHidden ? hiddenBalanceLabel : formatCurrency(averageMonthlyBurn)}.`
-                          : "No expenses recorded. Runway is infinite."
-                      }
-                      label="Survival Runway"
-                      tone={
-                        survivalRunwayMonths === Infinity
-                          ? "lime"
-                          : survivalRunwayMonths < 3
-                            ? "rose"
-                            : survivalRunwayMonths < 6
-                              ? "amber"
-                              : "cyan"
-                      }
-                      action={<RunwayGaugeSVG months={survivalRunwayMonths} isSandboxMode={isSandboxMode} />}
-                      value={
-                        survivalRunwayMonths === Infinity ? (
-                          <span className="text-lime-300 font-mono">∞ Months</span>
-                        ) : (
-                          <span className="font-mono">
-                            {survivalRunwayMonths.toFixed(1)} Months
-                          </span>
-                        )
-                      }
-                    />
-                  </div>
-                </section>
-
-                {approachingCommitments.length > 0 && (
-                  <section className="mx-auto max-w-6xl px-5 pb-6 sm:px-6">
-                    <TerminalPanel className="border-amber-500/35 bg-black/40 shadow-[0_0_24px_rgba(245,158,11,0.08)]">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
-                        <h3 className="text-sm font-black uppercase tracking-[0.2em] text-amber-400">
-                          Approaching Commitments Radar
-                        </h3>
-                      </div>
-                      <p className="mt-1 text-xs text-slate-400">
-                        Manual bills due soon or overdue. Record payment to update ledger.
-                      </p>
-
+                {approachingCommitments.length > 0 ? (
+                  <section className="mx-auto max-w-6xl px-4 pb-5 sm:px-6">
+                    <TerminalPanel className="ledger-panel !p-5">
+                      <SectionHeader
+                        description="Tagihan manual yang jatuh tempo dalam tiga hari atau sudah lewat."
+                        eyebrow="Komitmen"
+                        title="Pembayaran mendekati jatuh tempo"
+                        tone="amber"
+                      />
                       <div className="mt-4 space-y-3">
-                        {approachingCommitments.map((c) => {
-                          const today = new Date();
-                          const currentDay = today.getDate();
-                          const isOverdue = currentDay >= c.dueDay;
-                          const toneClass = isOverdue
-                            ? "border-rose-500/30 bg-rose-500/5 hover:border-rose-500/50 shadow-[0_0_12px_rgba(244,63,94,0.05)]"
-                            : "border-amber-500/30 bg-amber-500/5 hover:border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.05)]";
+                        {approachingCommitments.map((commitment) => {
+                          const isOverdue =
+                            new Date().getDate() >= commitment.dueDay;
 
                           return (
-                            <div
-                              key={c.id}
-                              className={`border p-4 transition flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${toneClass}`}
+                            <article
+                              className="ledger-row flex flex-col gap-3 border p-4 sm:flex-row sm:items-center sm:justify-between"
+                              key={commitment.id}
                             >
                               <div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                   <span
-                                    className={`text-[0.62rem] font-black uppercase tracking-widest px-2 py-0.5 border rounded ${
+                                    className={`ledger-state-tag ${
                                       isOverdue
-                                        ? "text-rose-400 border-rose-500/30 bg-rose-500/10"
-                                        : "text-amber-400 border-amber-500/30 bg-amber-500/10"
+                                        ? "ledger-state-tag--danger"
+                                        : "ledger-state-tag--warning"
                                     }`}
                                   >
-                                    {isOverdue ? "⚠️ Overdue" : "⏳ Due Soon"}
+                                    {isOverdue ? "Terlambat" : "Segera jatuh tempo"}
                                   </span>
-                                  <span className="font-bold text-white">{c.name}</span>
+                                  <h3 className="font-bold text-white">
+                                    {commitment.name}
+                                  </h3>
                                 </div>
-                                <div className="mt-1.5 text-xs text-slate-400 flex flex-wrap gap-x-4">
-                                  <span>Due: Day {c.dueDay} of Month</span>
-                                  <span>Category: {c.category}</span>
-                                  <span>
-                                    Account:{" "}
-                                    {c.accountId
-                                      ? accountNamesById[c.accountId] ?? "Unknown"
-                                      : "Cash"}
-                                  </span>
-                                </div>
+                                <p className="mt-2 text-sm text-slate-400">
+                                  Tanggal {commitment.dueDay} ·{" "}
+                                  {commitment.category} ·{" "}
+                                  {commitment.accountId
+                                    ? accountNamesById[commitment.accountId] ??
+                                      "Akun tidak dikenal"
+                                    : "Tunai"}
+                                </p>
                               </div>
-
-                              <div className="flex items-center gap-3 justify-between sm:justify-end">
-                                <span className="text-base font-black text-white font-mono">
-                                  {formatCurrency(c.amount)}
+                              <div className="flex flex-col gap-3 sm:items-end">
+                                <span className="numeric-value text-lg font-black text-white">
+                                  {isBalanceHidden
+                                    ? "••••••"
+                                    : formatCurrency(commitment.amount)}
                                 </span>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap gap-2">
                                   <SharpButton
-                                    onClick={() => recordCommitmentPayment(c)}
-                                    className="!py-1.5 !px-3 text-xs border-lime-500/40 text-lime-200 hover:bg-lime-500/10"
+                                    type="button"
+                                    onClick={() =>
+                                      recordCommitmentPayment(commitment)
+                                    }
                                   >
-                                    Record Payment
+                                    Catat pembayaran
                                   </SharpButton>
                                   <SharpButton
-                                    onClick={() => muteCommitmentReminders(c)}
-                                    className="!py-1.5 !px-3 text-xs border-slate-500/40 text-slate-300 hover:bg-slate-500/10"
+                                    type="button"
+                                    onClick={() =>
+                                      muteCommitmentReminders(commitment)
+                                    }
                                   >
-                                    Mute
+                                    Senyapkan
                                   </SharpButton>
                                 </div>
                               </div>
-                            </div>
+                            </article>
                           );
                         })}
                       </div>
                     </TerminalPanel>
                   </section>
-                )}
-
-                <section className="mx-auto max-w-6xl px-5 pb-8 sm:px-6">
-                  <TerminalPanel className="signature-console neo-panel overflow-hidden !p-0">
-                    <div className="grid lg:grid-cols-[0.9fr_1.1fr]">
-                      <div className="border-b border-white/10 p-5 sm:p-6 lg:border-b-0 lg:border-r">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <StatusChip tone="fuchsia">Spend Signal</StatusChip>
-                          <StatusChip tone="cyan">What-if simulator</StatusChip>
-                        </div>
-                        <h2 className="neo-title mt-4 text-3xl font-black tracking-tight text-white sm:text-4xl">
-                          Can I spend this?
-                        </h2>
-                        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-                          Test a purchase against account balance, monthly
-                          cashflow, and burn runway before recording anything.
-                        </p>
-
-                        <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end lg:grid-cols-1">
-                          <label className="text-sm font-medium text-slate-300">
-                            Planned spend
-                            <SharpInput
-                              inputMode="numeric"
-                              min="0"
-                              type="number"
-                              value={plannedSpend}
-                              placeholder="Rp 250000"
-                              onChange={(event) =>
-                                setPlannedSpend(event.target.value)
-                              }
-                            />
-                          </label>
-
-                          <div className="grid grid-cols-3 gap-2">
-                            {[100000, 250000, 500000].map((amount) => (
-                              <SharpButton
-                                className="px-3 py-3 text-xs"
-                                key={amount}
-                                type="button"
-                                onClick={() => setPlannedSpend(String(amount))}
-                              >
-                                <NumberValue>
-                                  {formatCurrency(amount)}
-                                </NumberValue>
-                              </SharpButton>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                          <div className="signal-mini-card border border-white/10 bg-white/[0.03] p-4">
-                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                              Planned spend
-                            </p>
-                            <p className="mt-2 text-lg font-black text-white">
-                              <NumberValue>
-                                {formatCurrency(safePlannedSpendAmount)}
-                              </NumberValue>
-                            </p>
-                          </div>
-                          <div className="signal-mini-card border border-white/10 bg-white/[0.03] p-4">
-                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                              Net after spend
-                            </p>
-                            <p
-                              className={`mt-2 text-lg font-black ${
-                                projectedNetCashflow < 0
-                                  ? "text-rose-200"
-                                  : "text-cyan-100"
-                              }`}
-                            >
-                              <NumberValue>
-                                {formatCurrency(projectedNetCashflow)}
-                              </NumberValue>
-                            </p>
-                          </div>
-                        </div>
-
-                        <div
-                          className={`mt-5 border px-4 py-3 text-sm leading-6 ${signalModeClass}`}
-                        >
-                          <p className="font-black uppercase tracking-[0.16em]">
-                            Action protocol
-                          </p>
-                          <p className="mt-2 text-slate-200/90">
-                            {actionProtocol}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="p-5 sm:p-6">
-                        <div className="grid gap-5 xl:grid-cols-[auto_1fr] xl:items-center">
-                          <div
-                            className="signal-gauge signal-reticle mx-auto h-44 w-44 border border-white/10 text-center sm:h-52 sm:w-52"
-                            style={{
-                              background: `conic-gradient(${spendGaugeColor} ${spendGaugePercent * 3.6}deg, rgba(255,255,255,0.08) 0deg)`,
-                              boxShadow: `0 0 48px ${spendGaugeColor}33`,
-                            }}
-                          >
-                            <span className="numeric-value text-4xl font-black text-white">
-                              {spendGaugePercent}%
-                            </span>
-                            <span className="absolute mt-16 text-[0.6rem] font-black uppercase tracking-[0.18em] text-slate-500 sm:mt-20">
-                              reserve left
-                            </span>
-                          </div>
-
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
-                              Decision engine
-                            </p>
-                            <p
-                              className={`signal-status-pill mt-3 inline-flex px-4 py-3 text-2xl font-black ${spendSignal.tone}`}
-                            >
-                              {spendSignal.label}
-                            </p>
-                            <p className="mt-3 text-sm leading-6 text-slate-400">
-                              {spendSignal.description}
-                            </p>
-
-                            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                              {decisionChecks.map((check) => (
-                                <div
-                                  className={`signal-check border p-4 ${checkToneClass[check.state]}`}
-                                  key={check.label}
-                                >
-                                  <p className="text-[0.65rem] font-black uppercase tracking-[0.18em] opacity-75">
-                                    {check.label}
-                                  </p>
-                                  <p className="mt-2 text-xl font-black text-white">
-                                    <NumberValue>{check.value}</NumberValue>
-                                  </p>
-                                  <p className="mt-1 text-xs leading-5 opacity-80">
-                                    {check.detail}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                          <div className="signal-mini-card border border-white/10 bg-white/[0.03] p-4">
-                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                              Balance after
-                            </p>
-                            <p className="mt-2 text-lg font-black text-white">
-                              <NumberValue>
-                                {isBalanceHidden
-                                  ? hiddenBalanceLabel
-                                  : formatCurrency(balanceAfterPlannedSpend)}
-                              </NumberValue>
-                            </p>
-                          </div>
-
-                          <SystemReading className="p-4">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-xs font-bold uppercase tracking-[0.18em] text-rose-200/80">
-                                  Burn runway
-                                </p>
-                                <p className="mt-2 text-lg font-black text-white">
-                                  <NumberValue>
-                                    {projectedRunwayDays === null
-                                      ? "No burn"
-                                      : `${projectedRunwayDays} days`}
-                                  </NumberValue>
-                                </p>
-                              </div>
-                              <span className="h-2 w-2 animate-pulse rounded-full bg-rose-300 shadow-[0_0_18px_rgba(251,113,133,0.8)]" />
-                            </div>
-                            <div className="runway-track mt-4 h-2 overflow-hidden bg-white/10">
-                              <div
-                                className="runway-bar h-full"
-                                style={{
-                                  width:
-                                    projectedRunwayDays === null
-                                      ? "100%"
-                                      : `${Math.max(8, Math.min(100, projectedRunwayDays))}%`,
-                                }}
-                              />
-                            </div>
-                          </SystemReading>
-
-                          <div className="signal-mini-card border border-white/10 bg-white/[0.03] p-4">
-                            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                              Expenses after
-                            </p>
-                            <p className="mt-2 text-lg font-black text-rose-100">
-                              <NumberValue>
-                                {formatCurrency(projectedMonthlyExpenses)}
-                              </NumberValue>
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </TerminalPanel>
-                </section>
+                ) : null}
 
                 <SurvivalMatrix
                   accounts={moneyAccounts}
@@ -3068,111 +2816,31 @@ export default function Home() {
                   autoStartScanTrigger={autoStartScanTrigger}
                 />
 
-                <DashboardCharts
-                  accountBalances={moneyAccountBalances}
-                  expenses={activeExpenses}
-                  highlightClassName={getSectionHighlightClass(
-                    "dashboard-charts",
-                  )}
-                  isBalanceHidden={isBalanceHidden}
-                  moneyAccounts={moneyAccounts}
-                />
-
-                <section className="mx-auto max-w-6xl px-5 pb-8 sm:px-6">
-                  <TerminalPanel className="border-amber-500/20 bg-black/40">
+                <section className="mx-auto max-w-6xl px-4 pb-8 sm:px-6">
+                  <TerminalPanel className="ledger-panel !p-5">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500 font-mono">
-                            Simulation Protocol
-                          </p>
-                          <span className={`inline-block h-2 w-2 rounded-full ${isSandboxMode ? 'bg-amber-500 animate-ping' : 'bg-slate-600'}`} />
-                        </div>
+                        <p className="text-xs font-bold uppercase tracking-[0.12em] text-amber-300">
+                          Mode simulasi
+                        </p>
                         <h2 className="mt-2 text-xl font-black text-white">
-                          Scenario Branching Sandbox
+                          Uji skenario tanpa mengubah ledger asli
                         </h2>
-                        <p className="mt-1 text-sm text-slate-400">
+                        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
                           {isSandboxMode
-                            ? `Currently simulating ${sandboxTransactions.length} custom scenario branches. Your dashboard metrics represent modified projections.`
-                            : "Deactivated. All cockpit values represent your actual private ledger data. Open the console to simulate future financial paths."}
+                            ? `${sandboxTransactions.length} skenario aktif. Angka ringkasan saat ini mencakup proyeksi simulasi.`
+                            : "Simulasi nonaktif. Angka ringkasan berasal dari ledger aktif Anda."}
                         </p>
                       </div>
                       <SharpButton
+                        className="shrink-0"
+                        type="button"
                         onClick={() => openView("sandbox")}
-                        className="border-amber-500/35 text-amber-200 hover:bg-amber-500/10 min-h-10 px-4 py-2 text-xs font-bold uppercase shrink-0 font-mono"
-                        type="button"
                       >
-                        {isSandboxMode ? "Manage Sandbox" : "Open Sandbox Console"}
+                        {isSandboxMode
+                          ? "Kelola simulasi"
+                          : "Buka simulasi"}
                       </SharpButton>
-                    </div>
-                  </TerminalPanel>
-                </section>
-
-                <section className="mx-auto max-w-6xl px-5 pb-8 sm:px-6">
-                  <TerminalPanel className="!p-5">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-300">
-                          Recent
-                        </p>
-                        <h2 className="mt-2 text-xl font-black text-white">
-                          Latest transactions
-                        </h2>
-                      </div>
-                      <SharpButton
-                        className="min-h-10 px-3 py-2"
-                        type="button"
-                        onClick={() => openView("transactions")}
-                      >
-                        View all
-                      </SharpButton>
-                    </div>
-
-                    <div className="mt-5 space-y-3">
-                      {recentActivity.length === 0 ? (
-                        <div className="border border-dashed border-cyan-300/20 bg-cyan-300/5 px-4 py-8 text-center text-sm text-slate-400">
-                          No transactions yet. Add income, expenses, or
-                          transfers to light up your dashboard.
-                        </div>
-                      ) : (
-                        recentActivity.map((activity) => (
-                          <article
-                            className="cockpit-card flex flex-col gap-3 border border-white/10 bg-white/[0.03] p-4 transition hover:border-cyan-300/30 sm:flex-row sm:items-center sm:justify-between"
-                            key={activity.id}
-                          >
-                            <div>
-                              <p className="font-bold text-white">
-                                {activity.title}
-                              </p>
-                              <p className="mt-1 text-sm text-slate-400">
-                                {activity.accountLabel} -{" "}
-                                {activityDateFormatter.format(
-                                  new Date(activity.createdAt),
-                                )}
-                              </p>
-                            </div>
-                            <p
-                              className={`text-lg font-black ${
-                                activity.tone === "income"
-                                  ? "text-lime-300"
-                                  : activity.tone === "expense"
-                                    ? "text-pink-200"
-                                    : "text-cyan-200"
-                              }`}
-                            >
-                              <NumberValue>
-                                {activity.tone === "expense" ? "-" : ""}
-                                {formatCurrency(activity.amount)}
-                              </NumberValue>
-                              {activity.tone === "expense" && netHourlyWage > 0 && (
-                                <span className="block text-right text-xs font-mono text-cyan-300/80 mt-0.5">
-                                  (~{(activity.amount / netHourlyWage).toFixed(1)} hrs)
-                                </span>
-                              )}
-                            </p>
-                          </article>
-                        ))
-                      )}
                     </div>
                   </TerminalPanel>
                 </section>
@@ -3375,10 +3043,17 @@ export default function Home() {
                 setAutoStartScanTrigger((prev) => prev + 1);
                 setTimeout(() => {
                   const el = document.getElementById("system-diagnostics");
-                  el?.scrollIntoView({ behavior: "smooth" });
+                  const prefersReducedMotion = window.matchMedia(
+                    "(prefers-reduced-motion: reduce)",
+                  ).matches;
+                  el?.scrollIntoView({
+                    behavior: prefersReducedMotion ? "auto" : "smooth",
+                  });
                 }, 100);
               }}
             />
+              </div>
+            </div>
           </div>
         </>
       ) : null}

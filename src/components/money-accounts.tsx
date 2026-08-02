@@ -178,6 +178,9 @@ export default function MoneyAccounts({
               onChange={(event) => setInitialBalance(event.target.value)}
               placeholder="Rp 0"
             />
+            <span className="mt-2 block text-xs font-normal leading-relaxed text-slate-400">
+              Saldo awal masuk ke Total Saldo, bukan Pemasukan bulan berjalan.
+            </span>
           </label>
 
           {formError ? (
