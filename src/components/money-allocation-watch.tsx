@@ -1,6 +1,14 @@
 "use client";
 
 import {
+  calculateAllocationBucketBalances,
+  calculatePortfolioHoldings,
+  getAllocationBarPercent,
+  getLatestPriceByAsset,
+  isAllocationStateOwnedByUser,
+  validateInvestmentPurchase,
+} from "@/src/lib/allocation-calculations";
+import {
   EmptyState,
   MetricCell,
   Notice,
@@ -14,6 +22,7 @@ import {
 } from "@/src/components/cockpit-ui";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import { fetchLatestPrice, getMockPriceQuote } from "@/src/lib/price-provider";
+import { toLocalDateInputValue } from "@/src/lib/transaction-entry";
 import type {
   AllocationDraftItem,
   AllocationIncomeRecord,
@@ -26,11 +35,17 @@ import type { MoneyAccount } from "@/src/types/money-account";
 import type {
   Asset,
   InvestmentTransaction,
-  PortfolioHolding,
   PriceProviderId,
   PriceSnapshot,
 } from "@/src/types/portfolio";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 type MoneyAllocationWatchProps = {
   accounts: MoneyAccount[];
@@ -92,7 +107,7 @@ const bucketTone: Record<BucketType, string> = {
 const labelClassName = "text-sm font-medium text-slate-300";
 
 function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+  return toLocalDateInputValue();
 }
 
 function now() {
@@ -219,62 +234,6 @@ function safeParseState(userId: string, raw: string | null): StorageState {
   }
 }
 
-function getLatestPriceByAsset(priceSnapshots: PriceSnapshot[]) {
-  return priceSnapshots.reduce<Record<string, PriceSnapshot>>((latest, snapshot) => {
-    const current = latest[snapshot.assetId];
-    if (!current || snapshot.timestamp > current.timestamp) {
-      latest[snapshot.assetId] = snapshot;
-    }
-    return latest;
-  }, {});
-}
-
-function calculatePortfolioHoldings(
-  assets: Asset[],
-  transactions: InvestmentTransaction[],
-  priceSnapshots: PriceSnapshot[],
-): PortfolioHolding[] {
-  const latestPrices = getLatestPriceByAsset(priceSnapshots);
-  const rawHoldings = assets.map((asset) => {
-    const assetTransactions = transactions.filter((transaction) => transaction.assetId === asset.id);
-    const totals = assetTransactions.reduce(
-      (nextTotals, transaction) => {
-        const direction = transaction.type === "buy" ? 1 : -1;
-        return {
-          quantity: nextTotals.quantity + direction * transaction.quantity,
-          cost: nextTotals.cost + direction * (transaction.amountIdr + transaction.fee),
-        };
-      },
-      { cost: 0, quantity: 0 },
-    );
-    const currentPrice = latestPrices[asset.id]?.price ?? 0;
-    const currentValue = Math.max(0, totals.quantity) * currentPrice;
-    const averagePrice = totals.quantity > 0 ? totals.cost / totals.quantity : 0;
-    const unrealizedPnL = currentValue - totals.cost;
-    const unrealizedPnLPercent = totals.cost > 0 ? (unrealizedPnL / totals.cost) * 100 : 0;
-
-    return {
-      assetId: asset.id,
-      symbol: asset.symbol,
-      name: asset.name,
-      totalQuantity: totals.quantity,
-      totalCost: totals.cost,
-      averagePrice,
-      currentPrice,
-      currentValue,
-      unrealizedPnL,
-      unrealizedPnLPercent,
-      portfolioAllocationPercent: 0,
-    };
-  });
-
-  const totalPortfolioValue = rawHoldings.reduce((total, holding) => total + holding.currentValue, 0);
-  return rawHoldings.map((holding) => ({
-    ...holding,
-    portfolioAllocationPercent: totalPortfolioValue > 0 ? (holding.currentValue / totalPortfolioValue) * 100 : 0,
-  }));
-}
-
 export default function MoneyAllocationWatch({
   accounts,
   isBalanceHidden,
@@ -308,6 +267,9 @@ export default function MoneyAllocationWatch({
   const [priceNotice, setPriceNotice] = useState("");
   const [priceError, setPriceError] = useState("");
   const [isFetchingPrice, setIsFetchingPrice] = useState(false);
+  const [backupNotice, setBackupNotice] = useState("");
+  const [backupError, setBackupError] = useState("");
+  const backupInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -387,28 +349,15 @@ export default function MoneyAllocationWatch({
   const incomeAmountNumber = parsePositiveNumber(incomeAmount);
   const previewDifference = incomeAmountNumber - previewTotal;
 
-  const bucketBalances = useMemo(() => {
-    const balances = state.buckets.reduce<Record<string, number>>((nextBalances, bucket) => {
-      nextBalances[bucket.id] = 0;
-      return nextBalances;
-    }, {});
-
-    state.allocationRecords.forEach((record) => {
-      balances[record.bucketId] = (balances[record.bucketId] ?? 0) + record.amount;
-    });
-
-    state.investmentTransactions.forEach((transaction) => {
-      if (!transaction.sourceBucketId) {
-        return;
-      }
-
-      const movement = transaction.amountIdr + transaction.fee;
-      balances[transaction.sourceBucketId] =
-        (balances[transaction.sourceBucketId] ?? 0) + (transaction.type === "buy" ? -movement : movement);
-    });
-
-    return balances;
-  }, [state.allocationRecords, state.buckets, state.investmentTransactions]);
+  const bucketBalances = useMemo(
+    () =>
+      calculateAllocationBucketBalances(
+        state.buckets,
+        state.allocationRecords,
+        state.investmentTransactions,
+      ),
+    [state.allocationRecords, state.buckets, state.investmentTransactions],
+  );
 
   const totalBucketCash = Object.values(bucketBalances).reduce((total, amount) => total + amount, 0);
   const unallocatedBalance = bucketBalances[unallocatedBucketId] ?? 0;
@@ -571,16 +520,31 @@ export default function MoneyAllocationWatch({
     const price = parsePositiveNumber(newInvestment.price);
     const amountIdr = parsePositiveNumber(newInvestment.amountIdr);
     const fee = Number(newInvestment.fee || 0);
-    const typedQuantity = Number(newInvestment.quantity);
-    const quantity = Number.isFinite(typedQuantity) && typedQuantity > 0 ? typedQuantity : amountIdr / price;
+    const sourceBucketId =
+      newInvestment.sourceBucketId || investmentCashBucketId;
+    const sourceBucket = state.buckets.find(
+      (bucket) => bucket.id === sourceBucketId,
+    );
 
     if (!asset) {
       setPriceError("Select an asset first.");
       return;
     }
 
-    if (price <= 0 || amountIdr <= 0 || quantity <= 0) {
-      setPriceError("Enter valid buy price, invested amount, and quantity.");
+    if (!sourceBucket) {
+      setPriceError("Select a valid source bucket first.");
+      return;
+    }
+
+    const validation = validateInvestmentPurchase({
+      amountIdr,
+      availableBalance: bucketBalances[sourceBucket.id] ?? 0,
+      fee,
+      price,
+      quantityInput: newInvestment.quantity,
+    });
+    if (!validation.ok) {
+      setPriceError(validation.message);
       return;
     }
 
@@ -592,28 +556,16 @@ export default function MoneyAllocationWatch({
       type: "buy",
       price,
       amountIdr,
-      quantity,
-      fee: Number.isFinite(fee) && fee > 0 ? fee : 0,
-      sourceBucketId: newInvestment.sourceBucketId || investmentCashBucketId,
+      quantity: validation.quantity,
+      fee,
+      sourceBucketId: sourceBucket.id,
       note: newInvestment.note.trim(),
       createdAt: now(),
-    };
-
-    const priceSnapshot: PriceSnapshot = {
-      id: makeId("price"),
-      userId,
-      assetId: asset.id,
-      price,
-      currency: "IDR",
-      source: "manual",
-      timestamp: now(),
-      isManual: true,
     };
 
     setState((current) => ({
       ...current,
       investmentTransactions: [transaction, ...current.investmentTransactions],
-      priceSnapshots: [priceSnapshot, ...current.priceSnapshots],
     }));
     setNewInvestment((current) => ({
       ...current,
@@ -623,7 +575,9 @@ export default function MoneyAllocationWatch({
       price: "",
       quantity: "",
     }));
-    setPriceNotice(`Recorded ${asset.symbol} buy transaction and updated manual price.`);
+    setPriceNotice(
+      `Recorded ${asset.symbol} buy transaction. Current market price was left unchanged.`,
+    );
   }
 
   function saveManualPrice(event: FormEvent<HTMLFormElement>) {
@@ -689,6 +643,92 @@ export default function MoneyAllocationWatch({
     setPriceNotice(`${asset.symbol} price updated from ${result.quote.source}. ${result.quote.limitation ?? ""}`.trim());
   }
 
+  function exportLocalBackup() {
+    setBackupError("");
+    setBackupNotice("");
+
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      format: "rumahbudget-allocation-backup",
+      state,
+      userId,
+      version: 1,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `rumahbudget-allocation-${todayIsoDate()}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setBackupNotice(
+      "Local backup exported. Store the JSON file privately because it contains allocation and portfolio details.",
+    );
+  }
+
+  async function importLocalBackup(event: ChangeEvent<HTMLInputElement>) {
+    setBackupError("");
+    setBackupNotice("");
+
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    if (file.size > 2_000_000) {
+      setBackupError("Backup file is too large. Maximum size is 2 MB.");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(await file.text()) as {
+        format?: unknown;
+        state?: unknown;
+        userId?: unknown;
+        version?: unknown;
+      };
+      if (
+        parsed.format !== "rumahbudget-allocation-backup" ||
+        parsed.version !== 1 ||
+        parsed.userId !== userId ||
+        !isAllocationStateOwnedByUser(userId, parsed.state)
+      ) {
+        setBackupError(
+          "Invalid backup or the file belongs to a different RumahBudget user.",
+        );
+        return;
+      }
+
+      const nextState = parsed.state as StorageState;
+      setState(nextState);
+      setSelectedTemplateId(
+        nextState.templates[0]?.id ?? "template-default-50-30-20",
+      );
+      setTemplateName(
+        nextState.templates[0]?.name ?? "Default 50 / 30 / 20",
+      );
+      setTemplatePercentages(
+        Object.fromEntries(
+          nextState.buckets
+            .filter((bucket) => bucket.type !== "unallocated")
+            .map((bucket) => [
+              bucket.id,
+              String(
+                nextState.templates[0]?.items.find(
+                  (item) => item.bucketId === bucket.id,
+                )?.percentage ?? 0,
+              ),
+            ]),
+        ),
+      );
+      setBackupNotice("Local allocation backup restored for this user.");
+    } catch {
+      setBackupError("Could not read this backup JSON file.");
+    }
+  }
+
   function resetLocalData() {
     const confirmed = window.confirm("Reset local Allocation + Portfolio Watch data for this user? Existing core ledger records are not touched.");
     if (!confirmed) {
@@ -749,7 +789,13 @@ export default function MoneyAllocationWatch({
           />
           <MetricCell
             label="Floating P/L"
-            tone={totalPortfolioPnl >= 0 ? "lime" : "rose"}
+            tone={
+              isBalanceHidden
+                ? "cyan"
+                : totalPortfolioPnl >= 0
+                  ? "lime"
+                  : "rose"
+            }
             value={
               <NumberValue>
                 {isBalanceHidden
@@ -764,6 +810,49 @@ export default function MoneyAllocationWatch({
         <Notice className="mt-5" tone="amber">
           V3 safe live integration is limited to BTC via a server-side CoinGecko route. BBCA/BBRI stay manual until a reliable licensed IDX market-data provider is selected. No API keys are exposed. Core ledger accounts detected: {accounts.length}.
         </Notice>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <SharpButton
+            disabled={isBalanceHidden}
+            onClick={exportLocalBackup}
+            title={
+              isBalanceHidden
+                ? "Turn off privacy mode before exporting sensitive data."
+                : undefined
+            }
+            type="button"
+          >
+            Export Local Backup
+          </SharpButton>
+          <SharpButton
+            disabled={isBalanceHidden}
+            onClick={() => backupInputRef.current?.click()}
+            title={
+              isBalanceHidden
+                ? "Turn off privacy mode before importing allocation data."
+                : undefined
+            }
+            type="button"
+          >
+            Import Local Backup
+          </SharpButton>
+          <input
+            accept="application/json,.json"
+            className="sr-only"
+            onChange={importLocalBackup}
+            ref={backupInputRef}
+            type="file"
+          />
+        </div>
+        {backupError ? (
+          <Notice className="mt-4" tone="rose">
+            {backupError}
+          </Notice>
+        ) : null}
+        {backupNotice ? (
+          <Notice className="mt-4" tone="lime">
+            {backupNotice}
+          </Notice>
+        ) : null}
       </TerminalPanel>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
@@ -849,7 +938,7 @@ export default function MoneyAllocationWatch({
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <p className="text-sm font-black uppercase tracking-[0.18em] text-cyan-200">Allocation preview</p>
                   <p className={`text-sm font-bold ${previewDifference === 0 ? "text-lime-200" : "text-amber-200"}`}>
-                    Difference: {formatCurrency(previewDifference)}
+                    Difference: {isBalanceHidden ? hiddenBalanceLabel : formatCurrency(previewDifference)}
                   </p>
                 </div>
                 <div className="space-y-3">
@@ -864,7 +953,11 @@ export default function MoneyAllocationWatch({
                             <p className="font-bold text-white">{bucket?.name ?? "Unknown bucket"}</p>
                             <p className="text-xs text-slate-400">{item.percentage.toFixed(1)}% suggested</p>
                           </div>
-                          <p className="text-sm font-bold text-cyan-100">{formatCurrency(Math.round((incomeAmountNumber * item.percentage) / 100))}</p>
+                          <p className="text-sm font-bold text-cyan-100">
+                            {isBalanceHidden
+                              ? hiddenBalanceLabel
+                              : formatCurrency(Math.round((incomeAmountNumber * item.percentage) / 100))}
+                          </p>
                           <SharpInput
                             inputMode="numeric"
                             min="0"
@@ -914,9 +1007,18 @@ export default function MoneyAllocationWatch({
                   {progress !== null ? (
                     <div className="mt-3">
                       <div className="h-2 overflow-hidden bg-black/50">
-                        <div className="h-full bg-lime-300" style={{ width: `${progress}%` }} />
+                        <div
+                          className="h-full bg-lime-300"
+                          style={{
+                            width: `${getAllocationBarPercent(progress, isBalanceHidden)}%`,
+                          }}
+                        />
                       </div>
-                      <p className="mt-2 text-xs text-slate-300">{progress.toFixed(1)}% of {formatCurrency(bucket.targetAmount ?? 0)}</p>
+                      <p className="mt-2 text-xs text-slate-300">
+                        {isBalanceHidden
+                          ? hiddenBalanceLabel
+                          : `${progress.toFixed(1)}% of ${formatCurrency(bucket.targetAmount ?? 0)}`}
+                      </p>
                     </div>
                   ) : null}
                 </article>
@@ -926,9 +1028,18 @@ export default function MoneyAllocationWatch({
           <div className="mt-5 border border-white/10 bg-white/[0.03] p-4">
             <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">Emergency Fund Progress</p>
             <div className="mt-3 h-3 overflow-hidden border border-white/10 bg-black/60">
-              <div className="h-full bg-lime-300 shadow-[0_0_20px_rgba(190,242,100,0.35)]" style={{ width: `${emergencyProgress}%` }} />
+              <div
+                className="h-full bg-lime-300 shadow-[0_0_20px_rgba(190,242,100,0.35)]"
+                style={{
+                  width: `${getAllocationBarPercent(emergencyProgress, isBalanceHidden)}%`,
+                }}
+              />
             </div>
-            <p className="mt-2 text-sm text-slate-300">{formatCurrency(emergencyBalance)} / {formatCurrency(emergencyTarget)} ({emergencyProgress.toFixed(1)}%)</p>
+            <p className="mt-2 text-sm text-slate-300">
+              {isBalanceHidden
+                ? hiddenBalanceLabel
+                : `${formatCurrency(emergencyBalance)} / ${formatCurrency(emergencyTarget)} (${emergencyProgress.toFixed(1)}%)`}
+            </p>
           </div>
         </TerminalPanel>
 
@@ -1002,7 +1113,21 @@ export default function MoneyAllocationWatch({
 
       <TerminalPanel className="mt-5 !p-5 sm:!p-6">
         <SectionHeader
-          action={<SharpButton onClick={resetLocalData} type="button" variant="danger">Reset Local Data</SharpButton>}
+          action={
+            <SharpButton
+              disabled={isBalanceHidden}
+              onClick={resetLocalData}
+              title={
+                isBalanceHidden
+                  ? "Turn off privacy mode before resetting allocation data."
+                  : undefined
+              }
+              type="button"
+              variant="danger"
+            >
+              Reset Local Data
+            </SharpButton>
+          }
           eyebrow="Portfolio Watch"
           title="Holdings, prices, and recent allocation history"
           description="BTC latest price can be fetched safely through the server route. BBCA/BBRI should use manual price for now."
@@ -1018,31 +1143,66 @@ export default function MoneyAllocationWatch({
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-lg font-black text-white">{holding.symbol}</h3>
-                        <StatusChip tone={asset?.type === "crypto" ? "amber" : "cyan"}>{asset?.type ?? "asset"}</StatusChip>
+                        <h3 className="text-lg font-black text-white">
+                          {isBalanceHidden ? "Private asset" : holding.symbol}
+                        </h3>
+                        <StatusChip
+                          tone={
+                            isBalanceHidden
+                              ? "cyan"
+                              : asset?.type === "crypto"
+                                ? "amber"
+                                : "cyan"
+                          }
+                        >
+                          {isBalanceHidden ? "hidden" : asset?.type ?? "asset"}
+                        </StatusChip>
                       </div>
-                      <p className="mt-1 text-sm text-slate-400">{holding.name}</p>
-                      <p className="mt-2 text-xs text-slate-500">Price source: {latestPrice?.source ?? "none"} {latestPrice ? `• ${new Date(latestPrice.timestamp).toLocaleString()}` : ""}</p>
+                      <p className="mt-1 text-sm text-slate-400">
+                        {isBalanceHidden ? hiddenBalanceLabel : holding.name}
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        {isBalanceHidden
+                          ? "Price details hidden"
+                          : `Price source: ${latestPrice?.source ?? "buy fallback"} ${latestPrice ? `• ${new Date(latestPrice.timestamp).toLocaleString()}` : ""}`}
+                      </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <SharpButton disabled={isFetchingPrice} onClick={() => asset && handleFetchPrice(asset, "latest")} type="button">Fetch Latest</SharpButton>
-                      <SharpButton disabled={isFetchingPrice} onClick={() => asset && handleFetchPrice(asset, "mock")} type="button">Use Mock</SharpButton>
-                    </div>
+                    {!isBalanceHidden ? (
+                      <div className="flex flex-wrap gap-2">
+                        <SharpButton disabled={isFetchingPrice} onClick={() => asset && handleFetchPrice(asset, "latest")} type="button">Fetch Latest</SharpButton>
+                        <SharpButton disabled={isFetchingPrice} onClick={() => asset && handleFetchPrice(asset, "mock")} type="button">Use Mock</SharpButton>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                    <MiniStat label="Units" value={holding.totalQuantity.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} />
-                    <MiniStat label="Avg buy" value={formatCurrency(holding.averagePrice)} />
+                    <MiniStat label="Units" value={isBalanceHidden ? hiddenBalanceLabel : holding.totalQuantity.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} />
+                    <MiniStat label="Avg buy" value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.averagePrice)} />
                     <MiniStat label="Current value" value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.currentValue)} />
                     <MiniStat
                       label="Unrealized P/L"
                       value={isBalanceHidden ? hiddenBalanceLabel : `${formatCurrency(holding.unrealizedPnL)} (${holding.unrealizedPnLPercent.toFixed(1)}%)`}
-                      valueClassName={holding.unrealizedPnL >= 0 ? "text-lime-200" : "text-rose-200"}
+                      valueClassName={
+                        isBalanceHidden
+                          ? "text-white"
+                          : holding.unrealizedPnL >= 0
+                            ? "text-lime-200"
+                            : "text-rose-200"
+                      }
                     />
                   </div>
                   <div className="mt-3 h-2 overflow-hidden bg-black/50">
-                    <div className="h-full bg-cyan-300" style={{ width: `${Math.max(3, holding.portfolioAllocationPercent)}%` }} />
+                    <div
+                      className="h-full bg-cyan-300"
+                      style={{
+                        width: `${getAllocationBarPercent(holding.portfolioAllocationPercent, isBalanceHidden)}%`,
+                      }}
+                    />
                   </div>
-                  <p className="mt-2 text-xs text-slate-400">Portfolio allocation: {holding.portfolioAllocationPercent.toFixed(1)}%</p>
+                  <p className="mt-2 text-xs text-slate-400">
+                    {isBalanceHidden
+                      ? "Portfolio allocation hidden"
+                      : `Portfolio allocation: ${holding.portfolioAllocationPercent.toFixed(1)}%`}
+                  </p>
                 </article>
               );
             })}
@@ -1060,8 +1220,16 @@ export default function MoneyAllocationWatch({
                   <article className="border border-white/10 bg-white/[0.03] p-3" key={record.id}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-bold text-white">{bucket?.name ?? "Unknown bucket"}</p>
-                        <p className="mt-1 text-xs text-slate-400">{income?.source ?? "Incoming money"} • {income?.date ?? "No date"}</p>
+                        <p className="font-bold text-white">
+                          {isBalanceHidden
+                            ? "Private allocation"
+                            : bucket?.name ?? "Unknown bucket"}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {isBalanceHidden
+                            ? hiddenBalanceLabel
+                            : `${income?.source ?? "Incoming money"} • ${income?.date ?? "No date"}`}
+                        </p>
                       </div>
                       <p className="font-black text-lime-200">{isBalanceHidden ? hiddenBalanceLabel : formatCurrency(record.amount)}</p>
                     </div>

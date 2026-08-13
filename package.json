@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:allocation": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/allocation-calculations.test.mjs",
     "test:budget-domain": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/budget-domain.test.mjs",
     "test:cron-security": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/cron-security.test.mjs",
     "test:data-integrity": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/offline-queue.test.mjs tests/recurring-schedule.test.mjs",
