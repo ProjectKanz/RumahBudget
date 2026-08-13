@@ -9,23 +9,16 @@ import {
 } from "@/src/components/cockpit-ui";
 import type { Expense } from "@/src/types/expense";
 import type { MoneyAccount } from "@/src/types/money-account";
+import {
+  EXPENSE_CATEGORY_OPTIONS,
+  PAYMENT_METHOD_OPTIONS,
+} from "@/src/lib/expense-options";
+import { calculateLifeEnergyHours } from "@/src/lib/life-energy";
+import {
+  localDateInputToTimestamp,
+  toLocalDateInputValue,
+} from "@/src/lib/transaction-entry";
 import { FormEvent, useState } from "react";
-
-const categories = [
-  { label: "Groceries", value: "Groceries" },
-  { label: "Transportation", value: "Transportation" },
-  { label: "Bills", value: "Bills" },
-  { label: "Education", value: "Education" },
-  { label: "Health", value: "Health" },
-  { label: "Other", value: "Other" },
-];
-
-const paymentMethods = [
-  { label: "Cash", value: "Cash" },
-  { label: "Debit Card", value: "Debit Card" },
-  { label: "E-Wallet", value: "E-Wallet" },
-  { label: "Bank Transfer", value: "Bank Transfer" },
-];
 
 const labelClassName = "text-sm font-medium text-slate-300";
 
@@ -48,9 +41,17 @@ export default function ExpenseForm({
 }: ExpenseFormProps) {
   const [amount, setAmount] = useState("");
   const [accountId, setAccountId] = useState("");
-  const [category, setCategory] = useState(categories[0].value);
-  const [paymentMethod, setPaymentMethod] = useState(paymentMethods[0].value);
+  const [category, setCategory] = useState<string>(
+    EXPENSE_CATEGORY_OPTIONS[0].value,
+  );
+  const [paymentMethod, setPaymentMethod] = useState<string>(
+    PAYMENT_METHOD_OPTIONS[0].value,
+  );
+  const [description, setDescription] = useState("");
   const [note, setNote] = useState("");
+  const [transactionDate, setTransactionDate] = useState(() =>
+    toLocalDateInputValue(),
+  );
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -59,14 +60,27 @@ export default function ExpenseForm({
   )
     ? accountId
     : (moneyAccounts[0]?.id ?? "");
+  const lifeEnergyHours = calculateLifeEnergyHours(amount, netHourlyWage);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const numericAmount = Number(amount);
+    const transactionTimestamp = localDateInputToTimestamp(transactionDate);
+    const trimmedDescription = description.trim();
 
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
       setError("Enter an amount greater than 0.");
+      return;
+    }
+
+    if (!transactionTimestamp) {
+      setError("Choose a valid transaction date.");
+      return;
+    }
+
+    if (!trimmedDescription) {
+      setError("Enter a merchant or transaction description.");
       return;
     }
 
@@ -80,7 +94,9 @@ export default function ExpenseForm({
       owner: accountLabel,
       userId: "",
       accountId: selectedAccountId,
-      createdAt: Date.now(),
+      createdAt: transactionTimestamp,
+      description: trimmedDescription,
+      transactionDate,
       amount: numericAmount,
       category,
       paymentMethod,
@@ -103,6 +119,7 @@ export default function ExpenseForm({
     }
 
     setAmount("");
+    setDescription("");
     setNote("");
     setError("");
   }
@@ -138,11 +155,11 @@ export default function ExpenseForm({
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
           />
-          {netHourlyWage > 0 && Number(amount) > 0 && (
+          {lifeEnergyHours !== null ? (
             <span className="mt-1 block text-xs font-mono text-cyan-300">
-              Equivalent Life Energy: {(Number(amount) / netHourlyWage).toFixed(1)} hours of work
+              Equivalent Life Energy: {lifeEnergyHours.toFixed(1)} hours of work
             </span>
-          )}
+          ) : null}
         </label>
 
         <label className={labelClassName}>
@@ -165,13 +182,25 @@ export default function ExpenseForm({
         </label>
 
         <label className={labelClassName}>
+          Transaction Date
+          <SharpInput
+            max={toLocalDateInputValue()}
+            name="transactionDate"
+            required
+            type="date"
+            value={transactionDate}
+            onChange={(event) => setTransactionDate(event.target.value)}
+          />
+        </label>
+
+        <label className={labelClassName}>
           Category
           <SharpSelect
             name="category"
             value={category}
             onChange={(event) => setCategory(event.target.value)}
           >
-            {categories.map((option) => (
+            {EXPENSE_CATEGORY_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -186,7 +215,7 @@ export default function ExpenseForm({
             value={paymentMethod}
             onChange={(event) => setPaymentMethod(event.target.value)}
           >
-            {paymentMethods.map((option) => (
+            {PAYMENT_METHOD_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -195,11 +224,25 @@ export default function ExpenseForm({
         </label>
 
         <label className={`${labelClassName} sm:col-span-2`}>
-          Note
+          Merchant / Description
           <SharpInput
+            maxLength={120}
+            name="description"
+            placeholder="Example: Indomaret, Gojek, Netflix"
+            required
+            type="text"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </label>
+
+        <label className={`${labelClassName} sm:col-span-2`}>
+          Additional Note (Optional)
+          <SharpInput
+            maxLength={240}
             name="note"
             type="text"
-            placeholder="Example: weekly grocery shopping"
+            placeholder="Example: weekly groceries and cleaning supplies"
             value={note}
             onChange={(event) => setNote(event.target.value)}
           />

@@ -4,8 +4,15 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import type { MoneyAccount } from "@/src/types/money-account";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
-
-const CATEGORIES = ["Groceries", "Transportation", "Bills", "Education", "Health", "Other"];
+import {
+  EXPENSE_CATEGORIES,
+  PAYMENT_METHODS,
+  resolveExpenseCategory,
+} from "@/src/lib/expense-options";
+import {
+  localDateInputToTimestamp,
+  toLocalDateInputValue,
+} from "@/src/lib/transaction-entry";
 
 type AppView = "overview" | "accounts" | "add" | "transactions" | "reports" | "allocation" | "sandbox" | "settings";
 
@@ -29,7 +36,7 @@ type CommandKProps = {
 
 const COMMANDS = [
   { name: "/view", description: "Switch views (overview, accounts, add, transactions, reports, allocation, sandbox, settings)", usage: "/view <tab>" },
-  { name: "/expense", description: "Quick insert expense with amount, category, and optional note", usage: "/expense <amount> <category> [note]" },
+  { name: "/expense", description: "Start an expense with amount, category, and optional merchant", usage: "/expense <amount> <category> [merchant]" },
   { name: "/income", description: "Quick insert income with amount, source, and optional note", usage: "/income <amount> <source> [note]" },
   { name: "/sandbox", description: "Toggle Scenario Branching Sandbox mode", usage: "/sandbox" },
   { name: "/scan", description: "Execute system diagnostics & leakage scan", usage: "/scan" },
@@ -37,12 +44,18 @@ const COMMANDS = [
 ];
 
 // Helper functions defined outside the component to avoid react-hooks/purity warnings
-function getTimestamp(): number {
-  return Date.now();
-}
-
 function getUUID(): string {
   return crypto.randomUUID();
+}
+
+function parsePositiveCommandAmount(value: string) {
+  if (!value.trim() || value.includes("-")) {
+    return null;
+  }
+
+  const digits = value.replace(/[^\d]/g, "");
+  const amount = Number(digits);
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
 }
 
 export default function CommandK({
@@ -68,6 +81,11 @@ export default function CommandK({
   const [promptCategory, setPromptCategory] = useState("");
   const [promptSource, setPromptSource] = useState("");
   const [promptAccountId, setPromptAccountId] = useState("");
+  const [promptDescription, setPromptDescription] = useState("");
+  const [promptPaymentMethod, setPromptPaymentMethod] = useState("");
+  const [promptTransactionDate, setPromptTransactionDate] = useState(() =>
+    toLocalDateInputValue(),
+  );
   const [promptNote, setPromptNote] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -79,6 +97,9 @@ export default function CommandK({
     setPromptAmount("");
     setPromptCategory("");
     setPromptSource("");
+    setPromptDescription("");
+    setPromptPaymentMethod("");
+    setPromptTransactionDate(toLocalDateInputValue());
     setPromptNote("");
     if (activeAccounts.length > 0) {
       setPromptAccountId(activeAccounts[0].id);
@@ -179,35 +200,31 @@ export default function CommandK({
     }
 
     if (commandName === "/expense") {
-      // Syntax: /expense <amount> <category> [note]
+      // Syntax: /expense <amount> <category> [merchant]
       const amountStr = args[0] || "";
-      const categoryInput = args[1] || "";
-      const noteInput = args.slice(2).join(" ");
-
-      // Parse amount
-      const parsedAmount = parseInt(amountStr.replace(/[^\d]/g, ""), 10);
-      
-      // Match category case-insensitively
+      const parsedAmount = parsePositiveCommandAmount(amountStr);
       let matchedCategory = "";
-      if (categoryInput) {
-        const found = CATEGORIES.find(
-          (c) => c.toLowerCase() === categoryInput.toLowerCase()
-        );
-        if (found) matchedCategory = found;
-      }
+      let categoryTokenCount = 0;
 
-      if (isNaN(parsedAmount) || !matchedCategory) {
-        // Missing or invalid parameters, trigger interactive prompt
-        setPromptCommand("/expense");
-        if (!isNaN(parsedAmount)) setPromptAmount(String(parsedAmount));
-        if (matchedCategory) setPromptCategory(matchedCategory);
-        if (noteInput) setPromptNote(noteInput);
-        setErrorMsg("Interactive Prompt: Please complete the missing fields below.");
-        return;
+      for (let end = args.length; end >= 2; end -= 1) {
+        const candidate = resolveExpenseCategory(args.slice(1, end).join(" "));
+        if (candidate) {
+          matchedCategory = candidate;
+          categoryTokenCount = end - 1;
+          break;
+        }
       }
+      const descriptionInput = args.slice(1 + categoryTokenCount).join(" ");
 
-      // We have all details, proceed to insert
-      await submitExpense(parsedAmount, matchedCategory, noteInput, promptAccountId || activeAccounts[0]?.id);
+      setPromptCommand("/expense");
+      if (parsedAmount !== null) setPromptAmount(String(parsedAmount));
+      if (matchedCategory) setPromptCategory(matchedCategory);
+      if (descriptionInput) setPromptDescription(descriptionInput);
+      setErrorMsg(
+        parsedAmount === null
+          ? "Amount must be a positive number. Complete the remaining expense details."
+          : "Complete the merchant, payment method, date, and optional note.",
+      );
       return;
     }
 
@@ -217,19 +234,17 @@ export default function CommandK({
       const sourceInput = args[1] || "";
       const noteInput = args.slice(2).join(" ");
 
-      const parsedAmount = parseInt(amountStr.replace(/[^\d]/g, ""), 10);
+      const parsedAmount = parsePositiveCommandAmount(amountStr);
 
-      if (isNaN(parsedAmount) || !sourceInput) {
-        // Missing parameters, trigger interactive prompt
-        setPromptCommand("/income");
-        if (!isNaN(parsedAmount)) setPromptAmount(String(parsedAmount));
-        if (sourceInput) setPromptSource(sourceInput);
-        if (noteInput) setPromptNote(noteInput);
-        setErrorMsg("Interactive Prompt: Please complete the missing fields below.");
-        return;
-      }
-
-      await submitIncome(parsedAmount, sourceInput, noteInput, promptAccountId || activeAccounts[0]?.id);
+      setPromptCommand("/income");
+      if (parsedAmount !== null) setPromptAmount(String(parsedAmount));
+      if (sourceInput) setPromptSource(sourceInput);
+      if (noteInput) setPromptNote(noteInput);
+      setErrorMsg(
+        parsedAmount === null
+          ? "Amount must be a positive number. Complete the remaining income details."
+          : "Complete the transaction date and confirm the income details.",
+      );
       return;
     }
 
@@ -237,9 +252,26 @@ export default function CommandK({
     setErrorMsg(`Unknown command: ${commandName}. Type one of the listed commands.`);
   };
 
-  const submitExpense = async (amount: number, category: string, note: string, accountId: string) => {
+  const submitExpense = async (
+    amount: number,
+    category: string,
+    description: string,
+    paymentMethod: string,
+    note: string,
+    accountId: string,
+    transactionDate: string,
+  ) => {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setErrorMsg("Enter an amount greater than 0.");
+      return;
+    }
     if (!accountId) {
       setErrorMsg("No active money accounts. Please create one first.");
+      return;
+    }
+    const createdAt = localDateInputToTimestamp(transactionDate);
+    if (!description.trim() || !paymentMethod || !createdAt) {
+      setErrorMsg("Merchant, payment method, and a valid date are required.");
       return;
     }
     setIsSubmitting(true);
@@ -249,17 +281,23 @@ export default function CommandK({
         owner: "Console",
         userId: "",
         accountId: accountId,
-        createdAt: getTimestamp(),
+        createdAt,
+        description: description.trim(),
+        transactionDate,
         amount: amount,
         category: category,
-        paymentMethod: "Cash",
-        note: note || "Recorded via Console",
+        paymentMethod,
+        note: note.trim(),
       };
 
       const success = await addExpense(expenseObj);
       if (success) {
         const accountName = accounts.find((a) => a.id === accountId)?.name || "account";
-        showSuccess(`Success: Recorded expense of Rp ${amount.toLocaleString()} in ${accountName}.`);
+        showSuccess(
+          isBalanceHidden
+            ? "Success: Expense recorded."
+            : `Success: Recorded expense of Rp ${amount.toLocaleString()} in ${accountName}.`,
+        );
         resetPrompts();
       } else {
         setErrorMsg("Failed to record expense. Please verify account/connection.");
@@ -272,9 +310,24 @@ export default function CommandK({
     }
   };
 
-  const submitIncome = async (amount: number, source: string, note: string, accountId: string) => {
+  const submitIncome = async (
+    amount: number,
+    source: string,
+    note: string,
+    accountId: string,
+    transactionDate: string,
+  ) => {
+    if (!Number.isFinite(amount) || amount <= 0 || !source.trim()) {
+      setErrorMsg("Enter an amount greater than 0 and an income source.");
+      return;
+    }
     if (!accountId) {
       setErrorMsg("No active money accounts. Please create one first.");
+      return;
+    }
+    const createdAt = localDateInputToTimestamp(transactionDate);
+    if (!createdAt) {
+      setErrorMsg("A valid transaction date is required.");
       return;
     }
     setIsSubmitting(true);
@@ -284,16 +337,21 @@ export default function CommandK({
         owner: "Console",
         userId: "",
         accountId: accountId,
-        createdAt: getTimestamp(),
+        createdAt,
+        transactionDate,
         amount: amount,
         source: source,
-        note: note || "Recorded via Console",
+        note: note.trim(),
       };
 
       const success = await addIncome(incomeObj);
       if (success) {
         const accountName = accounts.find((a) => a.id === accountId)?.name || "account";
-        showSuccess(`Success: Recorded income of Rp ${amount.toLocaleString()} in ${accountName}.`);
+        showSuccess(
+          isBalanceHidden
+            ? "Success: Income recorded."
+            : `Success: Recorded income of Rp ${amount.toLocaleString()} in ${accountName}.`,
+        );
         resetPrompts();
       } else {
         setErrorMsg("Failed to record income. Please verify account/connection.");
@@ -363,11 +421,15 @@ export default function CommandK({
             ref={inputRef}
             type="text"
             className="w-full bg-transparent text-white placeholder-slate-500 font-mono text-base outline-none py-4"
-            placeholder="Type /command (e.g. /expense 50000 Groceries)..."
+            placeholder={
+              isBalanceHidden
+                ? "Privacy mode active — reveal details from the top bar"
+                : "Type /command (e.g. /expense 50000 Groceries)..."
+            }
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isBalanceHidden}
           />
         </div>
 
@@ -380,7 +442,14 @@ export default function CommandK({
         )}
 
         {/* Interactive Prompt Panel */}
-        {promptCommand && (
+        {isBalanceHidden ? (
+          <div className="border-b border-white/10 px-5 py-4 text-sm text-slate-300">
+            Command entry is hidden while Privacy Mode is active. Use the top
+            bar to reveal transaction details before recording.
+          </div>
+        ) : null}
+
+        {promptCommand && !isBalanceHidden && (
           <div className="p-5 border-b border-white/10 bg-black/50 overflow-y-auto shrink-0">
             <h4 className="text-xs font-black uppercase tracking-wider font-mono text-slate-300 mb-3 flex items-center gap-2">
               <span className={`inline-block w-1.5 h-3 ${isSandboxMode ? 'bg-amber-400' : 'bg-cyan-400'}`} />
@@ -431,7 +500,7 @@ export default function CommandK({
                     onChange={(e) => setPromptCategory(e.target.value)}
                   >
                     <option value="">Select category</option>
-                    {CATEGORIES.map((c) => (
+                    {EXPENSE_CATEGORIES.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
@@ -448,6 +517,45 @@ export default function CommandK({
                   />
                 </label>
               )}
+
+              {promptCommand === "/expense" ? (
+                <>
+                  <label className="text-xs font-bold text-slate-400 font-mono">
+                    Merchant / Description
+                    <input
+                      type="text"
+                      className="mt-1 w-full bg-black/75 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/40"
+                      placeholder="Indomaret, Gojek, Netflix..."
+                      value={promptDescription}
+                      onChange={(e) => setPromptDescription(e.target.value)}
+                    />
+                  </label>
+                  <label className="text-xs font-bold text-slate-400 font-mono">
+                    Payment Method
+                    <select
+                      className="mt-1 w-full bg-black/75 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/40"
+                      value={promptPaymentMethod}
+                      onChange={(e) => setPromptPaymentMethod(e.target.value)}
+                    >
+                      <option value="">Select payment method</option>
+                      {PAYMENT_METHODS.map((method) => (
+                        <option key={method} value={method}>{method}</option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              ) : null}
+
+              <label className="text-xs font-bold text-slate-400 font-mono">
+                Transaction Date
+                <input
+                  type="date"
+                  max={toLocalDateInputValue()}
+                  className="mt-1 w-full bg-black/75 border border-white/10 px-3 py-2 text-sm text-white outline-none focus:border-cyan-300/40"
+                  value={promptTransactionDate}
+                  onChange={(e) => setPromptTransactionDate(e.target.value)}
+                />
+              </label>
 
               {/* Note Field */}
               <label className="text-xs font-bold text-slate-400 font-mono">
@@ -466,13 +574,36 @@ export default function CommandK({
               <button
                 type="button"
                 className="px-4 py-2 text-xs font-black uppercase bg-cyan-400 hover:bg-cyan-300 text-slate-950 transition disabled:opacity-50"
-                disabled={isSubmitting || !promptAmount || (promptCommand === "/expense" ? !promptCategory : !promptSource)}
+                disabled={
+                  isSubmitting ||
+                  !promptAmount ||
+                  !promptTransactionDate ||
+                  (promptCommand === "/expense"
+                    ? !promptCategory ||
+                      !promptDescription.trim() ||
+                      !promptPaymentMethod
+                    : !promptSource)
+                }
                 onClick={() => {
-                  const amt = parseInt(promptAmount.replace(/[^\d]/g, ""), 10);
+                  const amt = Number(promptAmount);
                   if (promptCommand === "/expense") {
-                    submitExpense(amt, promptCategory, promptNote, promptAccountId);
+                    submitExpense(
+                      amt,
+                      promptCategory,
+                      promptDescription,
+                      promptPaymentMethod,
+                      promptNote,
+                      promptAccountId,
+                      promptTransactionDate,
+                    );
                   } else {
-                    submitIncome(amt, promptSource, promptNote, promptAccountId);
+                    submitIncome(
+                      amt,
+                      promptSource,
+                      promptNote,
+                      promptAccountId,
+                      promptTransactionDate,
+                    );
                   }
                 }}
               >

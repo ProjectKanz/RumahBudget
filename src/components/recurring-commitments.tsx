@@ -9,18 +9,10 @@ import {
   TerminalPanel,
 } from "@/src/components/cockpit-ui";
 import { formatCurrency } from "@/src/lib/format";
+import { EXPENSE_CATEGORY_OPTIONS } from "@/src/lib/expense-options";
 import type { MoneyAccount } from "@/src/types/money-account";
 import type { RecurringCommitment } from "@/src/types/recurring-commitment";
 import { FormEvent, useState } from "react";
-
-const categories = [
-  { label: "Groceries", value: "Groceries" },
-  { label: "Transportation", value: "Transportation" },
-  { label: "Bills", value: "Bills" },
-  { label: "Education", value: "Education" },
-  { label: "Health", value: "Health" },
-  { label: "Other", value: "Other" },
-];
 
 const commitmentTypes = [
   { label: "Subscription", value: "subscription" },
@@ -55,7 +47,7 @@ export default function RecurringCommitments({
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [dueDay, setDueDay] = useState("");
-  const [category, setCategory] = useState(categories[0].value);
+  const [category, setCategory] = useState(EXPENSE_CATEGORY_OPTIONS[0].value);
   const [accountId, setAccountId] = useState("");
   const [commitmentType, setCommitmentType] = useState<CommitmentType>("subscription");
   const [isAutoDeduct, setIsAutoDeduct] = useState(false);
@@ -66,7 +58,7 @@ export default function RecurringCommitments({
 
   const selectedAccountId = moneyAccounts.some((acc) => acc.id === accountId)
     ? accountId
-    : (moneyAccounts[0]?.id ?? "");
+    : "";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -191,7 +183,7 @@ export default function RecurringCommitments({
               onChange={(e) => setCategory(e.target.value)}
               disabled={isLoading || isSaving}
             >
-              {categories.map((c) => (
+              {EXPENSE_CATEGORY_OPTIONS.map((c) => (
                 <option key={c.value} value={c.value}>
                   {c.label}
                 </option>
@@ -323,7 +315,15 @@ export default function RecurringCommitments({
                     <SharpButton
                       variant="danger"
                       className="!px-3 !py-1 text-xs"
-                      onClick={() => onDeleteCommitment(commitment.id)}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Delete ${commitment.name}? This cannot be undone.`,
+                          )
+                        ) {
+                          void onDeleteCommitment(commitment.id);
+                        }
+                      }}
                     >
                       Delete
                     </SharpButton>

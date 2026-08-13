@@ -26,7 +26,25 @@ import SandboxControls from "@/src/components/sandbox-controls";
 import CommandK from "@/src/components/command-k";
 import MoneyAllocationWatch from "@/src/components/money-allocation-watch";
 import { calculateFinanceSnapshot } from "@/src/lib/finance-calculations";
+import {
+  getCalendarMonthKey,
+  getCalendarMonthPeriod,
+  getRecentCalendarMonths,
+} from "@/src/lib/calendar-period";
 import { formatCurrency } from "@/src/lib/format";
+import {
+  buildOfflineQueueInsert,
+  createOfflineQueueItem,
+  getUserOfflineQueueStorageKey,
+  parseOfflineQueue,
+  removeSyncedOfflineQueueItems,
+  syncUserOfflineQueue,
+} from "@/src/lib/offline-queue";
+import {
+  getEffectiveRecurringDueDay,
+  getRecurringOccurrenceKey,
+  shouldProcessRecurringCommitment,
+} from "@/src/lib/recurring-schedule";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import {
   AUTH_SESSION_RESTORE_TIMEOUT_MS,
@@ -47,6 +65,11 @@ import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RecurringCommitments from "@/src/components/recurring-commitments";
 import type { RecurringCommitment } from "@/src/types/recurring-commitment";
+import {
+  localDateInputToTimestamp,
+  timestampToLocalDateInputValue,
+  type LedgerTransactionUpdate,
+} from "@/src/lib/transaction-entry";
 
 const balancePrivacyStorageKey = "rumahbudget.hideBalances";
 
@@ -224,6 +247,8 @@ type SupabaseExpenseRow = {
   category?: string;
   payment_method?: string;
   note?: string | null;
+  description?: string | null;
+  transaction_date?: string | null;
   created_at?: string | null;
 };
 
@@ -235,6 +260,7 @@ type SupabaseIncomeRow = {
   amount?: number | string;
   source?: string;
   note?: string | null;
+  transaction_date?: string | null;
   created_at?: string | null;
 };
 
@@ -266,6 +292,7 @@ type SupabaseTransferRow = {
   to_account_id?: string | null;
   amount?: number | string | null;
   note?: string | null;
+  transaction_date?: string | null;
   created_at?: string | null;
 };
 
@@ -283,36 +310,6 @@ type SupabaseRecurringCommitmentRow = {
   last_processed?: string | null;
   created_at?: string | null;
 };
-
-type OfflineQueueItem =
-  | {
-      type: "expense";
-      data: {
-        accountId: string;
-        amount: number;
-        category: string;
-        paymentMethod: string;
-        note: string;
-      };
-    }
-  | {
-      type: "income";
-      data: {
-        accountId: string;
-        amount: number;
-        source: string;
-        note: string;
-      };
-    }
-  | {
-      type: "transfer";
-      data: {
-        fromAccountId: string;
-        toAccountId: string;
-        amount: number;
-        note: string;
-      };
-    };
 
 type RecentActivityItem = {
   id: string;
@@ -377,6 +374,21 @@ function isCurrentMonthString(dateStr: string | null | undefined): boolean {
   );
 }
 
+function getTransactionTimestamp(
+  transactionDate: string | null | undefined,
+  createdAt: string | null | undefined,
+) {
+  const explicitDate = transactionDate
+    ? localDateInputToTimestamp(transactionDate)
+    : null;
+
+  if (explicitDate) {
+    return explicitDate;
+  }
+
+  return createdAt ? new Date(createdAt).getTime() : 0;
+}
+
 export default function Home() {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -391,8 +403,9 @@ export default function Home() {
   const [emailReportError, setEmailReportError] = useState("");
   const [moneyAccountError, setMoneyAccountError] = useState("");
   const [transferError, setTransferError] = useState("");
-  const [, setIsExpenseLoading] = useState(false);
-  const [, setIsIncomeLoading] = useState(false);
+  const [isExpenseLoading, setIsExpenseLoading] = useState(false);
+  const [isIncomeLoading, setIsIncomeLoading] = useState(false);
+  const [isTransferLoading, setIsTransferLoading] = useState(false);
   const [isEmailReportLoading, setIsEmailReportLoading] = useState(false);
   const [isMoneyAccountLoading, setIsMoneyAccountLoading] = useState(false);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
@@ -419,7 +432,14 @@ export default function Home() {
   const [offlineQueueCount, setOfflineQueueCount] = useState(0);
   const [onlineSuccessMessage, setOnlineSuccessMessage] = useState("");
   const [isAutoDeducting, setIsAutoDeducting] = useState(false);
-  const hasScannedAutoDeducts = useRef(false);
+  const [selectedMonthKey, setSelectedMonthKey] = useState(() =>
+    getCalendarMonthKey(new Date()),
+  );
+  const [recurringScanTimestamp, setRecurringScanTimestamp] = useState(() =>
+    Date.now(),
+  );
+  const attemptedRecurringOccurrences = useRef(new Set<string>());
+  const offlineSyncUsers = useRef(new Set<string>());
   const mobileMoreTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileMoreCloseButtonRef = useRef<HTMLButtonElement>(null);
   const mobileMorePanelRef = useRef<HTMLDivElement>(null);
@@ -579,9 +599,18 @@ export default function Home() {
         owner: expense.owner ?? authUser.email ?? "Unknown",
         userId: expense.user_id ?? authUser.id,
         accountId: expense.account_id ?? "",
-        createdAt: expense.created_at
-          ? new Date(expense.created_at).getTime()
-          : 0,
+        createdAt: getTransactionTimestamp(
+          expense.transaction_date,
+          expense.created_at,
+        ),
+        description: expense.description ?? "",
+        transactionDate:
+          expense.transaction_date ??
+          (expense.created_at
+            ? timestampToLocalDateInputValue(
+                new Date(expense.created_at).getTime(),
+              )
+            : ""),
         amount: Number(expense.amount ?? 0),
         category: expense.category ?? "Other",
         paymentMethod: expense.payment_method ?? "Unknown",
@@ -637,7 +666,15 @@ export default function Home() {
         owner: income.owner ?? authUser.email ?? "Unknown",
         userId: income.user_id ?? authUser.id,
         accountId: income.account_id ?? "",
-        createdAt: income.created_at ? new Date(income.created_at).getTime() : 0,
+        createdAt: getTransactionTimestamp(
+          income.transaction_date,
+          income.created_at,
+        ),
+        transactionDate:
+          income.transaction_date ??
+          (income.created_at
+            ? timestampToLocalDateInputValue(new Date(income.created_at).getTime())
+            : ""),
         amount: Number(income.amount ?? 0),
         source: income.source ?? "Unknown",
         note: income.note ?? "",
@@ -780,13 +817,17 @@ export default function Home() {
   }, [authUser]);
 
   const loadTransfersFromSupabase = useCallback(async () => {
+    setIsTransferLoading(true);
+
     if (!authUser) {
       setTransfers([]);
+      setIsTransferLoading(false);
       return;
     }
 
     if (!supabase) {
       setTransferError(missingSupabaseEnvMessage);
+      setIsTransferLoading(false);
       return;
     }
 
@@ -813,9 +854,17 @@ export default function Home() {
           toAccountId: transfer.to_account_id ?? "",
           amount: Number(transfer.amount ?? 0),
           note: transfer.note ?? "",
-          createdAt: transfer.created_at
-            ? new Date(transfer.created_at).getTime()
-            : 0,
+          createdAt: getTransactionTimestamp(
+            transfer.transaction_date,
+            transfer.created_at,
+          ),
+          transactionDate:
+            transfer.transaction_date ??
+            (transfer.created_at
+              ? timestampToLocalDateInputValue(
+                  new Date(transfer.created_at).getTime(),
+                )
+              : ""),
         }),
       );
 
@@ -830,6 +879,7 @@ export default function Home() {
       );
     } finally {
       timeout.clear();
+      setIsTransferLoading(false);
     }
   }, [authUser]);
 
@@ -889,8 +939,10 @@ export default function Home() {
       return;
     }
 
+    const localCommitmentsKey = `rumahbudget.localCommitments.${authUser.id}`;
+
     if (!supabase) {
-      const localData = window.localStorage.getItem("rumahbudget.localCommitments");
+      const localData = window.localStorage.getItem(localCommitmentsKey);
       if (localData) {
         try {
           setCommitments(JSON.parse(localData));
@@ -917,42 +969,11 @@ export default function Home() {
       if (error) {
         if (error.code === "42P01") {
           setDbSupportsCommitments(false);
-          const localData = window.localStorage.getItem("rumahbudget.localCommitments");
+          const localData = window.localStorage.getItem(localCommitmentsKey);
           if (localData) {
             setCommitments(JSON.parse(localData));
           } else {
-            const fallbackComs: RecurringCommitment[] = [
-              {
-                id: "fallback-sub-1",
-                userId: authUser.id,
-                accountId: null,
-                name: "Spotify Premium (Local Fallback)",
-                amount: 54990,
-                category: "Bills",
-                commitmentType: "subscription",
-                dueDay: 15,
-                isAutoDeduct: true,
-                disableReminders: false,
-                lastProcessed: null,
-                createdAt: Date.now(),
-              },
-              {
-                id: "fallback-rent-2",
-                userId: authUser.id,
-                accountId: null,
-                name: "Rent (Local Fallback)",
-                amount: 2500000,
-                category: "Other",
-                commitmentType: "rent",
-                dueDay: 1,
-                isAutoDeduct: false,
-                disableReminders: false,
-                lastProcessed: null,
-                createdAt: Date.now(),
-              },
-            ];
-            window.localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(fallbackComs));
-            setCommitments(fallbackComs);
+            setCommitments([]);
           }
           return;
         }
@@ -989,8 +1010,10 @@ export default function Home() {
   async function addCommitment(c: Omit<RecurringCommitment, "id" | "userId" | "createdAt" | "lastProcessed">) {
     if (!authUser) return false;
 
+    const localCommitmentsKey = `rumahbudget.localCommitments.${authUser.id}`;
+
     if (!supabase || !dbSupportsCommitments) {
-      const localData = window.localStorage.getItem("rumahbudget.localCommitments");
+      const localData = window.localStorage.getItem(localCommitmentsKey);
       const localComs: RecurringCommitment[] = localData ? JSON.parse(localData) : [];
       const newCommitment: RecurringCommitment = {
         ...c,
@@ -1000,7 +1023,7 @@ export default function Home() {
         lastProcessed: null,
       };
       const updated = [newCommitment, ...localComs];
-      window.localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(updated));
+      window.localStorage.setItem(localCommitmentsKey, JSON.stringify(updated));
       setCommitments(updated);
       return true;
     }
@@ -1040,12 +1063,14 @@ export default function Home() {
   async function deleteCommitment(id: string) {
     if (!authUser) return;
 
+    const localCommitmentsKey = `rumahbudget.localCommitments.${authUser.id}`;
+
     if (!supabase || !dbSupportsCommitments) {
-      const localData = window.localStorage.getItem("rumahbudget.localCommitments");
+      const localData = window.localStorage.getItem(localCommitmentsKey);
       if (localData) {
         const localComs: RecurringCommitment[] = JSON.parse(localData);
         const updated = localComs.filter((c) => c.id !== id);
-        window.localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(updated));
+        window.localStorage.setItem(localCommitmentsKey, JSON.stringify(updated));
         setCommitments(updated);
       }
       return;
@@ -1074,72 +1099,73 @@ export default function Home() {
   }
 
   const syncOfflineQueue = useCallback(async () => {
-    const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
-    if (!queueJson) return;
+    if (!supabase || !authUser) return;
+    const supabaseClient = supabase;
+    const userId = authUser.id;
 
-    let queue: OfflineQueueItem[] = [];
-    try {
-      queue = JSON.parse(queueJson);
-    } catch {
+    if (offlineSyncUsers.current.has(userId)) {
+      return;
+    }
+    offlineSyncUsers.current.add(userId);
+
+    const storageKey = getUserOfflineQueueStorageKey(userId);
+    const queue = parseOfflineQueue(localStorage.getItem(storageKey));
+    if (queue.length === 0) {
+      offlineSyncUsers.current.delete(userId);
       return;
     }
 
-    if (queue.length === 0) return;
-    if (!supabase) return;
+    try {
+      const result = await syncUserOfflineQueue({
+        items: queue,
+        userId,
+        syncItem: async (item) => {
+          const insert = buildOfflineQueueInsert(
+            item,
+            userId,
+            authUser.email ?? null,
+          );
+          const { error } = await supabaseClient
+            .from(insert.table)
+            .upsert(insert.values, {
+              ignoreDuplicates: true,
+              onConflict: "user_id,client_entry_id",
+            });
+          return !error;
+        },
+      });
 
-    let successCount = 0;
-
-    for (const item of queue) {
-      try {
-        if (item.type === "expense") {
-          const { error } = await supabase.from("expenses").insert({
-            user_id: authUser?.id,
-            owner: authUser?.email,
-            account_id: item.data.accountId,
-            amount: item.data.amount,
-            category: item.data.category,
-            payment_method: item.data.paymentMethod,
-            note: item.data.note,
-          });
-          if (!error) successCount++;
-        } else if (item.type === "income") {
-          const { error } = await supabase.from("incomes").insert({
-            user_id: authUser?.id,
-            owner: authUser?.email,
-            account_id: item.data.accountId,
-            amount: item.data.amount,
-            source: item.data.source,
-            note: item.data.note,
-          });
-          if (!error) successCount++;
-        } else if (item.type === "transfer") {
-          const { error } = await supabase.from("transfers").insert({
-            user_id: authUser?.id,
-            from_account_id: item.data.fromAccountId,
-            to_account_id: item.data.toAccountId,
-            amount: item.data.amount,
-            note: item.data.note,
-          });
-          if (!error) successCount++;
-        }
-      } catch (err) {
-        console.error("Offline sync item failed:", err);
+      const latestQueue = parseOfflineQueue(localStorage.getItem(storageKey));
+      const committedQueue = removeSyncedOfflineQueueItems(
+        latestQueue,
+        result.syncedItemIds,
+      );
+      if (committedQueue.length > 0) {
+        localStorage.setItem(storageKey, JSON.stringify(committedQueue));
+      } else {
+        localStorage.removeItem(storageKey);
       }
-    }
+      setOfflineQueueCount(committedQueue.length);
 
-    localStorage.removeItem("rumahbudget.offlineQueue");
-    setOfflineQueueCount(0);
+      if (result.syncedCount > 0) {
+        setOnlineSuccessMessage(
+          `Connection restored. ${result.syncedCount} transaction(s) synced${
+            result.failedCount > 0
+              ? `; ${result.failedCount} retained for retry.`
+              : "."
+          }`,
+        );
+        void loadExpensesFromSupabase();
+        void loadIncomesFromSupabase();
+        void loadTransfersFromSupabase();
+        void loadMoneyAccountsFromSupabase();
 
-    if (successCount > 0) {
-      setOnlineSuccessMessage(`⚠️ [OFFLINE ACTIVE] Connection restored. ${successCount} transaction(s) synced.`);
-      void loadExpensesFromSupabase();
-      void loadIncomesFromSupabase();
-      void loadTransfersFromSupabase();
-      void loadMoneyAccountsFromSupabase();
-
-      setTimeout(() => {
-        setOnlineSuccessMessage("");
-      }, 5000);
+        setTimeout(() => {
+          setOnlineSuccessMessage("");
+        }, 5000);
+      }
+    } finally {
+      offlineSyncUsers.current.delete(userId);
     }
   }, [
     authUser,
@@ -1163,12 +1189,14 @@ export default function Home() {
     };
 
     queueMicrotask(() => {
-      const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
-      if (queueJson) {
-        try {
-          const q = JSON.parse(queueJson) as OfflineQueueItem[];
-          setOfflineQueueCount(q.length);
-        } catch {}
+      if (authUser) {
+        const storageKey = getUserOfflineQueueStorageKey(authUser.id);
+        setOfflineQueueCount(
+          parseOfflineQueue(localStorage.getItem(storageKey)).length,
+        );
+        if (navigator.onLine) {
+          void syncOfflineQueue();
+        }
       }
 
       setIsOfflineActive(!navigator.onLine);
@@ -1183,164 +1211,128 @@ export default function Home() {
     };
   }, [authUser, syncOfflineQueue]);
 
-  const syncAutoDeducts = useCallback(async (commitmentsToProcess: RecurringCommitment[]) => {
-    setIsAutoDeducting(true);
-    try {
-      for (const c of commitmentsToProcess) {
-        const expenseAccountId = c.accountId || (moneyAccounts[0]?.id ?? "");
-        if (!expenseAccountId) {
-          console.warn(`No account available to auto-deduct commitment: ${c.name}`);
-          continue;
-        }
-
-        if (supabase) {
-          const { error: expError } = await supabase.from("expenses").insert({
-            user_id: authUser?.id,
-            owner: authUser?.email,
-            account_id: expenseAccountId,
-            amount: c.amount,
-            category: c.category,
-            payment_method: "Debit Card",
-            note: `Auto-Deducted commitment: ${c.name}`,
-          });
-
-          if (expError) {
-            console.error("Auto-deduct expense insert failed:", expError.message);
-            continue;
-          }
-        } else {
-          const localExp: Expense = {
-            id: crypto.randomUUID(),
-            owner: authUser?.email ?? "Offline user",
-            userId: authUser?.id ?? "",
-            accountId: expenseAccountId,
-            createdAt: new Date().getTime(),
-            amount: c.amount,
-            category: c.category,
-            paymentMethod: "Debit Card",
-            note: `Auto-Deducted commitment: ${c.name}`,
-          };
-          setExpenses((prev) => [localExp, ...prev]);
-        }
-
-        const nowStr = new Date().toISOString();
-        if (supabase && dbSupportsCommitments) {
-          const { error: comError } = await supabase
-            .from("recurring_commitments")
-            .update({ last_processed: nowStr })
-            .eq("id", c.id);
-
-          if (comError) {
-            console.error("Failed to update last_processed:", comError.message);
-          }
-        } else {
-          const localData = localStorage.getItem("rumahbudget.localCommitments");
-          if (localData) {
-            const localComs: RecurringCommitment[] = JSON.parse(localData);
-            const updated = localComs.map((lc) =>
-              lc.id === c.id ? { ...lc, lastProcessed: nowStr } : lc
-            );
-            localStorage.setItem("rumahbudget.localCommitments", JSON.stringify(updated));
-          }
-        }
+  const processCommitmentOnce = useCallback(
+    async (
+      commitment: RecurringCommitment,
+      mode: "auto" | "manual" = "auto",
+    ) => {
+      if (!supabase || !authUser || !dbSupportsCommitments) {
+        setCommitmentsError(
+          "Recurring payment requires the approved database migration.",
+        );
+        return false;
       }
 
-      await loadExpensesFromSupabase();
-      await loadCommitmentsFromSupabase();
-    } catch (err) {
-      console.error("Error running auto-deducts:", err);
-    } finally {
-      setIsAutoDeducting(false);
-    }
-  }, [
-    authUser,
-    dbSupportsCommitments,
-    loadCommitmentsFromSupabase,
-    loadExpensesFromSupabase,
-    moneyAccounts,
-  ]);
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (sessionError || !accessToken) {
+        setCommitmentsError("Please sign in again before recording payment.");
+        return false;
+      }
 
-  async function recordCommitmentPayment(c: RecurringCommitment) {
-    const expenseAccountId = c.accountId || (moneyAccounts[0]?.id ?? "");
-    if (!expenseAccountId) {
-      alert("Buat akun uang terlebih dahulu.");
+      let response: Response;
+      try {
+        response = await fetch("/api/recurring-commitments/process", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ commitmentId: commitment.id, mode }),
+        });
+      } catch (error) {
+        setCommitmentsError(
+          getSupabaseErrorMessage(
+            error,
+            "Network error while recording recurring payment.",
+          ),
+        );
+        return false;
+      }
+      const result = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+
+      if (!response.ok) {
+        setCommitmentsError(
+          result?.error ?? "Failed to record recurring payment.",
+        );
+        return false;
+      }
+
+      setCommitmentsError("");
+      return true;
+    },
+    [authUser, dbSupportsCommitments],
+  );
+
+  const syncAutoDeducts = useCallback(
+    async (commitmentsToProcess: RecurringCommitment[]) => {
+      setIsAutoDeducting(true);
+      const failedCommitments: RecurringCommitment[] = [];
+      try {
+        for (const commitment of commitmentsToProcess) {
+          if (!(await processCommitmentOnce(commitment, "auto"))) {
+            failedCommitments.push(commitment);
+          }
+        }
+        await loadExpensesFromSupabase();
+        await loadCommitmentsFromSupabase();
+      } finally {
+        setIsAutoDeducting(false);
+      }
+
+      if (failedCommitments.length > 0 && authUser) {
+        window.setTimeout(() => {
+          for (const commitment of failedCommitments) {
+            const keyPrefix = `${authUser.id}:${commitment.id}:`;
+            for (const attemptedKey of attemptedRecurringOccurrences.current) {
+              if (attemptedKey.startsWith(keyPrefix)) {
+                attemptedRecurringOccurrences.current.delete(attemptedKey);
+              }
+            }
+          }
+          setRecurringScanTimestamp(Date.now());
+        }, 60_000);
+      }
+    }, [
+      authUser,
+      loadCommitmentsFromSupabase,
+      loadExpensesFromSupabase,
+      processCommitmentOnce,
+    ],
+  );
+
+  async function recordCommitmentPayment(commitment: RecurringCommitment) {
+    if (isAutoDeducting) {
       return;
     }
 
     setIsAutoDeducting(true);
     try {
-      if (supabase) {
-        const { error: expError } = await supabase.from("expenses").insert({
-          user_id: authUser?.id,
-          owner: authUser?.email,
-          account_id: expenseAccountId,
-          amount: c.amount,
-          category: c.category,
-          payment_method: "Debit Card",
-          note: `Manual payment for commitment: ${c.name}`,
-        });
-
-        if (expError) {
-          alert(`Gagal menyimpan pengeluaran: ${expError.message}`);
-          return;
-        }
-      } else {
-        const localExp: Expense = {
-          id: crypto.randomUUID(),
-          owner: authUser?.email ?? "Offline user",
-          userId: authUser?.id ?? "",
-          accountId: expenseAccountId,
-          createdAt: new Date().getTime(),
-          amount: c.amount,
-          category: c.category,
-          paymentMethod: "Debit Card",
-          note: `Manual payment for commitment: ${c.name}`,
-        };
-        setExpenses((previousExpenses) => [localExp, ...previousExpenses]);
+      if (await processCommitmentOnce(commitment, "manual")) {
+        await loadExpensesFromSupabase();
+        await loadCommitmentsFromSupabase();
       }
-
-      const processedAt = new Date().toISOString();
-      if (supabase && dbSupportsCommitments) {
-        await supabase
-          .from("recurring_commitments")
-          .update({ last_processed: processedAt })
-          .eq("id", c.id);
-      } else {
-        const localData = localStorage.getItem(
-          "rumahbudget.localCommitments",
-        );
-        if (localData) {
-          const localCommitments: RecurringCommitment[] =
-            JSON.parse(localData);
-          const updatedCommitments = localCommitments.map((commitment) =>
-            commitment.id === c.id
-              ? { ...commitment, lastProcessed: processedAt }
-              : commitment,
-          );
-          localStorage.setItem(
-            "rumahbudget.localCommitments",
-            JSON.stringify(updatedCommitments),
-          );
-        }
-      }
-
-      await loadExpensesFromSupabase();
-      await loadCommitmentsFromSupabase();
-    } catch (error) {
-      console.error(error);
     } finally {
       setIsAutoDeducting(false);
     }
   }
 
   async function muteCommitmentReminders(c: RecurringCommitment) {
-    if (supabase && dbSupportsCommitments) {
+    if (supabase && dbSupportsCommitments && authUser) {
       await supabase
         .from("recurring_commitments")
         .update({ disable_reminders: true })
-        .eq("id", c.id);
+        .eq("id", c.id)
+        .eq("user_id", authUser.id);
     } else {
-      const localData = localStorage.getItem("rumahbudget.localCommitments");
+      if (!authUser) {
+        return;
+      }
+      const localCommitmentsKey = `rumahbudget.localCommitments.${authUser.id}`;
+      const localData = localStorage.getItem(localCommitmentsKey);
       if (localData) {
         const localCommitments: RecurringCommitment[] = JSON.parse(localData);
         const updatedCommitments = localCommitments.map((commitment) =>
@@ -1348,10 +1340,7 @@ export default function Home() {
             ? { ...commitment, disableReminders: true }
             : commitment,
         );
-        localStorage.setItem(
-          "rumahbudget.localCommitments",
-          JSON.stringify(updatedCommitments),
-        );
+        localStorage.setItem(localCommitmentsKey, JSON.stringify(updatedCommitments));
       }
     }
 
@@ -1488,32 +1477,68 @@ export default function Home() {
     loadCommitmentsFromSupabase,
   ]);
 
-  // Scan and trigger Auto-Deduct
+  useEffect(() => {
+    const now = new Date();
+    const nextLocalDay = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+      0,
+      0,
+      5,
+    );
+    const timeoutId = window.setTimeout(
+      () => setRecurringScanTimestamp(Date.now()),
+      nextLocalDay.getTime() - now.getTime(),
+    );
+
+    return () => window.clearTimeout(timeoutId);
+  }, [recurringScanTimestamp]);
+
+  // Scan and trigger Auto-Deduct once per commitment occurrence.
   useEffect(() => {
     if (!authUser || isMoneyAccountLoading || isAutoDeducting) {
       return;
     }
-    if (hasScannedAutoDeducts.current) {
-      return;
-    }
 
-    const today = new Date();
-    const currentDay = today.getDate();
+    const today = new Date(recurringScanTimestamp);
 
     const toAutoDeduct = commitments.filter(
-      (c) =>
-        c.isAutoDeduct &&
-        currentDay >= c.dueDay &&
-        !isCurrentMonthString(c.lastProcessed)
+      (commitment) => {
+        const occurrenceKey = `${authUser.id}:${getRecurringOccurrenceKey(
+          commitment.id,
+          today,
+        )}`;
+        return (
+          !attemptedRecurringOccurrences.current.has(occurrenceKey) &&
+          shouldProcessRecurringCommitment({
+          dueDay: commitment.dueDay,
+          isAutoDeduct: commitment.isAutoDeduct,
+          lastProcessed: commitment.lastProcessed,
+          now: today,
+          })
+        );
+      },
     );
 
     if (toAutoDeduct.length > 0) {
-      hasScannedAutoDeducts.current = true;
+      for (const commitment of toAutoDeduct) {
+        attemptedRecurringOccurrences.current.add(
+          `${authUser.id}:${getRecurringOccurrenceKey(commitment.id, today)}`,
+        );
+      }
       queueMicrotask(() => {
         void syncAutoDeducts(toAutoDeduct);
       });
     }
-  }, [authUser, isMoneyAccountLoading, commitments, isAutoDeducting, syncAutoDeducts]);
+  }, [
+    authUser,
+    commitments,
+    isAutoDeducting,
+    isMoneyAccountLoading,
+    recurringScanTimestamp,
+    syncAutoDeducts,
+  ]);
 
   useEffect(() => {
     if (!authUser || !isHydrated) {
@@ -1594,11 +1619,30 @@ export default function Home() {
 
   const activeIncomes = incomes;
   const signedInEmail = authUser?.email ?? "Signed-in account";
+  const selectedMonth = useMemo(
+    () =>
+      getCalendarMonthPeriod(selectedMonthKey) ??
+      getCalendarMonthPeriod(getCalendarMonthKey(new Date())),
+    [selectedMonthKey],
+  );
+  const recentMonthOptions = useMemo(
+    () => getRecentCalendarMonths(new Date(), 12),
+    [],
+  );
 
   const approachingCommitments = useMemo(() => {
-    const currentDay = new Date().getDate();
+    const today = new Date();
+    const currentDay = today.getDate();
 
     return commitments.filter((commitment) => {
+      if (
+        !Number.isInteger(commitment.dueDay) ||
+        commitment.dueDay < 1 ||
+        commitment.dueDay > 31
+      ) {
+        return false;
+      }
+
       if (commitment.isAutoDeduct || commitment.disableReminders) {
         return false;
       }
@@ -1607,7 +1651,9 @@ export default function Home() {
         return false;
       }
 
-      return commitment.dueDay - currentDay <= 3;
+      return (
+        getEffectiveRecurringDueDay(commitment.dueDay, today) - currentDay <= 3
+      );
     });
   }, [commitments]);
 
@@ -1618,8 +1664,9 @@ export default function Home() {
         expenses: activeExpenses,
         incomes: activeIncomes,
         transfers,
+        periodReference: selectedMonth?.start.getTime(),
       }),
-    [activeExpenses, activeIncomes, moneyAccounts, transfers],
+    [activeExpenses, activeIncomes, moneyAccounts, selectedMonth, transfers],
   );
   const monthlyExpenses = financeSnapshot.monthlyExpenses;
   const monthlyIncomes = financeSnapshot.monthlyIncomes;
@@ -1714,6 +1761,7 @@ export default function Home() {
   }, [totalBalance, averageMonthlyBurn]);
 
   const remainingBalance = totalIncome - totalExpense;
+  const cashflowPeriodLabel = selectedMonth?.label ?? "selected period";
   const expenseRatio = totalIncome > 0 ? totalExpense / totalIncome : 0;
   const monthlyStatus: MonthlyStatus =
     totalIncome === 0 && totalExpense > 0
@@ -1721,13 +1769,13 @@ export default function Home() {
         ? {
             label: "Critical",
             explanation:
-              "You have expenses this month, no income recorded yet, and your Total Account Balance is not positive.",
+              `You have expenses in ${cashflowPeriodLabel}, no income recorded, and your current Total Account Balance is not positive.`,
             className: "text-rose-300",
           }
         : {
             label: "No income recorded",
             explanation:
-              "You have expenses this month, but no income has been recorded yet. These expenses are being paid from your existing account balance.",
+              `You have expenses in ${cashflowPeriodLabel}, but no income was recorded. These expenses are being paid from your current account balance.`,
             className: "text-cyan-200",
           }
       : totalIncome > 0 && totalExpense > totalIncome
@@ -1735,8 +1783,8 @@ export default function Home() {
             label: "Critical",
             explanation:
               totalBalance > 0
-                ? "Expenses exceed recorded income this month, but your Total Account Balance is still positive."
-                : "Expenses exceed recorded income this month and your Total Account Balance is not positive.",
+                ? `Expenses exceed recorded income in ${cashflowPeriodLabel}, but your current Total Account Balance is still positive.`
+                : `Expenses exceed recorded income in ${cashflowPeriodLabel} and your current Total Account Balance is not positive.`,
             className: "text-rose-300",
           }
         : expenseRatio >= 0.7
@@ -1803,7 +1851,7 @@ export default function Home() {
               label: "Balance-funded",
               tone: isSandboxMode ? "text-amber-200" : "text-cyan-200",
               description:
-                "Possible, but this month has no recorded income, so it comes from existing balance.",
+                `Possible, but ${cashflowPeriodLabel} has no recorded income, so this uses the current balance.`,
             }
           : safePlannedSpendAmount > Math.max(totalBalance * 0.25, 0)
             ? {
@@ -1865,7 +1913,10 @@ export default function Home() {
         totalIncome === 0
           ? "No income"
           : `${Math.round((projectedExpenseRatio ?? 0) * 100)}%`,
-      detail: totalIncome === 0 ? "recorded this month" : "expense load",
+      detail:
+        totalIncome === 0
+          ? `recorded in ${cashflowPeriodLabel}`
+          : `${cashflowPeriodLabel} expense load`,
       state:
         totalIncome === 0 && projectedMonthlyExpenses > 0
           ? "watch"
@@ -1932,19 +1983,38 @@ export default function Home() {
   }, [accountNamesById, activeExpenses, activeIncomes, transfers]);
 
   async function addExpense(expense: Expense) {
+    if (!authUser) {
+      setExpenseError("Please log in before saving an expense.");
+      return false;
+    }
+
     if (typeof navigator !== "undefined" && !navigator.onLine) {
-      const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
-      const queue = queueJson ? JSON.parse(queueJson) : [];
-      queue.push({ type: "expense", data: expense });
-      localStorage.setItem("rumahbudget.offlineQueue", JSON.stringify(queue));
+      const storageKey = getUserOfflineQueueStorageKey(authUser.id);
+      const queue = parseOfflineQueue(localStorage.getItem(storageKey));
+      queue.push(
+        createOfflineQueueItem({
+          id: expense.id,
+          userId: authUser.id,
+          type: "expense",
+          data: {
+            accountId: expense.accountId,
+            amount: expense.amount,
+            category: expense.category,
+            createdAt: expense.createdAt,
+            description: expense.description ?? "",
+            note: expense.note,
+            paymentMethod: expense.paymentMethod,
+          },
+        }),
+      );
+      localStorage.setItem(storageKey, JSON.stringify(queue));
       setOfflineQueueCount(queue.length);
 
       setExpenses((prev) => [
         {
           ...expense,
           owner: authUser?.email ?? "Offline user",
-          userId: authUser?.id ?? "",
-          createdAt: Date.now(),
+          userId: authUser.id,
         },
         ...prev,
       ]);
@@ -1953,11 +2023,6 @@ export default function Home() {
 
     if (!supabase) {
       setExpenseError(missingSupabaseEnvMessage);
-      return false;
-    }
-
-    if (!authUser) {
-      setExpenseError("Please log in before saving an expense.");
       return false;
     }
 
@@ -1972,8 +2037,14 @@ export default function Home() {
           account_id: expense.accountId,
           amount: expense.amount,
           category: expense.category,
+          client_entry_id: expense.id,
+          created_at: new Date(expense.createdAt).toISOString(),
+          description: expense.description ?? "",
           payment_method: expense.paymentMethod,
           note: expense.note,
+          transaction_date:
+            expense.transactionDate ??
+            timestampToLocalDateInputValue(expense.createdAt),
         })
         .abortSignal(timeout.signal);
 
@@ -2037,19 +2108,36 @@ export default function Home() {
   }
 
   async function addIncome(income: Income) {
+    if (!authUser) {
+      setIncomeError("Please log in before saving income.");
+      return false;
+    }
+
     if (typeof navigator !== "undefined" && !navigator.onLine) {
-      const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
-      const queue = queueJson ? JSON.parse(queueJson) : [];
-      queue.push({ type: "income", data: income });
-      localStorage.setItem("rumahbudget.offlineQueue", JSON.stringify(queue));
+      const storageKey = getUserOfflineQueueStorageKey(authUser.id);
+      const queue = parseOfflineQueue(localStorage.getItem(storageKey));
+      queue.push(
+        createOfflineQueueItem({
+          id: income.id,
+          userId: authUser.id,
+          type: "income",
+          data: {
+            accountId: income.accountId,
+            amount: income.amount,
+            createdAt: income.createdAt,
+            note: income.note,
+            source: income.source,
+          },
+        }),
+      );
+      localStorage.setItem(storageKey, JSON.stringify(queue));
       setOfflineQueueCount(queue.length);
 
       setIncomes((prev) => [
         {
           ...income,
           owner: authUser?.email ?? "Offline user",
-          userId: authUser?.id ?? "",
-          createdAt: Date.now(),
+          userId: authUser.id,
         },
         ...prev,
       ]);
@@ -2058,11 +2146,6 @@ export default function Home() {
 
     if (!supabase) {
       setIncomeError(missingSupabaseEnvMessage);
-      return false;
-    }
-
-    if (!authUser) {
-      setIncomeError("Please log in before saving income.");
       return false;
     }
 
@@ -2076,8 +2159,13 @@ export default function Home() {
           owner: authUser.email,
           account_id: income.accountId,
           amount: income.amount,
+          client_entry_id: income.id,
+          created_at: new Date(income.createdAt).toISOString(),
           source: income.source,
           note: income.note,
+          transaction_date:
+            income.transactionDate ??
+            timestampToLocalDateInputValue(income.createdAt),
         })
         .abortSignal(timeout.signal);
 
@@ -2138,6 +2226,78 @@ export default function Home() {
     } finally {
       timeout.clear();
     }
+  }
+
+  async function updateTransaction(update: LedgerTransactionUpdate) {
+    if (!supabase || !authUser) {
+      const message = !authUser
+        ? "Please log in before editing a transaction."
+        : missingSupabaseEnvMessage;
+      setExpenseError(message);
+      return false;
+    }
+
+    const transactionTimestamp = localDateInputToTimestamp(
+      update.transactionDate,
+    );
+    if (!transactionTimestamp) {
+      setExpenseError("Choose a valid transaction date.");
+      return false;
+    }
+
+    const table =
+      update.type === "expense"
+        ? "expenses"
+        : update.type === "income"
+          ? "incomes"
+          : "transfers";
+    const values =
+      update.type === "expense"
+        ? {
+            account_id: update.accountId,
+            amount: update.amount,
+            category: update.category,
+            created_at: new Date(transactionTimestamp).toISOString(),
+            description: update.description,
+            note: update.note,
+            payment_method: update.paymentMethod,
+            transaction_date: update.transactionDate,
+          }
+        : update.type === "income"
+          ? {
+              account_id: update.accountId,
+              amount: update.amount,
+              created_at: new Date(transactionTimestamp).toISOString(),
+              note: update.note,
+              source: update.source,
+              transaction_date: update.transactionDate,
+            }
+          : {
+              amount: update.amount,
+              created_at: new Date(transactionTimestamp).toISOString(),
+              from_account_id: update.fromAccountId,
+              note: update.note,
+              to_account_id: update.toAccountId,
+              transaction_date: update.transactionDate,
+            };
+
+    const { error } = await supabase
+      .from(table)
+      .update(values)
+      .eq("id", update.id)
+      .eq("user_id", authUser.id);
+
+    if (error) {
+      if (update.type === "income") setIncomeError(error.message);
+      else if (update.type === "transfer") setTransferError(error.message);
+      else setExpenseError(error.message);
+      return false;
+    }
+
+    if (update.type === "income") await loadIncomesFromSupabase();
+    else if (update.type === "transfer") await loadTransfersFromSupabase();
+    else await loadExpensesFromSupabase();
+    return true;
   }
 
   async function addMoneyAccount(account: {
@@ -2237,22 +2397,38 @@ export default function Home() {
     note: string;
     toAccountId: string;
   }) {
+    if (!authUser) {
+      setTransferError("Please log in before saving a transfer.");
+      return false;
+    }
+
+    const createdAt = Date.now();
+    const clientEntryId = crypto.randomUUID();
+
     if (typeof navigator !== "undefined" && !navigator.onLine) {
-      const queueJson = localStorage.getItem("rumahbudget.offlineQueue");
-      const queue = queueJson ? JSON.parse(queueJson) : [];
-      queue.push({ type: "transfer", data: transfer });
-      localStorage.setItem("rumahbudget.offlineQueue", JSON.stringify(queue));
+      const storageKey = getUserOfflineQueueStorageKey(authUser.id);
+      const queue = parseOfflineQueue(localStorage.getItem(storageKey));
+      queue.push(
+        createOfflineQueueItem({
+          id: clientEntryId,
+          userId: authUser.id,
+          type: "transfer",
+          data: { ...transfer, createdAt },
+        }),
+      );
+      localStorage.setItem(storageKey, JSON.stringify(queue));
       setOfflineQueueCount(queue.length);
 
       setTransfers((prev) => [
         {
-          id: crypto.randomUUID(),
-          userId: authUser?.id ?? "",
+          id: clientEntryId,
+          userId: authUser.id,
           fromAccountId: transfer.fromAccountId,
           toAccountId: transfer.toAccountId,
           amount: transfer.amount,
           note: transfer.note,
-          createdAt: Date.now(),
+          createdAt,
+          transactionDate: timestampToLocalDateInputValue(createdAt),
         },
         ...prev,
       ]);
@@ -2261,11 +2437,6 @@ export default function Home() {
 
     if (!supabase) {
       setTransferError(missingSupabaseEnvMessage);
-      return false;
-    }
-
-    if (!authUser) {
-      setTransferError("Please log in before saving a transfer.");
       return false;
     }
 
@@ -2279,7 +2450,10 @@ export default function Home() {
           from_account_id: transfer.fromAccountId,
           to_account_id: transfer.toAccountId,
           amount: transfer.amount,
+          client_entry_id: clientEntryId,
+          created_at: new Date(createdAt).toISOString(),
           note: transfer.note,
+          transaction_date: timestampToLocalDateInputValue(createdAt),
         })
         .abortSignal(timeout.signal);
 
@@ -2492,7 +2666,7 @@ export default function Home() {
 
               <div className="rb-sidebar__footer">
                 <div className="rb-privacy-note">
-                  <strong>Privasi aktif</strong>
+                  <strong>Ruang privat</strong>
                   <span>Data keuangan tetap berada di ruang akun Anda.</span>
                 </div>
                 <p className="truncate text-xs text-slate-400">{signedInEmail}</p>
@@ -2521,9 +2695,24 @@ export default function Home() {
                   </p>
                 </div>
                 <p className="rb-topbar__date">
-                  {headerDateFormatter.format(new Date())}
+                  {selectedMonth?.label ?? headerDateFormatter.format(new Date())}
                 </p>
                 <div className="rb-topbar__actions">
+                  <label className="sr-only" htmlFor="summary-month">
+                    Periode ringkasan
+                  </label>
+                  <select
+                    className="ledger-button ledger-button--secondary"
+                    id="summary-month"
+                    value={selectedMonthKey}
+                    onChange={(event) => setSelectedMonthKey(event.target.value)}
+                  >
+                    {recentMonthOptions.map((period) => (
+                      <option key={period.key} value={period.key}>
+                        {period.label}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     aria-pressed={isBalanceHidden}
                     className="ledger-button ledger-button--secondary"
@@ -2693,7 +2882,7 @@ export default function Home() {
                     "dashboard-charts",
                   )}
                   decisionChecks={decisionChecks}
-                  expenses={activeExpenses}
+                  expenses={monthlyExpenses}
                   highlightClassName={getSectionHighlightClass("overview")}
                   isBalanceHidden={isBalanceHidden}
                   isSandboxMode={isSandboxMode}
@@ -2708,6 +2897,7 @@ export default function Home() {
                   onToggleBalanceVisibility={() =>
                     setIsBalanceHidden((currentValue) => !currentValue)
                   }
+                  periodLabel={cashflowPeriodLabel}
                   plannedSpend={plannedSpend}
                   projectedMonthlyExpenses={projectedMonthlyExpenses}
                   projectedNetCashflow={projectedNetCashflow}
@@ -2735,8 +2925,13 @@ export default function Home() {
                       />
                       <div className="mt-4 space-y-3">
                         {approachingCommitments.map((commitment) => {
+                          const reminderDate = new Date();
                           const isOverdue =
-                            new Date().getDate() >= commitment.dueDay;
+                            reminderDate.getDate() >=
+                            getEffectiveRecurringDueDay(
+                              commitment.dueDay,
+                              reminderDate,
+                            );
 
                           return (
                             <article
@@ -2776,11 +2971,14 @@ export default function Home() {
                                 <div className="flex flex-wrap gap-2">
                                   <SharpButton
                                     type="button"
+                                    disabled={isAutoDeducting}
                                     onClick={() =>
                                       recordCommitmentPayment(commitment)
                                     }
                                   >
-                                    Catat pembayaran
+                                    {isAutoDeducting
+                                      ? "Memproses..."
+                                      : "Catat pembayaran"}
                                   </SharpButton>
                                   <SharpButton
                                     type="button"
@@ -2934,7 +3132,13 @@ export default function Home() {
                 onDeleteExpense={deleteExpense}
                 onDeleteIncome={deleteIncome}
                 onDeleteTransfer={deleteTransfer}
+                onUpdateTransaction={updateTransaction}
+                error={expenseError || incomeError || transferError}
+                isLoading={
+                  isExpenseLoading || isIncomeLoading || isTransferLoading
+                }
                 netHourlyWage={netHourlyWage}
+                isBalanceHidden={isBalanceHidden}
               />
             ) : null}
 
@@ -2974,6 +3178,8 @@ export default function Home() {
                     "report-preview",
                   )}
                   incomes={activeIncomes}
+                  isBalanceHidden={isBalanceHidden}
+                  referenceDate={selectedMonth?.start.getTime() ?? 0}
                   onReportSent={loadEmailReportsFromSupabase}
                 />
 

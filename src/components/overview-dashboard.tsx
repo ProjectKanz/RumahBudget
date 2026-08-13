@@ -61,6 +61,7 @@ type OverviewDashboardProps = {
   onOpenQuickAdd: (tab: "income" | "expense" | "transfer") => void;
   onOpenView: (view: AppView) => void;
   onToggleBalanceVisibility: () => void;
+  periodLabel: string;
   plannedSpend: string;
   projectedMonthlyExpenses: number;
   projectedNetCashflow: number;
@@ -136,6 +137,7 @@ export default function OverviewDashboard({
   onOpenQuickAdd,
   onOpenView,
   onToggleBalanceVisibility,
+  periodLabel,
   plannedSpend,
   projectedMonthlyExpenses,
   projectedNetCashflow,
@@ -182,7 +184,7 @@ export default function OverviewDashboard({
           </header>
 
           <div className="rb-vault-spine__balance">
-            <p className="ledger-label">Saldo total</p>
+            <p className="ledger-label">Saldo total saat ini</p>
             <p className="ledger-money ledger-money--hero">
               <NumberValue>
                 {formatMoney(totalBalance, isBalanceHidden)}
@@ -198,7 +200,7 @@ export default function OverviewDashboard({
 
           <dl className="rb-vault-spine__metrics">
             <div>
-              <dt>Arus bersih bulan ini</dt>
+              <dt>Arus bersih — {periodLabel}</dt>
               <dd
                 className={
                   remainingBalance < 0
@@ -220,7 +222,7 @@ export default function OverviewDashboard({
               <dd>{formatMoney(averageMonthlyBurn, isBalanceHidden)}</dd>
             </div>
             <div>
-              <dt>Energi hidup bulan ini</dt>
+              <dt>Energi hidup — {periodLabel}</dt>
               <dd>{monthlyLifeEnergy}</dd>
             </div>
             <div>
@@ -317,10 +319,16 @@ export default function OverviewDashboard({
                           )}
                         </td>
                         <td className="font-semibold text-white">
-                          {activity.title}
+                          {isBalanceHidden
+                            ? "Detail disembunyikan"
+                            : activity.title}
                         </td>
                         <td>{getActivityLabel(activity.tone)}</td>
-                        <td>{activity.accountLabel}</td>
+                        <td>
+                          {isBalanceHidden
+                            ? "Akun disembunyikan"
+                            : activity.accountLabel}
+                        </td>
                         <td
                           className={`ledger-table__amount ledger-table__amount--${activity.tone}`}
                         >
@@ -350,11 +358,15 @@ export default function OverviewDashboard({
                   >
                     <div>
                       <p className="font-semibold text-white">
-                        {activity.title}
+                        {isBalanceHidden
+                          ? "Detail disembunyikan"
+                          : activity.title}
                       </p>
                       <p className="mt-1 text-xs text-slate-400">
                         {getActivityLabel(activity.tone)} ·{" "}
-                        {activity.accountLabel}
+                        {isBalanceHidden
+                          ? "Akun disembunyikan"
+                          : activity.accountLabel}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
                         {activityDateFormatter.format(
@@ -404,6 +416,10 @@ export default function OverviewDashboard({
               {isBalanceHidden ? "—" : `${spendGaugePercent}%`}
             </span>
           </div>
+
+          <p className="mt-2 text-xs text-slate-500">
+            Proyeksi memakai saldo saat ini dan pola arus kas {periodLabel}.
+          </p>
 
           <label className="ledger-field-label">
             Nominal rencana

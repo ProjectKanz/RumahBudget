@@ -57,8 +57,8 @@ function transfer(id, fromAccountId, toAccountId, amount) {
   };
 }
 
-function snapshot({ accounts, incomes = [], expenses = [], transfers = [], now = januaryReference }) {
-  return calculateFinanceSnapshot({ accounts, incomes, expenses, transfers, now });
+function snapshot({ accounts, incomes = [], expenses = [], transfers = [], now = januaryReference, periodReference }) {
+  return calculateFinanceSnapshot({ accounts, incomes, expenses, transfers, now, periodReference });
 }
 
 test("initial balance increases total balance without becoming monthly income", () => {
@@ -176,4 +176,20 @@ test("income and expenses linked to unknown accounts do not change known balance
   assert.equal(result.monthlyIncome, 9_000);
   assert.equal(result.monthlyExpense, 4_000);
   assert.equal(result.netCashflow, 5_000);
+});
+
+test("historical period changes cashflow selection without changing current balances", () => {
+  const decemberTimestamp = new Date(2026, 11, 15, 12).getTime();
+  const result = snapshot({
+    accounts: [account("bank", 100_000)],
+    incomes: [
+      income("december-income", "bank", 4_000, decemberTimestamp),
+      income("january-income", "bank", 6_000, januaryTimestamp),
+    ],
+    periodReference: decemberTimestamp,
+  });
+
+  assert.equal(result.totalBalance, 110_000);
+  assert.equal(result.monthlyIncome, 4_000);
+  assert.deepEqual(result.monthlyIncomes.map((item) => item.id), ["december-income"]);
 });

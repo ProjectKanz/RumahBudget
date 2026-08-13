@@ -1,8 +1,15 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
+import {
+  isValidTelegramSecret,
+  secretsMatch,
+  verifyTelegramLinkToken,
+} from "@/src/lib/telegram-security";
+import {
+  EXPENSE_CATEGORIES,
+  normalizeExpenseCategory,
+} from "@/src/lib/expense-options";
 
 export const runtime = "nodejs";
-
-const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface TelegramMessage {
   text?: string;
@@ -16,46 +23,15 @@ interface TelegramUpdate {
   edited_message?: TelegramMessage;
 }
 
-function getUserIdFromToken(token: string): string | null {
-  if (uuidRegex.test(token)) {
-    return token;
-  }
-  try {
-    const decoded = Buffer.from(token, "base64").toString("utf8");
-    if (uuidRegex.test(decoded)) {
-      return decoded;
-    }
-  } catch {
-    // Ignore error
-  }
-  return null;
-}
-
-function mapCategory(input: string): string {
-  const normalized = input.trim().toLowerCase();
-
-  if (["groceries", "grocer", "grocery", "belanja", "dapur", "makan", "makanan"].includes(normalized)) {
-    return "Groceries";
-  }
-  if (["transportation", "transport", "transportasi", "ojek", "bensin", "perjalanan", "travel"].includes(normalized)) {
-    return "Transportation";
-  }
-  if (["bills", "bill", "tagihan", "listrik", "air", "wifi", "internet", "pulsa"].includes(normalized)) {
-    return "Bills";
-  }
-  if (["education", "edu", "pendidikan", "sekolah", "kuliah", "buku", "kursus"].includes(normalized)) {
-    return "Education";
-  }
-  if (["health", "healthy", "kesehatan", "obat", "dokter", "sakit", "klinik", "rs"].includes(normalized)) {
-    return "Health";
-  }
-
-  const match = ["Groceries", "Transportation", "Bills", "Education", "Health", "Other"].find(
-    (cat) => cat.toLowerCase() === normalized,
-  );
-  if (match) return match;
-
-  return "Other";
+function getJakartaTransactionDate() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 async function sendTelegramMessage(chatId: string | number, text: string, botToken?: string) {
@@ -85,34 +61,16 @@ async function sendTelegramMessage(chatId: string | number, text: string, botTok
   }
 }
 
-async function getMostRecentStoredBotToken(supabaseAdmin: SupabaseClient) {
-  try {
-    const { data } = await supabaseAdmin
-      .from("report_preferences")
-      .select("telegram_bot_token")
-      .not("telegram_bot_token", "is", null)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const latestPreference = data as { telegram_bot_token?: string | null } | null;
-    return latestPreference?.telegram_bot_token || "";
-  } catch (err) {
-    console.error("Error fetching latest stored Telegram bot token:", err);
-    return "";
-  }
-}
-
 async function sendHelpMessage(chatId: number, botToken?: string) {
   const helpText =
     `<b>RumahBudget Bot Help</b>\n\n` +
     `Here are the available commands:\n\n` +
     `• <b>Link your account:</b>\n` +
     `<code>/start &lt;token&gt;</code>\n` +
-    `<i>Copy the token from your settings or encode your user_id to base64.</i>\n\n` +
+    `<i>Generate a short-lived link command from your RumahBudget settings.</i>\n\n` +
     `• <b>Log an Expense:</b>\n` +
     `<code>/expense &lt;amount&gt; &lt;category&gt; [note]</code>\n` +
-    `<i>Categories: Groceries, Transportation, Bills, Education, Health, Other</i>\n` +
+    `<i>Categories: ${EXPENSE_CATEGORIES.join(", ")}</i>\n` +
     `Example: <code>/expense 50000 Groceries Dinner last night</code>\n\n` +
     `• <b>Log an Income:</b>\n` +
     `<code>/income &lt;amount&gt; &lt;source&gt; [note]</code>\n` +
@@ -126,13 +84,30 @@ async function sendHelpMessage(chatId: number, botToken?: string) {
 }
 
 export async function POST(request: Request) {
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const suppliedWebhookSecret = request.headers.get(
+    "x-telegram-bot-api-secret-token",
+  );
+
+  if (!isValidTelegramSecret(webhookSecret)) {
+    return Response.json(
+      { error: "Telegram webhook security is not configured." },
+      { status: 503 },
+    );
+  }
+
+  if (!secretsMatch(webhookSecret, suppliedWebhookSecret)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const linkSecret = process.env.TELEGRAM_LINK_SECRET;
 
-  if (!supabaseUrl || !supabaseServiceKey) {
+  if (!supabaseUrl || !supabaseServiceKey || !isValidTelegramSecret(linkSecret)) {
     return Response.json(
-      { error: "Supabase service role configuration is missing on server." },
-      { status: 500 },
+      { error: "Telegram server security configuration is missing." },
+      { status: 503 },
     );
   }
 
@@ -158,13 +133,17 @@ export async function POST(request: Request) {
 
   const chatId = message.chat.id;
   const text = message.text.trim();
-  const fallbackUserId = process.env.TELEGRAM_FALLBACK_USER_ID || "";
-
   // 2. Handle /start
   if (text.startsWith("/start")) {
     const parts = text.split(/\s+/);
     const token = parts[1];
     let startBotToken: string | undefined = undefined;
+    let existingPreference: {
+      weekly_enabled?: boolean | null;
+      monthly_enabled?: boolean | null;
+      recipient_email?: string | null;
+      telegram_bot_token?: string | null;
+    } | null = null;
 
     if (!token) {
       await sendTelegramMessage(
@@ -175,11 +154,11 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
-    const userId = getUserIdFromToken(token);
+    const userId = verifyTelegramLinkToken(token, linkSecret);
     if (!userId) {
       await sendTelegramMessage(
         chatId,
-        "❌ <b>Invalid token format.</b>\nPlease copy the correct base64 token or UUID from your settings page.",
+        "❌ <b>Invalid or expired link token.</b>\nGenerate a new <code>/start</code> command from RumahBudget settings.",
         startBotToken,
       );
       return Response.json({ ok: true });
@@ -188,18 +167,15 @@ export async function POST(request: Request) {
     try {
       const { data: prefData } = await supabaseAdmin
         .from("report_preferences")
-        .select("telegram_bot_token")
+        .select("weekly_enabled, monthly_enabled, recipient_email, telegram_bot_token")
         .eq("user_id", userId)
         .maybeSingle();
-      if (prefData?.telegram_bot_token) {
-        startBotToken = prefData.telegram_bot_token;
+      existingPreference = prefData;
+      if (existingPreference?.telegram_bot_token) {
+        startBotToken = existingPreference.telegram_bot_token;
       }
     } catch (err) {
       console.error("Error fetching bot token in /start:", err);
-    }
-
-    if (!startBotToken) {
-      startBotToken = await getMostRecentStoredBotToken(supabaseAdmin);
     }
 
     let linkedUserEmail = "";
@@ -228,9 +204,9 @@ export async function POST(request: Request) {
     try {
       const linkPayload: Record<string, string | boolean> = {
         user_id: userId,
-        weekly_enabled: false,
-        monthly_enabled: false,
-        recipient_email: linkedUserEmail,
+        weekly_enabled: Boolean(existingPreference?.weekly_enabled),
+        monthly_enabled: Boolean(existingPreference?.monthly_enabled),
+        recipient_email: existingPreference?.recipient_email || linkedUserEmail,
         telegram_chat_id: String(chatId),
         updated_at: new Date().toISOString(),
       };
@@ -251,22 +227,11 @@ export async function POST(request: Request) {
           upsertError.message?.includes("telegram_chat_id") ||
           upsertError.code === "42P01"
         ) {
-          // Columns or table don't exist yet
-          if (fallbackUserId && userId === fallbackUserId) {
-            await sendTelegramMessage(
-              chatId,
-              "⚠️ Database columns are missing, but you are using the configured local fallback user ID.\n\n" +
-                "You can now log transactions using <code>/expense</code> and <code>/income</code>.",
-              startBotToken,
-            );
-          } else {
-            await sendTelegramMessage(
-              chatId,
-              "⚠️ Database columns or tables for Telegram integration are missing. Please run the SQL migration script first.\n\n" +
-                "You can also set <code>TELEGRAM_FALLBACK_USER_ID</code> in environment variables for testing.",
-              startBotToken,
-            );
-          }
+          await sendTelegramMessage(
+            chatId,
+            "⚠️ Database columns or tables for Telegram integration are missing. Please run the SQL migration script first.",
+            startBotToken,
+          );
         } else {
           await sendTelegramMessage(
             chatId,
@@ -313,16 +278,11 @@ export async function POST(request: Request) {
         prefErr.message?.includes("telegram_chat_id") ||
         prefErr.code === "42P01"
       ) {
-        if (fallbackUserId) {
-          userId = fallbackUserId;
-        } else {
-          await sendTelegramMessage(
-            chatId,
-            "⚠️ Database columns or tables for Telegram integration are missing. Please run the SQL migration script first.\n\n" +
-              "You can also set <code>TELEGRAM_FALLBACK_USER_ID</code> in environment variables for testing.",
-          );
-          return Response.json({ ok: true });
-        }
+        await sendTelegramMessage(
+          chatId,
+          "⚠️ Database columns or tables for Telegram integration are missing. Please run the SQL migration script first.",
+        );
+        return Response.json({ ok: true });
       } else {
         await sendTelegramMessage(
           chatId,
@@ -331,15 +291,11 @@ export async function POST(request: Request) {
         return Response.json({ ok: true });
       }
     } else if (!prefData || !prefData.user_id) {
-      if (fallbackUserId) {
-        userId = fallbackUserId;
-      } else {
-        await sendTelegramMessage(
-          chatId,
-          "⚠️ <b>Chat not linked.</b>\nYour Telegram chat is not linked to any RumahBudget account.\nUse <code>/start &lt;token&gt;</code> to link your account first.",
-        );
-        return Response.json({ ok: true });
-      }
+      await sendTelegramMessage(
+        chatId,
+        "⚠️ <b>Chat not linked.</b>\nYour Telegram chat is not linked to any RumahBudget account.\nGenerate a new <code>/start</code> command from RumahBudget settings.",
+      );
+      return Response.json({ ok: true });
     } else {
       userId = prefData.user_id;
       userBotToken = prefData.telegram_bot_token || "";
@@ -389,7 +345,7 @@ export async function POST(request: Request) {
     }
 
     const rawCategory = parts[2];
-    const category = mapCategory(rawCategory);
+    const category = normalizeExpenseCategory(rawCategory);
     const note = parts.slice(3).join(" ") || "Logged via Telegram";
 
     try {
@@ -428,8 +384,10 @@ export async function POST(request: Request) {
         account_id: account.id,
         amount: amountVal,
         category,
+        description: note,
         payment_method: "Cash",
         note,
+        transaction_date: getJakartaTransactionDate(),
       });
 
       if (insErr) {
@@ -529,6 +487,7 @@ export async function POST(request: Request) {
         amount: amountVal,
         source,
         note,
+        transaction_date: getJakartaTransactionDate(),
       });
 
       if (insErr) {

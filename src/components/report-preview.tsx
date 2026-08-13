@@ -9,7 +9,7 @@ import {
   StatusChip,
   TerminalPanel,
 } from "@/src/components/cockpit-ui";
-import { formatCurrency } from "@/src/lib/format";
+import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import {
   clearSupabaseAuthStorage,
@@ -31,6 +31,8 @@ type ReportPreviewProps = {
   expenses: Expense[];
   highlightClassName?: string;
   incomes: Income[];
+  isBalanceHidden: boolean;
+  referenceDate: number;
   onReportSent?: () => void | Promise<void>;
 };
 
@@ -79,6 +81,12 @@ function getMonthEnd(date: Date) {
 
 function isInPeriod(createdAt: number, startDate: Date, endDate: Date) {
   return createdAt >= startDate.getTime() && createdAt <= endDate.getTime();
+}
+
+function toLocalDateKey(date: Date) {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 function getFinancialStatus(totalIncome: number, totalExpense: number) {
@@ -147,6 +155,8 @@ export default function ReportPreview({
   expenses,
   highlightClassName = "",
   incomes,
+  isBalanceHidden,
+  referenceDate,
   onReportSent,
 }: ReportPreviewProps) {
   const [reportType, setReportType] = useState<ReportType>("weekly");
@@ -155,7 +165,7 @@ export default function ReportPreview({
   const [sendError, setSendError] = useState("");
 
   const report = useMemo(() => {
-    const today = new Date();
+    const today = new Date(referenceDate);
     const startDate =
       reportType === "weekly" ? getWeekStart(today) : getMonthStart(today);
     const endDate =
@@ -209,7 +219,7 @@ export default function ReportPreview({
       topCategory,
       recommendation: getRecommendation(status.label, topCategory, totalIncome),
     };
-  }, [expenses, incomes, reportType]);
+  }, [expenses, incomes, referenceDate, reportType]);
 
   async function sendReport() {
     setIsSending(true);
@@ -259,6 +269,16 @@ export default function ReportPreview({
         body: JSON.stringify({
           reportType: report.reportName,
           periodLabel: report.periodLabel,
+          periodStart: toLocalDateKey(
+            reportType === "weekly"
+              ? getWeekStart(new Date(referenceDate))
+              : getMonthStart(new Date(referenceDate)),
+          ),
+          periodEnd: toLocalDateKey(
+            reportType === "weekly"
+              ? getWeekEnd(getWeekStart(new Date(referenceDate)))
+              : getMonthEnd(new Date(referenceDate)),
+          ),
           totalIncome: formatCurrency(report.totalIncome),
           totalExpense: formatCurrency(report.totalExpense),
           remainingBalance: formatCurrency(report.remainingBalance),
@@ -330,14 +350,22 @@ export default function ReportPreview({
             <div>
               <p className="text-sm text-slate-500">Total Income</p>
               <p className="mt-2 text-xl font-bold text-lime-300">
-                <NumberValue>{formatCurrency(report.totalIncome)}</NumberValue>
+                <NumberValue>
+                  {isBalanceHidden
+                    ? hiddenBalanceLabel
+                    : formatCurrency(report.totalIncome)}
+                </NumberValue>
               </p>
             </div>
 
             <div>
               <p className="text-sm text-slate-500">Total Expenses</p>
               <p className="mt-2 text-xl font-bold text-rose-300">
-                <NumberValue>{formatCurrency(report.totalExpense)}</NumberValue>
+                <NumberValue>
+                  {isBalanceHidden
+                    ? hiddenBalanceLabel
+                    : formatCurrency(report.totalExpense)}
+                </NumberValue>
               </p>
             </div>
 
@@ -345,11 +373,15 @@ export default function ReportPreview({
               <p className="text-sm text-slate-500">Period Net Cashflow</p>
               <p
                 className={`mt-2 text-xl font-bold ${
-                  report.remainingBalance < 0 ? "text-rose-300" : "text-white"
+                  !isBalanceHidden && report.remainingBalance < 0
+                    ? "text-rose-300"
+                    : "text-white"
                 }`}
               >
                 <NumberValue>
-                  {formatCurrency(report.remainingBalance)}
+                  {isBalanceHidden
+                    ? hiddenBalanceLabel
+                    : formatCurrency(report.remainingBalance)}
                 </NumberValue>
               </p>
             </div>
@@ -361,12 +393,16 @@ export default function ReportPreview({
                 Period Cashflow Status
               </p>
               <p
-                className={`mt-2 text-2xl font-bold ${report.status.className}`}
+                className={`mt-2 text-2xl font-bold ${
+                  isBalanceHidden ? "text-slate-300" : report.status.className
+                }`}
               >
-                {report.status.label}
+                {isBalanceHidden ? "Hidden" : report.status.label}
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-400">
-                {report.status.explanation}
+                {isBalanceHidden
+                  ? "Cashflow status hidden while privacy mode is active."
+                  : report.status.explanation}
               </p>
             </div>
 
@@ -374,11 +410,13 @@ export default function ReportPreview({
               <p className="text-sm text-slate-500">Top Category</p>
               <p className="mt-2 flex flex-wrap gap-2 text-2xl font-bold text-white">
                 <StatusChip tone="fuchsia">
-                  {report.topCategory}
+                  {isBalanceHidden ? "Hidden" : report.topCategory}
                 </StatusChip>
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-400">
-                {report.recommendation}
+                {isBalanceHidden
+                  ? "Category recommendation hidden while privacy mode is active."
+                  : report.recommendation}
               </p>
             </div>
           </div>

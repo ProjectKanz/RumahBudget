@@ -2,14 +2,27 @@
 
 import {
   EmptyState,
+  Notice,
   NumberValue,
   SectionHeader,
   SegmentedControl,
   SharpButton,
+  SharpInput,
+  SharpSelect,
   StatusChip,
   TerminalPanel,
 } from "@/src/components/cockpit-ui";
-import { formatCurrency } from "@/src/lib/format";
+import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
+import {
+  EXPENSE_CATEGORY_OPTIONS,
+  PAYMENT_METHOD_OPTIONS,
+} from "@/src/lib/expense-options";
+import { calculateLifeEnergyHours } from "@/src/lib/life-energy";
+import {
+  localDateInputToTimestamp,
+  timestampToLocalDateInputValue,
+  type LedgerTransactionUpdate,
+} from "@/src/lib/transaction-entry";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
 import type { MoneyAccount } from "@/src/types/money-account";
@@ -23,8 +36,10 @@ type CombinedTransaction =
       id: string;
       owner: string;
       createdAt: number;
+      transactionDate: string;
       type: "Income";
       amount: number;
+      accountId: string;
       accountName: string;
       title: string;
       note: string;
@@ -33,9 +48,13 @@ type CombinedTransaction =
       id: string;
       owner: string;
       createdAt: number;
+      transactionDate: string;
       type: "Expenses";
       amount: number;
+      accountId: string;
       accountName: string;
+      category: string;
+      description: string;
       title: string;
       paymentMethod: string;
       note: string;
@@ -44,19 +63,19 @@ type CombinedTransaction =
       id: string;
       owner: string;
       createdAt: number;
+      transactionDate: string;
       type: "Transfers";
       amount: number;
+      fromAccountId: string;
       fromAccountName: string;
+      toAccountId: string;
       toAccountName: string;
       title: string;
       note: string;
     };
 
 const filters: TransactionFilter[] = ["All", "Income", "Expenses", "Transfers"];
-const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
+const dateFormatter = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" });
 const categoryLabels = new Map([
   ["Belanja Dapur", "Groceries"],
   ["Transportasi", "Transportation"],
@@ -81,8 +100,30 @@ type TransactionHistoryProps = {
   onDeleteExpense: (id: string) => void | Promise<void>;
   onDeleteIncome: (id: string) => void | Promise<void>;
   onDeleteTransfer: (id: string) => void | Promise<void>;
+  error?: string;
+  isBalanceHidden: boolean;
+  isLoading?: boolean;
   netHourlyWage?: number;
+  onUpdateTransaction?: (
+    update: LedgerTransactionUpdate,
+  ) => Promise<boolean>;
 };
+
+function getTransactionDate(transactionDate: string | undefined, createdAt: number) {
+  if (transactionDate) {
+    return transactionDate;
+  }
+
+  return createdAt > 0 ? timestampToLocalDateInputValue(createdAt) : "";
+}
+
+function escapeCsvValue(value: string | number) {
+  const normalized = String(value).replace(/\r?\n/g, " ");
+  const spreadsheetSafe = /^[=+\-@]/.test(normalized)
+    ? `'${normalized}`
+    : normalized;
+  return `"${spreadsheetSafe.replace(/"/g, '""')}"`;
+}
 
 export default function TransactionHistory({
   accountLabel,
@@ -93,9 +134,24 @@ export default function TransactionHistory({
   onDeleteExpense,
   onDeleteIncome,
   onDeleteTransfer,
+  error = "",
+  isBalanceHidden,
+  isLoading = false,
   netHourlyWage = 0,
+  onUpdateTransaction,
 }: TransactionHistoryProps) {
   const [filter, setFilter] = useState<TransactionFilter>("All");
+  const [query, setQuery] = useState("");
+  const [accountFilter, setAccountFilter] = useState("All");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState("All");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [editDraft, setEditDraft] = useState<LedgerTransactionUpdate | null>(
+    null,
+  );
+  const [editError, setEditError] = useState("");
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const transactions = useMemo(() => {
     const accountNames = new Map(
@@ -105,25 +161,44 @@ export default function TransactionHistory({
       id: income.id,
       owner: income.owner,
       createdAt: income.createdAt ?? 0,
+      transactionDate: getTransactionDate(
+        income.transactionDate,
+        income.createdAt,
+      ),
       type: "Income",
       amount: income.amount,
+      accountId: income.accountId,
       accountName: accountNames.get(income.accountId) ?? "Unassigned",
       title: income.source,
       note: income.note,
     }));
 
     const expenseTransactions: CombinedTransaction[] = expenses.map(
-      (expense) => ({
-        id: expense.id,
-        owner: expense.owner,
-        createdAt: expense.createdAt ?? 0,
-        type: "Expenses",
-        amount: expense.amount,
-        accountName: accountNames.get(expense.accountId) ?? "Unassigned",
-        title: categoryLabels.get(expense.category) ?? expense.category,
-        paymentMethod: expense.paymentMethod,
-        note: expense.note,
-      }),
+      (expense) => {
+        const category = categoryLabels.get(expense.category) ?? expense.category;
+        const description = expense.description?.trim() ?? "";
+        const paymentMethod =
+          paymentMethodLabels.get(expense.paymentMethod) ?? expense.paymentMethod;
+
+        return {
+          id: expense.id,
+          owner: expense.owner,
+          createdAt: expense.createdAt ?? 0,
+          transactionDate: getTransactionDate(
+            expense.transactionDate,
+            expense.createdAt,
+          ),
+          type: "Expenses",
+          amount: expense.amount,
+          accountId: expense.accountId,
+          accountName: accountNames.get(expense.accountId) ?? "Unassigned",
+          category,
+          description,
+          title: description || category,
+          paymentMethod,
+          note: expense.note,
+        };
+      },
     );
     const transferTransactions: CombinedTransaction[] = transfers.map(
       (transfer) => {
@@ -134,11 +209,17 @@ export default function TransactionHistory({
 
         return {
           id: transfer.id,
-          owner: transfer.userId,
+          owner: accountLabel,
           createdAt: transfer.createdAt ?? 0,
+          transactionDate: getTransactionDate(
+            transfer.transactionDate,
+            transfer.createdAt,
+          ),
           type: "Transfers",
           amount: transfer.amount,
+          fromAccountId: transfer.fromAccountId,
           fromAccountName,
+          toAccountId: transfer.toAccountId,
           toAccountName,
           title: `${fromAccountName} to ${toAccountName}`,
           note: transfer.note,
@@ -150,19 +231,296 @@ export default function TransactionHistory({
       ...incomeTransactions,
       ...expenseTransactions,
       ...transferTransactions,
-    ].sort(
-      (firstTransaction, secondTransaction) =>
-        secondTransaction.createdAt - firstTransaction.createdAt,
-    );
-  }, [expenses, incomes, moneyAccounts, transfers]);
+    ].sort((firstTransaction, secondTransaction) => {
+      const dateDifference =
+        (localDateInputToTimestamp(secondTransaction.transactionDate) ??
+          secondTransaction.createdAt) -
+        (localDateInputToTimestamp(firstTransaction.transactionDate) ??
+          firstTransaction.createdAt);
 
-  const filteredTransactions = useMemo(
-    () =>
-      filter === "All"
-        ? transactions
-        : transactions.filter((transaction) => transaction.type === filter),
-    [filter, transactions],
+      return dateDifference || secondTransaction.createdAt - firstTransaction.createdAt;
+    });
+  }, [accountLabel, expenses, incomes, moneyAccounts, transfers]);
+
+  const filteredTransactions = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return transactions.filter((transaction) => {
+      if (filter !== "All" && transaction.type !== filter) {
+        return false;
+      }
+
+      if (
+        dateFrom &&
+        (!transaction.transactionDate || transaction.transactionDate < dateFrom)
+      ) {
+        return false;
+      }
+
+      if (
+        dateTo &&
+        (!transaction.transactionDate || transaction.transactionDate > dateTo)
+      ) {
+        return false;
+      }
+
+      if (accountFilter !== "All") {
+        const matchesAccount =
+          transaction.type === "Transfers"
+            ? transaction.fromAccountId === accountFilter ||
+              transaction.toAccountId === accountFilter
+            : transaction.accountId === accountFilter;
+
+        if (!matchesAccount) {
+          return false;
+        }
+      }
+
+      if (
+        categoryFilter !== "All" &&
+        (transaction.type !== "Expenses" ||
+          transaction.category !== categoryFilter)
+      ) {
+        return false;
+      }
+
+      if (
+        paymentMethodFilter !== "All" &&
+        (transaction.type !== "Expenses" ||
+          transaction.paymentMethod !== paymentMethodFilter)
+      ) {
+        return false;
+      }
+
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      const searchableText =
+        transaction.type === "Transfers"
+          ? [
+              transaction.title,
+              transaction.note,
+              transaction.owner,
+              transaction.fromAccountName,
+              transaction.toAccountName,
+            ]
+          : transaction.type === "Expenses"
+            ? [
+                transaction.title,
+                transaction.description,
+                transaction.category,
+                transaction.paymentMethod,
+                transaction.note,
+                transaction.owner,
+                transaction.accountName,
+              ]
+            : [
+                transaction.title,
+                transaction.note,
+                transaction.owner,
+                transaction.accountName,
+              ];
+
+      return searchableText.some((value) =>
+        value.toLowerCase().includes(normalizedQuery),
+      );
+    });
+  }, [
+    accountFilter,
+    categoryFilter,
+    dateFrom,
+    dateTo,
+    filter,
+    paymentMethodFilter,
+    query,
+    transactions,
+  ]);
+
+  const hasSecondaryFilters = Boolean(
+    query ||
+      dateFrom ||
+      dateTo ||
+      accountFilter !== "All" ||
+      categoryFilter !== "All" ||
+      paymentMethodFilter !== "All",
   );
+
+  function clearSecondaryFilters() {
+    setQuery("");
+    setDateFrom("");
+    setDateTo("");
+    setAccountFilter("All");
+    setCategoryFilter("All");
+    setPaymentMethodFilter("All");
+  }
+
+  function exportFilteredTransactions() {
+    if (isBalanceHidden || filteredTransactions.length === 0) {
+      return;
+    }
+
+    const headers = [
+      "Date",
+      "Type",
+      "Description",
+      "Account",
+      "Category",
+      "Payment Method",
+      "Amount",
+      "Note",
+      "Owner",
+    ];
+    const rows = filteredTransactions.map((transaction) => {
+      const account =
+        transaction.type === "Transfers"
+          ? `${transaction.fromAccountName} -> ${transaction.toAccountName}`
+          : transaction.accountName;
+      const category =
+        transaction.type === "Expenses" ? transaction.category : "";
+      const paymentMethod =
+        transaction.type === "Expenses" ? transaction.paymentMethod : "";
+
+      return [
+        transaction.transactionDate,
+        transaction.type === "Expenses"
+          ? "Expense"
+          : transaction.type === "Transfers"
+            ? "Transfer"
+            : "Income",
+        transaction.title,
+        account,
+        category,
+        paymentMethod,
+        transaction.amount,
+        transaction.note,
+        transaction.owner,
+      ];
+    });
+    const csv = [headers, ...rows]
+      .map((row) => row.map(escapeCsvValue).join(","))
+      .join("\r\n");
+    const blob = new Blob([`\uFEFF${csv}`], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `rumahbudget-ledger-${timestampToLocalDateInputValue(Date.now())}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function beginEdit(transaction: CombinedTransaction) {
+    setEditError("");
+
+    if (transaction.type === "Expenses") {
+      setEditDraft({
+        type: "expense",
+        id: transaction.id,
+        accountId: transaction.accountId,
+        amount: transaction.amount,
+        category: transaction.category,
+        description: transaction.description,
+        note: transaction.note,
+        paymentMethod: transaction.paymentMethod,
+        transactionDate: transaction.transactionDate,
+      });
+      return;
+    }
+
+    if (transaction.type === "Income") {
+      setEditDraft({
+        type: "income",
+        id: transaction.id,
+        accountId: transaction.accountId,
+        amount: transaction.amount,
+        note: transaction.note,
+        source: transaction.title,
+        transactionDate: transaction.transactionDate,
+      });
+      return;
+    }
+
+    setEditDraft({
+      type: "transfer",
+      id: transaction.id,
+      amount: transaction.amount,
+      fromAccountId: transaction.fromAccountId,
+      note: transaction.note,
+      toAccountId: transaction.toAccountId,
+      transactionDate: transaction.transactionDate,
+    });
+  }
+
+  async function saveEdit() {
+    if (!editDraft || !onUpdateTransaction) {
+      return;
+    }
+
+    if (!Number.isFinite(editDraft.amount) || editDraft.amount <= 0) {
+      setEditError("Enter an amount greater than 0.");
+      return;
+    }
+
+    if (!localDateInputToTimestamp(editDraft.transactionDate)) {
+      setEditError("Choose a valid transaction date.");
+      return;
+    }
+
+    if (editDraft.type === "expense" && !editDraft.description.trim()) {
+      setEditError("Enter a merchant or transaction description.");
+      return;
+    }
+
+    if (editDraft.type === "income" && !editDraft.source.trim()) {
+      setEditError("Enter an income source or description.");
+      return;
+    }
+
+    if (
+      editDraft.type !== "transfer" &&
+      !moneyAccounts.some((account) => account.id === editDraft.accountId)
+    ) {
+      setEditError("Choose an active account.");
+      return;
+    }
+
+    if (
+      editDraft.type === "transfer" &&
+      (editDraft.fromAccountId === editDraft.toAccountId ||
+        !moneyAccounts.some(
+          (account) => account.id === editDraft.fromAccountId,
+        ) ||
+        !moneyAccounts.some((account) => account.id === editDraft.toAccountId))
+    ) {
+      setEditError("Choose two different active accounts.");
+      return;
+    }
+
+    setIsUpdating(true);
+    setEditError("");
+
+    try {
+      const didUpdate = await onUpdateTransaction(editDraft);
+
+      if (didUpdate) {
+        setEditDraft(null);
+      } else {
+        setEditError("The transaction could not be updated.");
+      }
+    } catch (updateError) {
+      setEditError(
+        updateError instanceof Error
+          ? updateError.message
+          : "The transaction could not be updated.",
+      );
+    } finally {
+      setIsUpdating(false);
+    }
+  }
 
   return (
     <section
@@ -185,7 +543,10 @@ export default function TransactionHistory({
           description={
             <>
               All income, expenses, and transfers in one place for{" "}
-              <span className="text-slate-200">{accountLabel}</span>.
+              <span className="text-slate-200">
+                {isBalanceHidden ? "hidden account" : accountLabel}
+              </span>
+              .
             </>
           }
           eyebrow="Transaction History"
@@ -193,10 +554,352 @@ export default function TransactionHistory({
           tone="cyan"
         />
 
+        {!isBalanceHidden ? (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="text-sm text-slate-300 sm:col-span-2 lg:col-span-3">
+            Search ledger
+            <SharpInput
+              placeholder="Search description, note, account, category, or payment method"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+
+          <label className="text-sm text-slate-300">
+            From date
+            <SharpInput
+              max={dateTo || undefined}
+              type="date"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+            />
+          </label>
+
+          <label className="text-sm text-slate-300">
+            To date
+            <SharpInput
+              min={dateFrom || undefined}
+              type="date"
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+            />
+          </label>
+
+          <label className="text-sm text-slate-300">
+            Account
+            <SharpSelect
+              value={accountFilter}
+              onChange={(event) => setAccountFilter(event.target.value)}
+            >
+              <option value="All">All accounts</option>
+              {moneyAccounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </SharpSelect>
+          </label>
+
+          <label className="text-sm text-slate-300">
+            Category
+            <SharpSelect
+              value={categoryFilter}
+              onChange={(event) => setCategoryFilter(event.target.value)}
+            >
+              <option value="All">All categories</option>
+              {EXPENSE_CATEGORY_OPTIONS.map((category) => (
+                <option key={category.value} value={category.value}>
+                  {category.label}
+                </option>
+              ))}
+            </SharpSelect>
+          </label>
+
+          <label className="text-sm text-slate-300">
+            Payment method
+            <SharpSelect
+              value={paymentMethodFilter}
+              onChange={(event) => setPaymentMethodFilter(event.target.value)}
+            >
+              <option value="All">All payment methods</option>
+              {PAYMENT_METHOD_OPTIONS.map((paymentMethod) => (
+                <option key={paymentMethod.value} value={paymentMethod.value}>
+                  {paymentMethod.label}
+                </option>
+              ))}
+            </SharpSelect>
+          </label>
+          </div>
+        ) : (
+          <Notice className="mt-5">
+            Ledger search and detailed filters are hidden while privacy mode is
+            active.
+          </Notice>
+        )}
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-400">
+            {filteredTransactions.length} of {transactions.length} records
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {hasSecondaryFilters ? (
+              <SharpButton type="button" onClick={clearSecondaryFilters}>
+                Clear Filters
+              </SharpButton>
+            ) : null}
+            <SharpButton
+              disabled={
+                isBalanceHidden || filteredTransactions.length === 0
+              }
+              title={
+                isBalanceHidden
+                  ? "Turn off privacy mode before exporting sensitive data."
+                  : undefined
+              }
+              type="button"
+              onClick={exportFilteredTransactions}
+            >
+              Export Filtered CSV
+            </SharpButton>
+          </div>
+        </div>
+
+        {error ? (
+          <Notice className="mt-4" tone="rose">
+            {error}
+          </Notice>
+        ) : null}
+
+        {!isBalanceHidden && editDraft ? (
+          <div className="cockpit-card mt-4 border border-cyan-300/30 bg-cyan-300/5 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="font-bold text-white">Edit transaction</h3>
+              <SharpButton type="button" onClick={() => setEditDraft(null)}>
+                Cancel
+              </SharpButton>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm text-slate-300">
+                Amount
+                <SharpInput
+                  inputMode="numeric"
+                  min="0"
+                  type="number"
+                  value={String(editDraft.amount)}
+                  onChange={(event) =>
+                    setEditDraft({
+                      ...editDraft,
+                      amount: Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label className="text-sm text-slate-300">
+                Transaction date
+                <SharpInput
+                  type="date"
+                  value={editDraft.transactionDate}
+                  onChange={(event) =>
+                    setEditDraft({
+                      ...editDraft,
+                      transactionDate: event.target.value,
+                    })
+                  }
+                />
+              </label>
+
+              {editDraft.type === "expense" ? (
+                <>
+                  <label className="text-sm text-slate-300 sm:col-span-2">
+                    Merchant / Description
+                    <SharpInput
+                      maxLength={120}
+                      value={editDraft.description}
+                      onChange={(event) =>
+                        setEditDraft({
+                          ...editDraft,
+                          description: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="text-sm text-slate-300">
+                    Account
+                    <SharpSelect
+                      value={editDraft.accountId}
+                      onChange={(event) =>
+                        setEditDraft({
+                          ...editDraft,
+                          accountId: event.target.value,
+                        })
+                      }
+                    >
+                      {moneyAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </SharpSelect>
+                  </label>
+                  <label className="text-sm text-slate-300">
+                    Category
+                    <SharpSelect
+                      value={editDraft.category}
+                      onChange={(event) =>
+                        setEditDraft({
+                          ...editDraft,
+                          category: event.target.value,
+                        })
+                      }
+                    >
+                      {EXPENSE_CATEGORY_OPTIONS.map((category) => (
+                        <option key={category.value} value={category.value}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </SharpSelect>
+                  </label>
+                  <label className="text-sm text-slate-300">
+                    Payment method
+                    <SharpSelect
+                      value={editDraft.paymentMethod}
+                      onChange={(event) =>
+                        setEditDraft({
+                          ...editDraft,
+                          paymentMethod: event.target.value,
+                        })
+                      }
+                    >
+                      {PAYMENT_METHOD_OPTIONS.map((paymentMethod) => (
+                        <option
+                          key={paymentMethod.value}
+                          value={paymentMethod.value}
+                        >
+                          {paymentMethod.label}
+                        </option>
+                      ))}
+                    </SharpSelect>
+                  </label>
+                </>
+              ) : null}
+
+              {editDraft.type === "income" ? (
+                <>
+                  <label className="text-sm text-slate-300">
+                    Account
+                    <SharpSelect
+                      value={editDraft.accountId}
+                      onChange={(event) =>
+                        setEditDraft({
+                          ...editDraft,
+                          accountId: event.target.value,
+                        })
+                      }
+                    >
+                      {moneyAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </SharpSelect>
+                  </label>
+                  <label className="text-sm text-slate-300">
+                    Source / Description
+                    <SharpInput
+                      maxLength={120}
+                      value={editDraft.source}
+                      onChange={(event) =>
+                        setEditDraft({
+                          ...editDraft,
+                          source: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                </>
+              ) : null}
+
+              {editDraft.type === "transfer" ? (
+                <>
+                  <label className="text-sm text-slate-300">
+                    From account
+                    <SharpSelect
+                      value={editDraft.fromAccountId}
+                      onChange={(event) =>
+                        setEditDraft({
+                          ...editDraft,
+                          fromAccountId: event.target.value,
+                        })
+                      }
+                    >
+                      {moneyAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </SharpSelect>
+                  </label>
+                  <label className="text-sm text-slate-300">
+                    To account
+                    <SharpSelect
+                      value={editDraft.toAccountId}
+                      onChange={(event) =>
+                        setEditDraft({
+                          ...editDraft,
+                          toAccountId: event.target.value,
+                        })
+                      }
+                    >
+                      {moneyAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </SharpSelect>
+                  </label>
+                </>
+              ) : null}
+
+              <label className="text-sm text-slate-300 sm:col-span-2">
+                Additional note (optional)
+                <SharpInput
+                  maxLength={240}
+                  value={editDraft.note}
+                  onChange={(event) =>
+                    setEditDraft({ ...editDraft, note: event.target.value })
+                  }
+                />
+              </label>
+            </div>
+
+            {editError ? (
+              <Notice className="mt-3" tone="rose">
+                {editError}
+              </Notice>
+            ) : null}
+
+            <SharpButton
+              className="mt-4"
+              disabled={isUpdating}
+              type="button"
+              variant="primary"
+              onClick={() => void saveEdit()}
+            >
+              {isUpdating ? "Saving changes..." : "Save Changes"}
+            </SharpButton>
+          </div>
+        ) : null}
+
         <div className="mt-5 space-y-3">
-          {filteredTransactions.length === 0 ? (
+          {isLoading ? (
+            <EmptyState>Loading ledger records...</EmptyState>
+          ) : filteredTransactions.length === 0 ? (
             <EmptyState>
-              No transactions for this filter yet.
+              {transactions.length === 0
+                ? "No transactions yet."
+                : "No transactions match the active filters."}
             </EmptyState>
           ) : (
             filteredTransactions.map((transaction) => {
@@ -207,10 +910,19 @@ export default function TransactionHistory({
                 : isIncome
                   ? "Income"
                   : "Expense";
-              const transactionDate =
-                transaction.createdAt > 0
-                  ? dateTimeFormatter.format(new Date(transaction.createdAt))
-                  : "Date unavailable";
+              const transactionTimestamp = localDateInputToTimestamp(
+                transaction.transactionDate,
+              );
+              const transactionDate = transactionTimestamp
+                ? dateFormatter.format(new Date(transactionTimestamp))
+                : "Date unavailable";
+              const lifeEnergyHours =
+                transaction.type === "Expenses"
+                  ? calculateLifeEnergyHours(
+                      transaction.amount,
+                      netHourlyWage,
+                    )
+                  : null;
 
               return (
                 <article
@@ -230,7 +942,7 @@ export default function TransactionHistory({
                         {transactionTypeLabel}
                       </StatusChip>
                       <span className="text-xs text-slate-500">
-                        {transaction.owner}
+                        {isBalanceHidden ? "Email hidden" : transaction.owner}
                       </span>
                       <span className="text-xs text-slate-500">
                         {transactionDate}
@@ -247,66 +959,86 @@ export default function TransactionHistory({
                       }`}
                     >
                       <NumberValue>
-                        {isTransfer ? "" : isIncome ? "+" : "-"}
-                        {formatCurrency(transaction.amount)}
+                        {isBalanceHidden
+                          ? hiddenBalanceLabel
+                          : `${isTransfer ? "" : isIncome ? "+" : "-"}${formatCurrency(transaction.amount)}`}
                       </NumberValue>
-                      {transaction.type === "Expenses" && netHourlyWage > 0 && (
+                      {!isBalanceHidden && lifeEnergyHours !== null ? (
                         <span className="ml-2 text-sm font-mono text-cyan-300/80">
-                          (~{(transaction.amount / netHourlyWage).toFixed(1)} hrs)
+                          (~{lifeEnergyHours.toFixed(1)} hrs)
                         </span>
-                      )}
+                      ) : null}
                     </p>
 
                     <p className="mt-1 text-sm text-slate-300">
-                      {transaction.title}
-                      {!isIncome && !isTransfer
-                        ? ` / ${
-                            paymentMethodLabels.get(transaction.paymentMethod) ??
-                            transaction.paymentMethod
+                      {isBalanceHidden
+                        ? "Transaction details hidden"
+                        : transaction.title}
+                      {!isBalanceHidden &&
+                      transaction.type === "Expenses"
+                        ? ` / ${transaction.category} / ${
+                            paymentMethodLabels.get(
+                              transaction.paymentMethod,
+                            ) ?? transaction.paymentMethod
                           }`
                         : ""}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">
-                      {isTransfer
-                        ? `Transfer: ${transaction.fromAccountName} to ${transaction.toAccountName}`
-                        : `Account: ${transaction.accountName}`}
+                      {isBalanceHidden
+                        ? "Account details hidden"
+                        : isTransfer
+                          ? `Transfer: ${transaction.fromAccountName} to ${transaction.toAccountName}`
+                          : `Account: ${transaction.accountName}`}
                     </p>
 
-                    {transaction.note ? (
+                    {!isBalanceHidden && transaction.note ? (
                       <p className="mt-2 text-sm text-slate-500">
                         {transaction.note}
                       </p>
                     ) : null}
                   </div>
 
-                  <SharpButton
-                    className="min-h-10 px-3 py-2"
-                    variant="danger"
-                    type="button"
-                    onClick={() => {
-                      const didConfirm = window.confirm(
-                        `Delete this ${transactionTypeLabel.toLowerCase()} record? This cannot be undone.`,
-                      );
+                  <div className="flex flex-wrap gap-2 sm:justify-end">
+                    {!isBalanceHidden && onUpdateTransaction ? (
+                      <SharpButton
+                        className="min-h-10 px-3 py-2"
+                        type="button"
+                        onClick={() => beginEdit(transaction)}
+                      >
+                        Edit
+                      </SharpButton>
+                    ) : null}
+                    {!isBalanceHidden ? (
+                      <SharpButton
+                        className="min-h-10 px-3 py-2"
+                        variant="danger"
+                        type="button"
+                        onClick={() => {
+                          const didConfirm = window.confirm(
+                            `Delete this ${transactionTypeLabel.toLowerCase()} record? This cannot be undone.`,
+                          );
 
-                      if (!didConfirm) {
-                        return;
-                      }
+                          if (!didConfirm) {
+                            return;
+                          }
 
-                      if (isIncome) {
-                        void onDeleteIncome(transaction.id);
-                        return;
-                      }
+                          if (isIncome) {
+                            void onDeleteIncome(transaction.id);
+                            return;
+                          }
 
-                      if (isTransfer) {
-                        void onDeleteTransfer(transaction.id);
-                        return;
-                      }
+                          if (isTransfer) {
+                            void onDeleteTransfer(transaction.id);
+                            return;
+                          }
 
-                      void onDeleteExpense(transaction.id);
-                    }}
-                  >
-                    Delete
-                  </SharpButton>
+                          void onDeleteExpense(transaction.id);
+                        }}
+                      >
+                        Delete
+                      </SharpButton>
+                    ) : null}
+                  </div>
                 </article>
               );
             })

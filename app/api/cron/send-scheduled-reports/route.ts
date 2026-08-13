@@ -6,6 +6,10 @@ import {
   getWeekEnd,
   getCategoryLabel,
 } from "@/src/lib/email-templates";
+import {
+  isAuthorizedCronRequest,
+  prepareCronResultsForResponse,
+} from "@/src/lib/cron-security";
 
 export const runtime = "nodejs";
 
@@ -42,25 +46,6 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "long",
   year: "numeric",
 });
-
-function getBearerToken(request: Request) {
-  const authorization = request.headers.get("authorization");
-
-  return authorization?.startsWith("Bearer ")
-    ? authorization.slice("Bearer ".length)
-    : "";
-}
-
-function isAuthorizedCronRequest(request: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  const token = getBearerToken(request);
-
-  if (cronSecret && token === cronSecret) {
-    return true;
-  }
-
-  return request.headers.get("x-vercel-cron") === "1";
-}
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -154,7 +139,7 @@ async function saveEmailReportLog({
 }
 
 export async function GET(request: Request) {
-  if (!isAuthorizedCronRequest(request)) {
+  if (!isAuthorizedCronRequest(request, process.env.CRON_SECRET)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -386,13 +371,18 @@ export async function GET(request: Request) {
   const failedCount = results.filter((result) => result.status === "failed")
     .length;
 
+  const responseResults = prepareCronResultsForResponse(
+    results,
+    process.env.NODE_ENV === "production",
+  );
+
   return Response.json({
     ok: failedCount === 0,
     mode: "testing",
     processedCount: results.length,
     successCount,
     failedCount,
-    results,
+    results: responseResults,
   });
 }
 

@@ -182,7 +182,8 @@ RESEND_FROM_EMAIL=
 REPORT_TEST_RECIPIENT_EMAIL=
 CRON_SECRET=
 TELEGRAM_BOT_TOKEN=
-TELEGRAM_FALLBACK_USER_ID=
+TELEGRAM_WEBHOOK_SECRET=
+TELEGRAM_LINK_SECRET=
 ```
 
 Notes:
@@ -191,7 +192,8 @@ Notes:
 - `SUPABASE_SERVICE_ROLE_KEY` must stay server-side only.
 - `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `REPORT_TEST_RECIPIENT_EMAIL` are used for email report testing.
 - `CRON_SECRET` protects manual cron endpoint calls.
-- `TELEGRAM_BOT_TOKEN` and `TELEGRAM_FALLBACK_USER_ID` are optional and only needed for Telegram demo/testing.
+- `TELEGRAM_BOT_TOKEN` is an optional server-side fallback for Telegram replies.
+- `TELEGRAM_WEBHOOK_SECRET` authenticates Telegram webhook requests and `TELEGRAM_LINK_SECRET` signs short-lived account-link commands. Use separate random values of at least 32 URL-safe characters.
 
 ## Database Notes
 

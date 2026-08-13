@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { isValidTelegramSecret } from "@/src/lib/telegram-security";
 
 export const runtime = "nodejs";
 
@@ -55,11 +56,19 @@ export async function POST(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const linkSecret = process.env.TELEGRAM_LINK_SECRET;
 
-  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
+  if (
+    !supabaseUrl ||
+    !supabaseAnonKey ||
+    !supabaseServiceKey ||
+    !isValidTelegramSecret(webhookSecret) ||
+    !isValidTelegramSecret(linkSecret)
+  ) {
     return Response.json(
-      { error: "Supabase service role configuration is missing on server." },
-      { status: 500 },
+      { error: "Telegram webhook security configuration is missing on server." },
+      { status: 503 },
     );
   }
 
@@ -167,6 +176,7 @@ export async function POST(request: Request) {
     body: JSON.stringify({
       allowed_updates: ["message", "edited_message"],
       drop_pending_updates: true,
+      secret_token: webhookSecret,
       url: webhookUrl,
     }),
   });

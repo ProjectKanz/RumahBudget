@@ -9,6 +9,7 @@ type FinanceCalculationInput = {
   expenses: Expense[];
   transfers: Transfer[];
   now?: number;
+  periodReference?: number;
 };
 
 export type FinanceSnapshot = {
@@ -41,12 +42,13 @@ export function calculateFinanceSnapshot({
   expenses,
   transfers,
   now = Date.now(),
+  periodReference = now,
 }: FinanceCalculationInput): FinanceSnapshot {
   const monthlyIncomes = incomes.filter((income) =>
-    isSameLocalMonth(income.createdAt, now),
+    isSameLocalMonth(income.createdAt, periodReference),
   );
   const monthlyExpenses = expenses.filter((expense) =>
-    isSameLocalMonth(expense.createdAt, now),
+    isSameLocalMonth(expense.createdAt, periodReference),
   );
 
   const accountBalances = accounts.reduce<Record<string, number>>(

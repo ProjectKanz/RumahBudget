@@ -4,6 +4,7 @@ export type Income = {
   userId: string;
   accountId: string;
   createdAt: number;
+  transactionDate?: string;
   amount: number;
   source: string;
   note: string;

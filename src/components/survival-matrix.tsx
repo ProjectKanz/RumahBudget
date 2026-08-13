@@ -272,7 +272,9 @@ export default function SurvivalMatrix({
           <div className="border-b border-white/10 p-5 sm:p-6 lg:border-b-0 lg:border-r">
             <div className="flex flex-wrap items-center gap-2">
               <StatusChip tone="rose">Diagnostics</StatusChip>
-              <StatusChip tone={runwayStatus.tone}>Survival Matrix</StatusChip>
+              <StatusChip tone={isBalanceHidden ? "neutral" : runwayStatus.tone}>
+                Survival Matrix
+              </StatusChip>
             </div>
             
             <h2 className="neo-title mt-4 text-3xl font-black tracking-tight text-white sm:text-4xl">
@@ -325,8 +327,13 @@ export default function SurvivalMatrix({
 
                 <div className="mt-3">
                   <SharpInput
-                    placeholder="Enter shock amount (e.g. 15000000)"
-                    type="number"
+                    inputMode="numeric"
+                    placeholder={
+                      isBalanceHidden
+                        ? "Shock amount hidden"
+                        : "Enter shock amount (e.g. 15000000)"
+                    }
+                    type={isBalanceHidden ? "password" : "number"}
                     value={shockInput}
                     min="0"
                     onChange={(e) => setShockInput(e.target.value)}
@@ -361,20 +368,31 @@ export default function SurvivalMatrix({
               <div className="flex justify-between text-xs font-mono text-slate-400">
                 <span>SIMULATED MONTHLY INCOME</span>
                 <span className="text-lime-300 font-bold">
-                  {formatCurrency(simulation.simulatedIncome)}
+                  {isBalanceHidden
+                    ? hiddenBalanceLabel
+                    : formatCurrency(simulation.simulatedIncome)}
                 </span>
               </div>
               <div className="flex justify-between text-xs font-mono text-slate-400">
                 <span>SIMULATED MONTHLY BURN</span>
                 <span className="text-rose-300 font-bold">
-                  {formatCurrency(simulation.simulatedExpense)}
+                  {isBalanceHidden
+                    ? hiddenBalanceLabel
+                    : formatCurrency(simulation.simulatedExpense)}
                 </span>
               </div>
               <div className="flex justify-between text-xs font-mono text-slate-400">
                 <span>SIMULATED NET CASHFLOW</span>
-                <span className={`font-bold ${simulation.netMonthlyCashflow < 0 ? "text-rose-400" : "text-lime-300"}`}>
-                  {simulation.netMonthlyCashflow > 0 ? "+" : ""}
-                  {formatCurrency(simulation.netMonthlyCashflow)}
+                <span
+                  className={`font-bold ${
+                    !isBalanceHidden && simulation.netMonthlyCashflow < 0
+                      ? "text-rose-400"
+                      : "text-lime-300"
+                  }`}
+                >
+                  {isBalanceHidden
+                    ? hiddenBalanceLabel
+                    : `${simulation.netMonthlyCashflow > 0 ? "+" : ""}${formatCurrency(simulation.netMonthlyCashflow)}`}
                 </span>
               </div>
             </div>
@@ -390,29 +408,49 @@ export default function SurvivalMatrix({
                 </span>
                 <span className="flex h-2 w-2 relative">
                   <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                    runwayStatus.tone === "rose" ? "bg-rose-400" : runwayStatus.tone === "amber" ? "bg-amber-400" : "bg-cyan-400"
+                    isBalanceHidden
+                      ? "bg-slate-400"
+                      : runwayStatus.tone === "rose"
+                        ? "bg-rose-400"
+                        : runwayStatus.tone === "amber"
+                          ? "bg-amber-400"
+                          : "bg-cyan-400"
                   }`}></span>
                   <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                    runwayStatus.tone === "rose" ? "bg-rose-500" : runwayStatus.tone === "amber" ? "bg-amber-500" : "bg-cyan-500"
+                    isBalanceHidden
+                      ? "bg-slate-500"
+                      : runwayStatus.tone === "rose"
+                        ? "bg-rose-500"
+                        : runwayStatus.tone === "amber"
+                          ? "bg-amber-500"
+                          : "bg-cyan-500"
                   }`}></span>
                 </span>
               </div>
 
-              <div className={`border p-4 mb-5 ${runwayStatus.bgClass}`}>
+              <div
+                className={`border p-4 mb-5 ${
+                  isBalanceHidden
+                    ? "border-white/10 bg-white/[0.03] text-slate-300"
+                    : runwayStatus.bgClass
+                }`}
+              >
                 <div className="flex items-baseline justify-between flex-wrap gap-2">
                   <span className="text-2xl font-black tracking-wider font-mono">
-                    {runwayStatus.label}
+                    {isBalanceHidden ? "PRIVACY ACTIVE" : runwayStatus.label}
                   </span>
                   <span className="text-3xl font-black font-mono">
-                    {simulation.totalSimulatedRunwayMonths === Infinity ? (
-                      "∞ MON"
-                    ) : (
-                      `${simulation.totalSimulatedRunwayMonths.toFixed(1)} MON`
-                    )}
+                    {isBalanceHidden
+                      ? hiddenBalanceLabel
+                      : simulation.totalSimulatedRunwayMonths === Infinity
+                        ? "∞ MON"
+                        : `${simulation.totalSimulatedRunwayMonths.toFixed(1)} MON`}
                   </span>
                 </div>
                 <p className="text-xs mt-2 opacity-90 leading-relaxed">
-                  {runwayStatus.description}
+                  {isBalanceHidden
+                    ? "Runway status and financial narrative hidden while privacy mode is active."
+                    : runwayStatus.description}
                 </p>
               </div>
 
@@ -422,64 +460,85 @@ export default function SurvivalMatrix({
               </h3>
 
               <div className="border border-white/10 bg-black/40 p-4 font-mono text-xs text-slate-300 space-y-4 max-h-[300px] overflow-y-auto rb-scrollbar">
-                {/* Initial state event if no other events exist */}
-                <div className="flex gap-3">
-                  <span className="text-cyan-400 shrink-0 select-none">[M 0.0]</span>
-                  <div>
-                    <span className="text-white font-bold">Diagnostics Initiated</span>
-                    <p className="text-slate-500 mt-0.5">
-                      Starting capital reserve: {isBalanceHidden ? hiddenBalanceLabel : formatCurrency(simulation.totalInitialBalance)}
-                    </p>
-                  </div>
-                </div>
-
-                {simulation.timelineEvents.map((evt, idx) => (
-                  <div key={idx} className="flex gap-3 border-t border-white/5 pt-2.5">
-                    <span className={`shrink-0 select-none ${
-                      evt.type === "insolvent" 
-                        ? "text-rose-400 font-bold" 
-                        : evt.type === "shock" 
-                        ? "text-amber-400" 
-                        : evt.type === "stabilized" 
-                        ? "text-lime-400 font-bold" 
-                        : "text-cyan-400"
-                    }`}>
-                      [M {evt.month.toFixed(1)}]
+                {isBalanceHidden ? (
+                  <div className="flex gap-3">
+                    <span className="shrink-0 select-none text-slate-500">
+                      [M •••]
                     </span>
                     <div>
-                      <span className={`font-bold ${
-                        evt.type === "insolvent" 
-                          ? "text-rose-200" 
-                          : evt.type === "stabilized" 
-                          ? "text-lime-300" 
-                          : "text-white"
-                      }`}>
-                        {evt.title}
+                      <span className="font-bold text-slate-300">
+                        Simulation timeline hidden
                       </span>
-                      <p className="text-slate-400 mt-0.5">{evt.description}</p>
-                      
-                      {/* Show remaining balances under this event */}
-                      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-slate-500">
-                        {accounts.filter(a => !a.isArchived).map((acc) => {
-                          const bal = evt.balances[acc.id] ?? 0;
-                          return (
-                            <div key={acc.id} className="flex justify-between">
-                              <span className="truncate max-w-[100px]">{acc.name}</span>
-                              <span className={bal <= 0 ? "text-rose-400 font-semibold" : "text-slate-400"}>
-                                {isBalanceHidden ? hiddenBalanceLabel : formatCurrency(bal)}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <p className="mt-0.5 text-slate-500">
+                        Event timing, account balances, and risk narrative are
+                        hidden while privacy mode is active.
+                      </p>
                     </div>
                   </div>
-                ))}
+                ) : (
+                  <>
+                    {/* Initial state event if no other events exist */}
+                    <div className="flex gap-3">
+                      <span className="text-cyan-400 shrink-0 select-none">[M 0.0]</span>
+                      <div>
+                        <span className="text-white font-bold">Diagnostics Initiated</span>
+                        <p className="text-slate-500 mt-0.5">
+                          Starting capital reserve: {formatCurrency(simulation.totalInitialBalance)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {simulation.timelineEvents.map((evt, idx) => (
+                      <div key={idx} className="flex gap-3 border-t border-white/5 pt-2.5">
+                        <span className={`shrink-0 select-none ${
+                          evt.type === "insolvent"
+                            ? "text-rose-400 font-bold"
+                            : evt.type === "shock"
+                              ? "text-amber-400"
+                              : evt.type === "stabilized"
+                                ? "text-lime-400 font-bold"
+                                : "text-cyan-400"
+                        }`}>
+                          [M {evt.month.toFixed(1)}]
+                        </span>
+                        <div>
+                          <span className={`font-bold ${
+                            evt.type === "insolvent"
+                              ? "text-rose-200"
+                              : evt.type === "stabilized"
+                                ? "text-lime-300"
+                                : "text-white"
+                          }`}>
+                            {evt.title}
+                          </span>
+                          <p className="text-slate-400 mt-0.5">{evt.description}</p>
+
+                          {/* Show remaining balances under this event */}
+                          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-slate-500">
+                            {accounts.filter(a => !a.isArchived).map((acc) => {
+                              const bal = evt.balances[acc.id] ?? 0;
+                              return (
+                                <div key={acc.id} className="flex justify-between">
+                                  <span className="truncate max-w-[100px]">{acc.name}</span>
+                                  <span className={bal <= 0 ? "text-rose-400 font-semibold" : "text-slate-400"}>
+                                    {formatCurrency(bal)}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
             </div>
 
             {/* Bottom status alert warning */}
-            {simulation.totalSimulatedRunwayMonths !== Infinity && simulation.totalSimulatedRunwayMonths < 3 ? (
+            {!isBalanceHidden &&
+            simulation.totalSimulatedRunwayMonths !== Infinity &&
+            simulation.totalSimulatedRunwayMonths < 3 ? (
               <SystemReading className="mt-5 border-rose-500/30 bg-rose-500/5">
                 <div className="flex items-start gap-3">
                   <span className="text-rose-400 font-bold text-sm shrink-0">⚠️ SYSTEM BREACH WARNING:</span>

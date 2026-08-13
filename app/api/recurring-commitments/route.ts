@@ -3,41 +3,26 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 
 interface CommitmentBody {
-  accountId?: string;
-  name?: string;
-  amount?: number | string;
-  category?: string;
-  commitmentType?: string;
-  dueDay?: number | string;
-  isAutoDeduct?: boolean;
-  disableReminders?: boolean;
+  accountId?: unknown;
+  name?: unknown;
+  amount?: unknown;
+  category?: unknown;
+  commitmentType?: unknown;
+  dueDay?: unknown;
+  isAutoDeduct?: unknown;
+  disableReminders?: unknown;
 }
 
-// Local fallback database structure/config in case table does not exist yet.
-const fallbackCommitments = [
-  {
-    id: "fallback-sub-1",
-    name: "Spotify Premium (Local Fallback)",
-    amount: 54990,
-    category: "Bills",
-    commitment_type: "subscription",
-    due_day: 15,
-    is_auto_deduct: true,
-    disable_reminders: false,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "fallback-rent-2",
-    name: "Rent (Local Fallback)",
-    amount: 2500000,
-    category: "Other",
-    commitment_type: "rent",
-    due_day: 1,
-    is_auto_deduct: false,
-    disable_reminders: false,
-    created_at: new Date().toISOString(),
-  },
-];
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const commitmentTypes = new Set([
+  "subscription",
+  "installment",
+  "paylater",
+  "rent",
+  "other",
+]);
 
 export async function GET(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -86,15 +71,17 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from("recurring_commitments")
       .select("*")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
       if (error.code === "42P01") {
-        // Table does not exist yet. Return local state/config fallback.
+        // Do not seed financial commitments when persistence is unavailable.
         return Response.json({
-          data: fallbackCommitments,
+          data: [],
           isFallback: true,
-          warning: "Table 'recurring_commitments' does not exist in database yet. Returning local state fallback.",
+          warning:
+            "Table 'recurring_commitments' does not exist. No synthetic commitments were created.",
         });
       }
       return Response.json({ error: error.message }, { status: 400 });
@@ -171,24 +158,68 @@ export async function POST(request: Request) {
     disableReminders = false,
   } = body;
 
-  if (!name || !amount || !category || !commitmentType || !dueDay) {
+  const normalizedName = typeof name === "string" ? name.trim() : "";
+  const normalizedCategory =
+    typeof category === "string" ? category.trim() : "";
+  const normalizedAccountId =
+    typeof accountId === "string" ? accountId.trim() : "";
+  const numericAmount = Number(amount);
+  const numericDueDay = Number(dueDay);
+  const hasAccountId = accountId !== undefined && accountId !== null && accountId !== "";
+
+  if (
+    !normalizedName ||
+    normalizedName.length > 120 ||
+    !normalizedCategory ||
+    normalizedCategory.length > 80 ||
+    typeof commitmentType !== "string" ||
+    !commitmentTypes.has(commitmentType) ||
+    (hasAccountId && !uuidPattern.test(normalizedAccountId)) ||
+    typeof isAutoDeduct !== "boolean" ||
+    typeof disableReminders !== "boolean" ||
+    !Number.isFinite(numericAmount) ||
+    numericAmount <= 0 ||
+    !Number.isInteger(numericDueDay) ||
+    numericDueDay < 1 ||
+    numericDueDay > 31
+  ) {
     return Response.json(
-      { error: "Missing required fields: name, amount, category, commitmentType, dueDay" },
+      {
+        error:
+          "Provide a name (max 120), category (max 80), positive finite amount, valid commitment type/account, boolean flags, and due day from 1 to 31.",
+      },
       { status: 400 },
     );
   }
 
   try {
+    if (normalizedAccountId) {
+      const { data: ownedAccount, error: accountError } = await supabase
+        .from("money_accounts")
+        .select("id")
+        .eq("id", normalizedAccountId)
+        .eq("user_id", user.id)
+        .eq("is_archived", false)
+        .maybeSingle();
+
+      if (accountError || !ownedAccount) {
+        return Response.json(
+          { error: "Linked account is missing, archived, or not owned by you." },
+          { status: 400 },
+        );
+      }
+    }
+
     const { data, error } = await supabase
       .from("recurring_commitments")
       .insert({
         user_id: user.id,
-        account_id: accountId || null,
-        name,
-        amount: Number(amount),
-        category,
+        account_id: normalizedAccountId || null,
+        name: normalizedName,
+        amount: numericAmount,
+        category: normalizedCategory,
         commitment_type: commitmentType,
-        due_day: Number(dueDay),
+        due_day: numericDueDay,
         is_auto_deduct: isAutoDeduct,
         disable_reminders: disableReminders,
       })

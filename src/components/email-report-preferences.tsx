@@ -8,6 +8,10 @@ import {
   TerminalPanel,
 } from "@/src/components/cockpit-ui";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
+import {
+  calculateNetHourlyWage,
+  validateNetHourlyWage,
+} from "@/src/lib/life-energy";
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, useEffect, useState } from "react";
 
@@ -21,7 +25,6 @@ type ReportPreferenceRow = {
   monthly_enabled?: boolean | null;
   recipient_email?: string | null;
   net_hourly_wage?: number | null;
-  telegram_bot_token?: string | null;
   telegram_chat_id?: string | null;
 };
 
@@ -31,7 +34,6 @@ type ReportPreferencePayload = {
   monthly_enabled?: boolean;
   recipient_email?: string;
   net_hourly_wage?: number;
-  telegram_bot_token?: string;
   updated_at: string;
 };
 
@@ -68,6 +70,7 @@ export default function EmailReportPreferences({
   const [netHourlyWage, setNetHourlyWage] = useState<number>(0);
   const [calcSalary, setCalcSalary] = useState("");
   const [calcHours, setCalcHours] = useState("");
+  const [wageError, setWageError] = useState("");
   const [dbSupportsWage, setDbSupportsWage] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -79,10 +82,7 @@ export default function EmailReportPreferences({
   const [telegramChatId, setTelegramChatId] = useState("");
   const [telegramWebhookStatus, setTelegramWebhookStatus] = useState("");
   const [isRegisteringWebhook, setIsRegisteringWebhook] = useState(false);
-  const [dbSupportsTelegram, setDbSupportsTelegram] = useState(true);
-  const [isSavingTelegram, setIsSavingTelegram] = useState(false);
   const [telegramMessage, setTelegramMessage] = useState("");
-  const [telegramError, setTelegramError] = useState("");
 
   const [isLocalhost, setIsLocalhost] = useState(false);
   const [webhookOverrideUrl, setWebhookOverrideUrl] = useState("");
@@ -120,7 +120,7 @@ export default function EmailReportPreferences({
       try {
         const res = await supabase
           .from("report_preferences")
-          .select("weekly_enabled, monthly_enabled, recipient_email, net_hourly_wage, telegram_bot_token, telegram_chat_id")
+          .select("weekly_enabled, monthly_enabled, recipient_email, net_hourly_wage, telegram_chat_id")
           .eq("user_id", user.id)
           .abortSignal(timeout.signal)
           .maybeSingle();
@@ -153,7 +153,6 @@ export default function EmailReportPreferences({
         }
 
         setDbSupportsWage(isWageSupported);
-        setDbSupportsTelegram(isTelegramSupported);
 
         if (loadError) {
           setError(loadError.message);
@@ -171,16 +170,10 @@ export default function EmailReportPreferences({
           const localWage = window.localStorage.getItem(`rumahbudget.net_hourly_wage.${user.id}`);
           loadedWage = localWage ? Number(localWage) : 0;
         }
-        setNetHourlyWage(loadedWage);
-        onWageChange?.(loadedWage);
-
-        let loadedBotToken = "";
-        if (isTelegramSupported && data && typeof data.telegram_bot_token === "string") {
-          loadedBotToken = data.telegram_bot_token;
-        } else {
-          loadedBotToken = window.localStorage.getItem(`rumahbudget.telegram_bot_token.${user.id}`) ?? "";
-        }
-        setTelegramBotToken(loadedBotToken);
+        const loadedWageResult = validateNetHourlyWage(loadedWage);
+        const safeLoadedWage = loadedWageResult.ok ? loadedWageResult.value : 0;
+        setNetHourlyWage(safeLoadedWage);
+        onWageChange?.(safeLoadedWage);
 
         let loadedChatId = "";
         if (isTelegramSupported && data && typeof data.telegram_chat_id === "string") {
@@ -234,6 +227,15 @@ export default function EmailReportPreferences({
   async function savePreferences(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (netHourlyWage !== 0) {
+      const wageResult = validateNetHourlyWage(netHourlyWage);
+      if (!wageResult.ok) {
+        setWageError(wageResult.error);
+        return;
+      }
+    }
+    setWageError("");
+
     if (!supabase) {
       setError(missingSupabaseEnvMessage);
       return;
@@ -257,10 +259,6 @@ export default function EmailReportPreferences({
           net_hourly_wage: netHourlyWage,
           updated_at: new Date().toISOString(),
         };
-
-        if (dbSupportsTelegram) {
-          payload.telegram_bot_token = telegramBotToken.trim();
-        }
 
         const { error: upsertError } = await supabase
           .from("report_preferences")
@@ -325,72 +323,6 @@ export default function EmailReportPreferences({
     setMessage("Email report settings saved.");
   }
 
-  async function saveTelegramSettings(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!supabase) {
-      setTelegramError(missingSupabaseEnvMessage);
-      return;
-    }
-
-    setIsSavingTelegram(true);
-    setTelegramMessage("");
-    setTelegramError("");
-
-    const timeout = createSupabaseTimeout();
-    let saveError: PreferenceSaveError | null = null;
-
-    try {
-      if (dbSupportsTelegram) {
-        const payload: ReportPreferencePayload = {
-          user_id: user.id,
-          telegram_bot_token: telegramBotToken.trim(),
-          updated_at: new Date().toISOString(),
-        };
-
-        if (dbSupportsWage) {
-          payload.net_hourly_wage = netHourlyWage;
-        }
-        payload.weekly_enabled = weeklyEnabled;
-        payload.monthly_enabled = monthlyEnabled;
-        payload.recipient_email = recipientEmail.trim();
-
-        const { error: upsertError } = await supabase
-          .from("report_preferences")
-          .upsert(payload, { onConflict: "user_id" })
-          .abortSignal(timeout.signal);
-
-        if (upsertError) {
-          if (
-            upsertError.code === "42703" ||
-            (upsertError.message && upsertError.message.includes("telegram_bot_token"))
-          ) {
-            setDbSupportsTelegram(false);
-            window.localStorage.setItem(`rumahbudget.telegram_bot_token.${user.id}`, telegramBotToken.trim());
-          } else {
-            saveError = upsertError;
-          }
-        }
-      } else {
-        window.localStorage.setItem(`rumahbudget.telegram_bot_token.${user.id}`, telegramBotToken.trim());
-      }
-    } catch (err) {
-      saveError = err instanceof Error ? err : { message: String(err) };
-    } finally {
-      setIsSavingTelegram(false);
-      timeout.clear();
-    }
-
-    if (saveError) {
-      setTelegramError(getSupabaseErrorMessage(saveError, "Failed to save Telegram settings."));
-      return;
-    }
-
-    window.localStorage.setItem(`rumahbudget.telegram_bot_token.${user.id}`, telegramBotToken.trim());
-    window.localStorage.setItem(`rumahbudget.webhook_override_url.${user.id}`, webhookOverrideUrl.trim());
-    setTelegramMessage("Telegram preferences saved.");
-  }
-
   async function handleRegisterWebhook() {
     const trimmedBotToken = telegramBotToken.trim();
 
@@ -450,9 +382,8 @@ export default function EmailReportPreferences({
       const data = await res.json();
 
       if (data.ok) {
-        window.localStorage.setItem(`rumahbudget.telegram_bot_token.${user.id}`, trimmedBotToken);
         window.localStorage.setItem(`rumahbudget.webhook_override_url.${user.id}`, webhookOverrideUrl.trim());
-        setDbSupportsTelegram(true);
+        setTelegramBotToken("");
         setTelegramWebhookStatus(`Success: Webhook registered and token saved. ${data.description || ""}`);
       } else {
         setTelegramWebhookStatus(`Error: ${data.error || data.description || "Failed to register webhook."}`);
@@ -464,8 +395,43 @@ export default function EmailReportPreferences({
     }
   }
 
-  const base64UserId = typeof window !== "undefined" ? btoa(user.id) : "";
-  const startCommand = `/start ${base64UserId}`;
+  const [startCommand, setStartCommand] = useState("");
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+
+  async function generateStartCommand() {
+    if (!supabase) {
+      setTelegramMessage(missingSupabaseEnvMessage);
+      return;
+    }
+
+    setIsGeneratingLink(true);
+    setTelegramMessage("");
+    try {
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token;
+      if (sessionError || !accessToken) {
+        setTelegramMessage("Please sign in again before generating a link command.");
+        return;
+      }
+
+      const response = await fetch("/api/telegram/link-token", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const result = await response.json();
+      if (!response.ok || typeof result.startCommand !== "string") {
+        setTelegramMessage(result.error || "Failed to generate Telegram link command.");
+        return;
+      }
+
+      setStartCommand(result.startCommand);
+      setTelegramMessage("Link command generated. It expires in 15 minutes.");
+    } catch (err) {
+      setTelegramMessage(err instanceof Error ? err.message : "Failed to generate Telegram link command.");
+    } finally {
+      setIsGeneratingLink(false);
+    }
+  }
 
   return (
     <>
@@ -558,8 +524,18 @@ export default function EmailReportPreferences({
                     value={netHourlyWage === 0 ? "" : netHourlyWage}
                     disabled={isLoading || isSaving}
                     onChange={(event) => {
-                      const val = event.target.value === "" ? 0 : Number(event.target.value);
-                      setNetHourlyWage(val);
+                      const rawValue = event.target.value;
+                      if (rawValue === "") {
+                        setNetHourlyWage(0);
+                        setWageError("");
+                      } else {
+                        const numericValue = Number(rawValue);
+                        if (Number.isFinite(numericValue)) {
+                          setNetHourlyWage(numericValue);
+                        }
+                        const result = validateNetHourlyWage(rawValue);
+                        setWageError(result.ok ? "" : result.error);
+                      }
                       setMessage("");
                     }}
                     placeholder="Rp 0"
@@ -599,12 +575,14 @@ export default function EmailReportPreferences({
                       type="button"
                       className="w-full !py-1 text-xs"
                       onClick={() => {
-                        const sal = Number(calcSalary);
-                        const hrs = Number(calcHours);
-                        if (sal > 0 && hrs > 0) {
-                          setNetHourlyWage(Math.round(sal / hrs));
-                          setMessage("");
+                        const result = calculateNetHourlyWage(calcSalary, calcHours);
+                        if (!result.ok) {
+                          setWageError(result.error);
+                          return;
                         }
+                        setNetHourlyWage(result.value);
+                        setWageError("");
+                        setMessage("");
                       }}
                     >
                       Calculate &amp; Apply
@@ -612,6 +590,11 @@ export default function EmailReportPreferences({
                   </div>
                 </div>
               </div>
+              {wageError ? (
+                <p className="mt-3 text-xs font-medium text-rose-300">
+                  {wageError}
+                </p>
+              ) : null}
             </div>
 
             <div className="flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center">
@@ -659,19 +642,14 @@ export default function EmailReportPreferences({
             </Notice>
           )}
 
-          {telegramError ? (
-            <Notice className="mt-6" tone="rose">
-              {telegramError}
-            </Notice>
-          ) : null}
-
-          <form className="mt-6 space-y-5" onSubmit={saveTelegramSettings}>
+          <div className="mt-6 space-y-5">
             <label className="block text-sm font-medium text-slate-300">
               Telegram Bot Token
               <SharpInput
-                type="text"
+                type="password"
+                autoComplete="off"
                 value={telegramBotToken}
-                disabled={isLoading || isSavingTelegram}
+                disabled={isLoading || isRegisteringWebhook}
                 onChange={(event) => {
                   setTelegramBotToken(event.target.value);
                   setTelegramMessage("");
@@ -685,7 +663,7 @@ export default function EmailReportPreferences({
               <SharpInput
                 type="text"
                 value={webhookOverrideUrl}
-                disabled={isLoading || isSavingTelegram}
+                disabled={isLoading || isRegisteringWebhook}
                 onChange={(event) => {
                   const val = event.target.value;
                   setWebhookOverrideUrl(val);
@@ -700,15 +678,6 @@ export default function EmailReportPreferences({
 
             <div className="flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center">
               <SharpButton
-                variant="primary"
-                type="submit"
-                disabled={isLoading || isSavingTelegram}
-                className="border-cyan-500/40 text-cyan-200"
-              >
-                {isSavingTelegram ? "Saving Token..." : "Save Token"}
-              </SharpButton>
-
-              <SharpButton
                 type="button"
                 variant="ghost"
                 disabled={isRegisteringWebhook || !telegramBotToken.trim()}
@@ -718,7 +687,7 @@ export default function EmailReportPreferences({
                 {isRegisteringWebhook ? "Registering..." : "Register Webhook"}
               </SharpButton>
             </div>
-          </form>
+          </div>
 
           {telegramMessage ? (
             <Notice className="mt-5" tone="lime">
@@ -744,16 +713,23 @@ export default function EmailReportPreferences({
             </p>
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-white/15 bg-white/[0.02] p-4 font-mono text-sm">
-              <span className="text-slate-200 break-all select-all">{startCommand}</span>
+              <span className="text-slate-200 break-all select-all">
+                {startCommand || "Generate a short-lived link command when you are ready to connect."}
+              </span>
               <SharpButton
                 type="button"
                 className="!py-1 !px-3 text-xs border-cyan-500/40 text-cyan-200 shrink-0"
+                disabled={isGeneratingLink}
                 onClick={() => {
+                  if (!startCommand) {
+                    void generateStartCommand();
+                    return;
+                  }
                   navigator.clipboard.writeText(startCommand);
                   setTelegramMessage("Link command copied to clipboard!");
                 }}
               >
-                Copy Command
+                {isGeneratingLink ? "Generating..." : startCommand ? "Copy Command" : "Generate Command"}
               </SharpButton>
             </div>
 
@@ -761,7 +737,7 @@ export default function EmailReportPreferences({
               <span>Status:</span>
               {telegramChatId ? (
                 <span className="text-lime-300 font-bold uppercase">
-                  Connected (Chat ID: {telegramChatId})
+                  Connected
                 </span>
               ) : (
                 <span className="text-rose-400 font-bold uppercase">

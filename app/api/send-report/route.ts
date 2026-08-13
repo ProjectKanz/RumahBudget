@@ -2,10 +2,6 @@ import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import {
   buildDetailedHtmlReport,
-  getWeekStart,
-  getWeekEnd,
-  getMonthStart,
-  getMonthEnd,
   AccountRow,
 } from "@/src/lib/email-templates";
 
@@ -14,6 +10,8 @@ export const runtime = "nodejs";
 type ReportPayload = {
   reportType: "Weekly Report" | "Monthly Report";
   periodLabel: string;
+  periodStart: string;
+  periodEnd: string;
   totalIncome: string;
   totalExpense: string;
   remainingBalance: string;
@@ -44,6 +42,8 @@ type EmailReportLogger = {
 const requiredFields: (keyof ReportPayload)[] = [
   "reportType",
   "periodLabel",
+  "periodStart",
+  "periodEnd",
   "totalIncome",
   "totalExpense",
   "remainingBalance",
@@ -60,7 +60,56 @@ function isReportPayload(value: unknown): value is ReportPayload {
 
   const payload = value as Record<string, unknown>;
 
-  return requiredFields.every((field) => typeof payload[field] === "string");
+  if (!requiredFields.every((field) => typeof payload[field] === "string")) {
+    return false;
+  }
+
+  const reportType = payload.reportType;
+  const financialStatus = payload.financialStatus;
+  const periodStart = payload.periodStart as string;
+  const periodEnd = payload.periodEnd as string;
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  const startTime = Date.parse(`${periodStart}T00:00:00Z`);
+  const endTime = Date.parse(`${periodEnd}T00:00:00Z`);
+  const textFields = requiredFields.filter(
+    (field) => field !== "periodStart" && field !== "periodEnd",
+  );
+
+  return (
+    (reportType === "Weekly Report" || reportType === "Monthly Report") &&
+    (financialStatus === "Safe" ||
+      financialStatus === "Warning" ||
+      financialStatus === "Critical") &&
+    datePattern.test(periodStart) &&
+    datePattern.test(periodEnd) &&
+    Number.isFinite(startTime) &&
+    Number.isFinite(endTime) &&
+    new Date(startTime).toISOString().slice(0, 10) === periodStart &&
+    new Date(endTime).toISOString().slice(0, 10) === periodEnd &&
+    endTime >= startTime &&
+    endTime - startTime <= 31 * 24 * 60 * 60 * 1000 &&
+    textFields.every((field) => (payload[field] as string).length <= 500)
+  );
+}
+
+function getJakartaDateKey(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function getErrorMessage(error: unknown) {
@@ -139,7 +188,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const body = (await request.json()) as unknown;
+  let body: unknown;
+  try {
+    body = (await request.json()) as unknown;
+  } catch {
+    return Response.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
 
   if (!isReportPayload(body)) {
     return Response.json(
@@ -206,21 +260,21 @@ export async function POST(request: Request) {
   const balances: Record<string, number> = {};
   let sortedCategories: [string, number][] = [];
   let sortedSources: [string, number][] = [];
-  let numIncome = parseFloat(body.totalIncome.replace(/[^0-9.-]/g, "")) || 0;
-  let numExpense = parseFloat(body.totalExpense.replace(/[^0-9.-]/g, "")) || 0;
-  let numNet = parseFloat(body.remainingBalance.replace(/[^0-9.-]/g, "")) || 0;
+  let numIncome = 0;
+  let numExpense = 0;
+  let numNet = 0;
 
   try {
-    const isWeekly = body.reportType === "Weekly Report";
-    const today = new Date();
-    const startDate = isWeekly ? getWeekStart(today) : getMonthStart(today);
-    const endDate = isWeekly ? getWeekEnd(startDate) : getMonthEnd(today);
-
     // Fetch accounts
-    const { data: accountsData } = await supabase
+    const { data: accountsData, error: accountsError } = await supabase
       .from("money_accounts")
       .select("*")
+      .eq("user_id", user.id)
       .eq("is_archived", false);
+
+    if (accountsError) {
+      throw new Error("Unable to load owner-scoped money accounts.");
+    }
 
     if (accountsData) {
       accounts = accountsData;
@@ -228,14 +282,18 @@ export async function POST(request: Request) {
 
     // Fetch all incomes, expenses, and transfers to compute correct balances
     const [allIncomesRes, allExpensesRes, allTransfersRes] = await Promise.all([
-      supabase.from("incomes").select("*"),
-      supabase.from("expenses").select("*"),
-      supabase.from("transfers").select("*"),
+      supabase.from("incomes").select("*").eq("user_id", user.id),
+      supabase.from("expenses").select("*").eq("user_id", user.id),
+      supabase.from("transfers").select("*").eq("user_id", user.id),
     ]);
 
     const allIncomes = allIncomesRes.data || [];
     const allExpenses = allExpensesRes.data || [];
     const allTransfers = allTransfersRes.data || [];
+
+    if (allIncomesRes.error || allExpensesRes.error || allTransfersRes.error) {
+      throw new Error("Unable to load complete owner-scoped report data.");
+    }
 
     // Calculate balances
     accounts.forEach((acc) => {
@@ -262,13 +320,19 @@ export async function POST(request: Request) {
 
     // Filter for current period
     const periodIncomes = allIncomes.filter((inc) => {
-      const d = inc.created_at ? new Date(inc.created_at).getTime() : 0;
-      return d >= startDate.getTime() && d <= endDate.getTime();
+      const dateKey =
+        typeof inc.transaction_date === "string"
+          ? inc.transaction_date
+          : getJakartaDateKey(inc.created_at);
+      return dateKey >= body.periodStart && dateKey <= body.periodEnd;
     });
 
     const periodExpenses = allExpenses.filter((exp) => {
-      const d = exp.created_at ? new Date(exp.created_at).getTime() : 0;
-      return d >= startDate.getTime() && d <= endDate.getTime();
+      const dateKey =
+        typeof exp.transaction_date === "string"
+          ? exp.transaction_date
+          : getJakartaDateKey(exp.created_at);
+      return dateKey >= body.periodStart && dateKey <= body.periodEnd;
     });
 
     // Recalculate totals for accuracy
@@ -293,11 +357,17 @@ export async function POST(request: Request) {
     sortedSources = Object.entries(sourceTotals).sort((a, b) => b[1] - a[1]);
   } catch (err) {
     console.error("Graceful database query error in send-report route:", err);
-    // If it fails, fall back using the body values
-    if (accounts.length === 0) {
-      accounts = [{ id: "fallback", name: "Default Account" }];
-      balances["fallback"] = numNet;
-    }
+    const message = getErrorMessage(err);
+    await saveEmailReportLog({
+      errorMessage: message,
+      periodLabel: body.periodLabel,
+      recipientEmail: reportTestRecipientEmail,
+      reportType: body.reportType,
+      status: "failed",
+      supabase,
+      userId: user.id,
+    });
+    return Response.json({ error: message }, { status: 503 });
   }
 
   const resend = new Resend(resendApiKey);

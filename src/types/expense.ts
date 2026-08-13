@@ -4,6 +4,8 @@ export type Expense = {
   userId: string;
   accountId: string;
   createdAt: number;
+  description?: string;
+  transactionDate?: string;
   amount: number;
   category: string;
   paymentMethod: string;

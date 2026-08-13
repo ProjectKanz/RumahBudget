@@ -9,6 +9,10 @@ import {
 } from "@/src/components/cockpit-ui";
 import type { Income } from "@/src/types/income";
 import type { MoneyAccount } from "@/src/types/money-account";
+import {
+  localDateInputToTimestamp,
+  toLocalDateInputValue,
+} from "@/src/lib/transaction-entry";
 import { FormEvent, useState } from "react";
 
 type IncomeFormProps = {
@@ -32,6 +36,9 @@ export default function IncomeForm({
   const [source, setSource] = useState("");
   const [accountId, setAccountId] = useState("");
   const [note, setNote] = useState("");
+  const [transactionDate, setTransactionDate] = useState(() =>
+    toLocalDateInputValue(),
+  );
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -46,9 +53,15 @@ export default function IncomeForm({
 
     const numericAmount = Number(amount);
     const trimmedSource = source.trim();
+    const transactionTimestamp = localDateInputToTimestamp(transactionDate);
 
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
       setError("Enter an income amount greater than 0.");
+      return;
+    }
+
+    if (!transactionTimestamp) {
+      setError("Choose a valid transaction date.");
       return;
     }
 
@@ -67,7 +80,8 @@ export default function IncomeForm({
       owner: accountLabel,
       userId: "",
       accountId: selectedAccountId,
-      createdAt: Date.now(),
+      createdAt: transactionTimestamp,
+      transactionDate,
       amount: numericAmount,
       source: trimmedSource,
       note: note.trim(),
@@ -147,8 +161,21 @@ export default function IncomeForm({
         </label>
 
         <label className={labelClassName}>
-          Source
+          Transaction Date
           <SharpInput
+            max={toLocalDateInputValue()}
+            name="incomeTransactionDate"
+            required
+            type="date"
+            value={transactionDate}
+            onChange={(event) => setTransactionDate(event.target.value)}
+          />
+        </label>
+
+        <label className={labelClassName}>
+          Source / Description
+          <SharpInput
+            maxLength={120}
             name="source"
             type="text"
             placeholder="Example: salary, bonus, business"

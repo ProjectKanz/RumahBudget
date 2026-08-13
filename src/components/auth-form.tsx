@@ -26,6 +26,28 @@ function getAuthRequestErrorMessage(error: unknown) {
   return "Permintaan akun gagal. Silakan coba lagi.";
 }
 
+function validateCredentials(email: string, password: string) {
+  const normalizedEmail = email.trim();
+
+  if (!normalizedEmail) {
+    return "Masukkan alamat email terlebih dahulu.";
+  }
+
+  if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+    return "Masukkan alamat email yang valid.";
+  }
+
+  if (!password) {
+    return "Masukkan kata sandi terlebih dahulu.";
+  }
+
+  if (password.length < 6) {
+    return "Kata sandi minimal 6 karakter.";
+  }
+
+  return "";
+}
+
 export default function AuthForm({ userEmail }: AuthFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -34,6 +56,12 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const validationMessage = validateCredentials(email, password);
+    if (validationMessage) {
+      setMessage(validationMessage);
+      return;
+    }
 
     if (!supabase) {
       setMessage(missingSupabaseEnvMessage);
@@ -45,7 +73,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password,
       });
 
@@ -63,6 +91,12 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
   }
 
   async function signUp() {
+    const validationMessage = validateCredentials(email, password);
+    if (validationMessage) {
+      setMessage(validationMessage);
+      return;
+    }
+
     if (!supabase) {
       setMessage(missingSupabaseEnvMessage);
       return;
@@ -73,7 +107,7 @@ export default function AuthForm({ userEmail }: AuthFormProps) {
 
     try {
       const { error } = await supabase.auth.signUp({
-        email,
+        email: email.trim(),
         password,
       });
 
