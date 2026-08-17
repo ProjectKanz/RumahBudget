@@ -43,6 +43,7 @@ type AppView =
   | "transactions"
   | "reports"
   | "allocation"
+  | "trading"
   | "sandbox"
   | "settings";
 
@@ -580,6 +581,13 @@ export default function OverviewDashboard({
               onClick={() => onOpenView("allocation")}
             >
               Buka alokasi
+            </button>
+            <button
+              className="ledger-button ledger-button--secondary"
+              type="button"
+              onClick={() => onOpenView("trading")}
+            >
+              Buka Trading
             </button>
             <button
               className="ledger-button ledger-button--secondary"

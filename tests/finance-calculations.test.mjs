@@ -12,9 +12,29 @@ function account(id, initialBalance) {
     userId: "user-1",
     name: id,
     accountType: "Bank",
+    purpose: id === "trading" ? "trading" : "general",
     initialBalance,
     isArchived: false,
     createdAt: januaryTimestamp,
+  };
+}
+
+function tradingResult(
+  id,
+  accountId,
+  netAmount,
+  createdAt = januaryTimestamp,
+  sourceIncomeId,
+) {
+  return {
+    id,
+    userId: "user-1",
+    accountId,
+    transactionDate: "2027-01-10",
+    netAmount,
+    note: "",
+    sourceIncomeId,
+    createdAt,
   };
 }
 
@@ -57,8 +77,8 @@ function transfer(id, fromAccountId, toAccountId, amount) {
   };
 }
 
-function snapshot({ accounts, incomes = [], expenses = [], transfers = [], now = januaryReference, periodReference }) {
-  return calculateFinanceSnapshot({ accounts, incomes, expenses, transfers, now, periodReference });
+function snapshot({ accounts, incomes = [], expenses = [], transfers = [], tradingResults = [], now = januaryReference, periodReference }) {
+  return calculateFinanceSnapshot({ accounts, incomes, expenses, transfers, tradingResults, now, periodReference });
 }
 
 test("initial balance increases total balance without becoming monthly income", () => {
@@ -192,4 +212,89 @@ test("historical period changes cashflow selection without changing current bala
   assert.equal(result.totalBalance, 110_000);
   assert.equal(result.monthlyIncome, 4_000);
   assert.deepEqual(result.monthlyIncomes.map((item) => item.id), ["december-income"]);
+});
+
+test("signed Trading P/L changes only the trading balance and total balance", () => {
+  const result = snapshot({
+    accounts: [account("bank", 100_000), account("trading", 50_000)],
+    tradingResults: [
+      tradingResult("profit", "trading", 12_000),
+      tradingResult("loss", "trading", -5_000),
+    ],
+  });
+
+  assert.deepEqual(result.accountBalances, {
+    bank: 100_000,
+    trading: 57_000,
+  });
+  assert.equal(result.totalBalance, 157_000);
+  assert.equal(result.monthlyTradingNet, 7_000);
+  assert.equal(result.monthlyIncome, 0);
+  assert.equal(result.monthlyExpense, 0);
+  assert.equal(result.netCashflow, 0);
+});
+
+test("migrated income is replaced exactly once by equal Trading P/L", () => {
+  const result = snapshot({
+    accounts: [account("trading", 50_000)],
+    incomes: [income("legacy-profit", "trading", 10_000)],
+    tradingResults: [
+      tradingResult("migrated-profit", "trading", 10_000, januaryTimestamp, "legacy-profit"),
+    ],
+  });
+
+  assert.equal(result.accountBalances.trading, 60_000);
+  assert.equal(result.totalBalance, 60_000);
+  assert.equal(result.monthlyIncome, 0);
+  assert.deepEqual(result.monthlyIncomes, []);
+  assert.equal(result.monthlyTradingNet, 10_000);
+});
+
+test("previous-period Trading P/L affects current balance but not selected-period P/L", () => {
+  const decemberTimestamp = new Date(2026, 11, 20, 12).getTime();
+  const result = snapshot({
+    accounts: [account("trading", 50_000)],
+    tradingResults: [
+      tradingResult("december-profit", "trading", 8_000, decemberTimestamp),
+      tradingResult("january-loss", "trading", -3_000),
+    ],
+  });
+
+  assert.equal(result.accountBalances.trading, 55_000);
+  assert.equal(result.totalBalance, 55_000);
+  assert.equal(result.monthlyTradingNet, -3_000);
+  assert.deepEqual(result.monthlyTradingResults.map((item) => item.id), ["january-loss"]);
+});
+
+test("Trading results for unknown or general accounts fail closed", () => {
+  const result = snapshot({
+    accounts: [account("bank", 100_000), account("trading", 50_000)],
+    tradingResults: [
+      tradingResult("general-profit", "bank", 99_000),
+      tradingResult("unknown-profit", "missing", 88_000),
+    ],
+  });
+
+  assert.deepEqual(result.accountBalances, {
+    bank: 100_000,
+    trading: 50_000,
+  });
+  assert.equal(result.totalBalance, 150_000);
+  assert.equal(result.monthlyTradingNet, 0);
+});
+
+test("duplicate migrated source IDs cannot exclude income or add P/L twice", () => {
+  const result = snapshot({
+    accounts: [account("trading", 50_000)],
+    incomes: [income("legacy-profit", "trading", 10_000)],
+    tradingResults: [
+      tradingResult("first", "trading", 10_000, januaryTimestamp, "legacy-profit"),
+      tradingResult("duplicate", "trading", 10_000, januaryTimestamp, "legacy-profit"),
+    ],
+  });
+
+  assert.equal(result.accountBalances.trading, 60_000);
+  assert.equal(result.totalBalance, 60_000);
+  assert.equal(result.monthlyIncome, 10_000);
+  assert.equal(result.monthlyTradingNet, 0);
 });

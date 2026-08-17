@@ -20,13 +20,21 @@ import OverviewDashboard from "@/src/components/overview-dashboard";
 import ReportPreview from "@/src/components/report-preview";
 import TransactionHistory from "@/src/components/transaction-history";
 import TransferMoney from "@/src/components/transfer-money";
+import TradingDashboard from "@/src/components/trading-dashboard";
 import SurvivalMatrix from "@/src/components/survival-matrix";
 import SystemDiagnostics from "@/src/components/system-diagnostics";
 import SandboxControls from "@/src/components/sandbox-controls";
 import CommandK from "@/src/components/command-k";
 import MoneyAllocationWatch from "@/src/components/money-allocation-watch";
 import { calculateDailyAllowance } from "@/src/lib/daily-allowance";
-import { calculateFinanceSnapshot } from "@/src/lib/finance-calculations";
+import {
+  calculateFinanceSnapshot,
+  getHouseholdIncomes,
+} from "@/src/lib/finance-calculations";
+import {
+  calculateTradingSummary,
+  validateTradingResultDraft,
+} from "@/src/lib/trading-calculations";
 import {
   getCalendarMonthKey,
   getCalendarMonthPeriod,
@@ -70,6 +78,7 @@ import type {
   MoneyAccountType,
 } from "@/src/types/money-account";
 import type { Transfer } from "@/src/types/transfer";
+import type { TradingResult } from "@/src/types/trading-result";
 import type { SandboxTransaction } from "@/src/types/sandbox";
 import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -183,6 +192,7 @@ type AppView =
   | "transactions"
   | "reports"
   | "allocation"
+  | "trading"
   | "sandbox"
   | "settings";
 
@@ -199,6 +209,7 @@ const appViews: { label: string; value: AppView }[] = [
   { label: "Transaksi", value: "transactions" },
   { label: "Laporan", value: "reports" },
   { label: "Alokasi", value: "allocation" },
+  { label: "Trading", value: "trading" },
   { label: "Simulasi", value: "sandbox" },
   { label: "Pengaturan", value: "settings" },
 ];
@@ -210,7 +221,7 @@ const appViewGroups: Array<{
   { label: "Utama", views: ["overview"] },
   { label: "Aktivitas", views: ["add", "transactions"] },
   { label: "Akun", views: ["accounts", "reports"] },
-  { label: "Perencanaan", views: ["allocation", "sandbox"] },
+  { label: "Perencanaan", views: ["allocation", "trading", "sandbox"] },
   { label: "Pengaturan", views: ["settings"] },
 ];
 
@@ -224,6 +235,7 @@ const mobilePrimaryViews: AppView[] = [
 const mobileMoreViews: AppView[] = [
   "reports",
   "allocation",
+  "trading",
   "sandbox",
   "settings",
 ];
@@ -292,8 +304,20 @@ type SupabaseMoneyAccountRow = {
   user_id?: string | null;
   name?: string | null;
   account_type?: string | null;
+  account_purpose?: string | null;
   initial_balance?: number | string | null;
   is_archived?: boolean | null;
+  created_at?: string | null;
+};
+
+type SupabaseTradingResultRow = {
+  id?: string | number;
+  user_id?: string | null;
+  account_id?: string | null;
+  transaction_date?: string | null;
+  net_amount?: number | string | null;
+  note?: string | null;
+  source_income_id?: string | null;
   created_at?: string | null;
 };
 
@@ -409,6 +433,7 @@ export default function Home() {
   const [emailReports, setEmailReports] = useState<EmailReport[]>([]);
   const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccount[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [tradingResults, setTradingResults] = useState<TradingResult[]>([]);
   const [netHourlyWage, setNetHourlyWage] = useState<number>(0);
   const [livingAccountIds, setLivingAccountIds] = useState<string[]>([]);
   const [isLivingPreferenceLoading, setIsLivingPreferenceLoading] =
@@ -420,9 +445,11 @@ export default function Home() {
   const [emailReportError, setEmailReportError] = useState("");
   const [moneyAccountError, setMoneyAccountError] = useState("");
   const [transferError, setTransferError] = useState("");
+  const [tradingError, setTradingError] = useState("");
   const [isExpenseLoading, setIsExpenseLoading] = useState(false);
   const [isIncomeLoading, setIsIncomeLoading] = useState(false);
   const [isTransferLoading, setIsTransferLoading] = useState(false);
+  const [isTradingLoading, setIsTradingLoading] = useState(false);
   const [isEmailReportLoading, setIsEmailReportLoading] = useState(false);
   const [isMoneyAccountLoading, setIsMoneyAccountLoading] = useState(false);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
@@ -813,6 +840,8 @@ export default function Home() {
           accountType: isMoneyAccountType(account.account_type)
             ? account.account_type
             : "Other",
+          purpose:
+            account.account_purpose === "trading" ? "trading" : "general",
           initialBalance: Number(account.initial_balance ?? 0),
           isArchived: Boolean(account.is_archived),
           createdAt: account.created_at
@@ -900,6 +929,76 @@ export default function Home() {
     } finally {
       timeout.clear();
       setIsTransferLoading(false);
+    }
+  }, [authUser]);
+
+  const loadTradingResultsFromSupabase = useCallback(async () => {
+    setIsTradingLoading(true);
+
+    if (!authUser) {
+      setTradingResults([]);
+      setIsTradingLoading(false);
+      return;
+    }
+
+    if (!supabase) {
+      setTradingError(missingSupabaseEnvMessage);
+      setIsTradingLoading(false);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      const { data, error } = await supabase
+        .from("trading_results")
+        .select("*")
+        .eq("user_id", authUser.id)
+        .order("transaction_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setTradingError(error.message);
+        setTradingResults([]);
+        return;
+      }
+
+      const nextTradingResults = (data as SupabaseTradingResultRow[]).map(
+        (result): TradingResult => ({
+          id: String(result.id ?? crypto.randomUUID()),
+          userId: result.user_id ?? authUser.id,
+          accountId: result.account_id ?? "",
+          transactionDate:
+            result.transaction_date ??
+            (result.created_at
+              ? timestampToLocalDateInputValue(
+                  new Date(result.created_at).getTime(),
+                )
+              : ""),
+          netAmount: Number(result.net_amount ?? 0),
+          note: result.note ?? "",
+          sourceIncomeId: result.source_income_id ?? undefined,
+          createdAt: getTransactionTimestamp(
+            result.transaction_date,
+            result.created_at,
+          ),
+        }),
+      );
+
+      setTradingResults(nextTradingResults);
+      setTradingError("");
+    } catch (error) {
+      setTradingError(
+        getSupabaseErrorMessage(
+          error,
+          "Failed to load Trading data from Supabase.",
+        ),
+      );
+      setTradingResults([]);
+    } finally {
+      timeout.clear();
+      setIsTradingLoading(false);
     }
   }, [authUser]);
 
@@ -1534,6 +1633,7 @@ export default function Home() {
         setEmailReports([]);
         setMoneyAccounts([]);
         setTransfers([]);
+        setTradingResults([]);
         setNetHourlyWage(0);
         setLivingAccountIds([]);
         setIsLivingPreferenceUnsynced(false);
@@ -1549,6 +1649,7 @@ export default function Home() {
       void loadEmailReportsFromSupabase();
       void loadMoneyAccountsFromSupabase();
       void loadTransfersFromSupabase();
+      void loadTradingResultsFromSupabase();
       void loadPreferencesFromSupabase();
       void loadLivingAccountPreferences();
       void loadCommitmentsFromSupabase();
@@ -1560,6 +1661,7 @@ export default function Home() {
     loadIncomesFromSupabase,
     loadMoneyAccountsFromSupabase,
     loadTransfersFromSupabase,
+    loadTradingResultsFromSupabase,
     loadPreferencesFromSupabase,
     loadLivingAccountPreferences,
     loadCommitmentsFromSupabase,
@@ -1719,7 +1821,10 @@ export default function Home() {
 
   const activeExpenses = expenses;
 
-  const activeIncomes = incomes;
+  const activeIncomes = useMemo(
+    () => getHouseholdIncomes(incomes, tradingResults),
+    [incomes, tradingResults],
+  );
   const signedInEmail = authUser?.email ?? "Signed-in account";
   const selectedMonth = useMemo(
     () =>
@@ -1766,9 +1871,17 @@ export default function Home() {
         expenses: activeExpenses,
         incomes: activeIncomes,
         transfers,
+        tradingResults,
         periodReference: selectedMonth?.start.getTime(),
       }),
-    [activeExpenses, activeIncomes, moneyAccounts, selectedMonth, transfers],
+    [
+      activeExpenses,
+      activeIncomes,
+      moneyAccounts,
+      selectedMonth,
+      tradingResults,
+      transfers,
+    ],
   );
   const monthlyExpenses = financeSnapshot.monthlyExpenses;
   const monthlyIncomes = financeSnapshot.monthlyIncomes;
@@ -1796,6 +1909,24 @@ export default function Home() {
   }, [financeSnapshot.monthlyIncome, isSandboxMode, sandboxTransactions]);
 
   const moneyAccountBalances = financeSnapshot.accountBalances;
+  const tradingSummary = useMemo(
+    () =>
+      calculateTradingSummary({
+        accounts: moneyAccounts,
+        accountBalances: moneyAccountBalances,
+        transfers,
+        tradingResults,
+        periodReference: selectedMonth?.start.getTime() ?? financialNow,
+      }),
+    [
+      moneyAccountBalances,
+      moneyAccounts,
+      financialNow,
+      selectedMonth,
+      tradingResults,
+      transfers,
+    ],
+  );
   const currentPayCycle = useMemo(
     () => getPayCycle(new Date(financialNow)),
     [financialNow],
@@ -2523,6 +2654,117 @@ export default function Home() {
       return false;
     } finally {
       timeout.clear();
+    }
+  }
+
+  async function addTradingResult(draft: {
+    accountId: string;
+    transactionDate: string;
+    netAmount: number;
+    note: string;
+  }) {
+    if (!authUser) {
+      setTradingError("Please log in before saving a Trading result.");
+      return false;
+    }
+
+    if (!supabase) {
+      setTradingError(missingSupabaseEnvMessage);
+      return false;
+    }
+
+    const validation = validateTradingResultDraft({
+      accountId: draft.accountId,
+      transactionDate: draft.transactionDate,
+      netAmount: draft.netAmount,
+      accounts: moneyAccounts,
+      userId: authUser.id,
+    });
+    if (!validation.ok) {
+      setTradingError(validation.error);
+      return false;
+    }
+
+    const timeout = createSupabaseTimeout();
+    setIsTradingLoading(true);
+
+    try {
+      const { error } = await supabase
+        .from("trading_results")
+        .insert({
+          user_id: authUser.id,
+          account_id: validation.value.accountId,
+          transaction_date: validation.value.transactionDate,
+          net_amount: validation.value.netAmount,
+          note: draft.note.trim(),
+        })
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setTradingError(error.message);
+        return false;
+      }
+
+      await loadTradingResultsFromSupabase();
+      return true;
+    } catch (error) {
+      setTradingError(
+        getSupabaseErrorMessage(
+          error,
+          "Failed to save Trading result to Supabase.",
+        ),
+      );
+      return false;
+    } finally {
+      timeout.clear();
+      setIsTradingLoading(false);
+    }
+  }
+
+  async function deleteTradingResult(id: string) {
+    const result = tradingResults.find((candidate) => candidate.id === id);
+    if (!result || result.sourceIncomeId) {
+      setTradingError("Migrated Trading results cannot be deleted here.");
+      return;
+    }
+
+    if (!authUser || !supabase) {
+      setTradingError(
+        authUser
+          ? missingSupabaseEnvMessage
+          : "Please log in before deleting a Trading result.",
+      );
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+    setIsTradingLoading(true);
+
+    try {
+      const { error } = await supabase
+        .from("trading_results")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", authUser.id)
+        .is("source_income_id", null)
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setTradingError(error.message);
+        return;
+      }
+
+      await loadTradingResultsFromSupabase();
+    } catch (error) {
+      setTradingError(
+        getSupabaseErrorMessage(
+          error,
+          "Failed to delete Trading result from Supabase.",
+        ),
+      );
+    } finally {
+      timeout.clear();
+      setIsTradingLoading(false);
     }
   }
 
@@ -3338,6 +3580,19 @@ export default function Home() {
                 accounts={moneyAccounts}
                 isBalanceHidden={isBalanceHidden}
                 userId={authUser.id}
+              />
+            ) : null}
+
+            {activeView === "trading" ? (
+              <TradingDashboard
+                accounts={moneyAccounts}
+                error={tradingError}
+                isBalanceHidden={isBalanceHidden}
+                isLoading={isTradingLoading}
+                onAddResult={addTradingResult}
+                onDeleteResult={deleteTradingResult}
+                periodLabel={selectedMonth?.label ?? "Periode terpilih"}
+                summary={tradingSummary}
               />
             ) : null}
 
