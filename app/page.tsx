@@ -36,6 +36,7 @@ import { formatCurrency } from "@/src/lib/format";
 import {
   getLivingAccountStorageKey,
   parseLivingAccountIds,
+  updateLivingAccountPreference,
 } from "@/src/lib/living-account-preferences";
 import {
   buildOfflineQueueInsert,
@@ -2442,17 +2443,15 @@ export default function Home() {
     setIsLivingPreferenceLoading(true);
     const timeout = createSupabaseTimeout();
     try {
-      const { error } = await supabase
-        .from("report_preferences")
-        .upsert(
-          {
-            living_account_ids: normalizedIds,
-            updated_at: new Date().toISOString(),
-            user_id: authUser.id,
-          },
-          { onConflict: "user_id" },
-        )
-        .abortSignal(timeout.signal);
+      const { error } = await updateLivingAccountPreference(
+        supabase.from("report_preferences"),
+        {
+          livingAccountIds: normalizedIds,
+          signal: timeout.signal,
+          updatedAt: new Date().toISOString(),
+          userId: authUser.id,
+        },
+      );
 
       if (error) {
         setIsLivingPreferenceUnsynced(true);
