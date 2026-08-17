@@ -10,4 +10,6 @@ export type Expense = {
   category: string;
   paymentMethod: string;
   note: string;
+  recurringCommitmentId?: string;
+  recurringPeriod?: string;
 };

@@ -2,6 +2,17 @@
 
 There are no pending review-only SQL changes.
 
+The following migration was applied to the production `rumahbudget` project
+and moved to `supabase/migrations` on 2026-08-17:
+
+1. `20260817_living_account_preferences.sql`
+   - Adds `report_preferences.living_account_ids` as a non-null UUID array.
+   - Supports Supabase-backed account selection for the daily allowance card.
+
+Post-migration verification through `information_schema.columns` confirmed one
+matching column with data type `ARRAY`, `is_nullable = NO`, and default
+`'{}'::uuid[]`.
+
 The following migrations were applied to production in the required order on
 2026-08-13 and are now versioned under `supabase/migrations`:
 

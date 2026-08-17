@@ -1,5 +1,7 @@
 import { NumberValue, SharpButton, SharpInput } from "@/src/components/cockpit-ui";
+import DailyAllowanceCard from "@/src/components/daily-allowance-card";
 import DashboardCharts from "@/src/components/dashboard-charts";
+import type { DailyAllowanceResult } from "@/src/lib/daily-allowance";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
 import type { Expense } from "@/src/types/expense";
 import type { MoneyAccount } from "@/src/types/money-account";
@@ -51,14 +53,20 @@ type OverviewDashboardProps = {
   balanceAfterPlannedSpend: number;
   chartHighlightClassName?: string;
   decisionChecks: DecisionCheck[];
+  dailyAllowanceResult: DailyAllowanceResult;
   expenses: Expense[];
   highlightClassName?: string;
   isBalanceHidden: boolean;
   isSandboxMode: boolean;
+  isLivingPreferenceLoading: boolean;
+  isLivingPreferenceUnsynced: boolean;
+  livingAccountIds: string[];
   monthlyStatus: MonthlyStatus;
   moneyAccounts: MoneyAccount[];
   netHourlyWage: number;
   onOpenQuickAdd: (tab: "income" | "expense" | "transfer") => void;
+  onLivingAccountIdsChange: (accountIds: string[]) => void | Promise<void>;
+  onOpenCommitments: () => void;
   onOpenView: (view: AppView) => void;
   onToggleBalanceVisibility: () => void;
   periodLabel: string;
@@ -69,6 +77,7 @@ type OverviewDashboardProps = {
   recentActivity: OverviewRecentActivity[];
   remainingBalance: number;
   safePlannedSpendAmount: number;
+  showDailyAllowance: boolean;
   setPlannedSpend: (value: string) => void;
   spendGaugePercent: number;
   spendSignal: SpendSignal;
@@ -127,14 +136,20 @@ export default function OverviewDashboard({
   balanceAfterPlannedSpend,
   chartHighlightClassName = "",
   decisionChecks,
+  dailyAllowanceResult,
   expenses,
   highlightClassName = "",
   isBalanceHidden,
   isSandboxMode,
+  isLivingPreferenceLoading,
+  isLivingPreferenceUnsynced,
+  livingAccountIds,
   monthlyStatus,
   moneyAccounts,
   netHourlyWage,
   onOpenQuickAdd,
+  onLivingAccountIdsChange,
+  onOpenCommitments,
   onOpenView,
   onToggleBalanceVisibility,
   periodLabel,
@@ -145,6 +160,7 @@ export default function OverviewDashboard({
   recentActivity,
   remainingBalance,
   safePlannedSpendAmount,
+  showDailyAllowance,
   setPlannedSpend,
   spendGaugePercent,
   spendSignal,
@@ -197,6 +213,20 @@ export default function OverviewDashboard({
               <p>{monthlyStatus.explanation}</p>
             </div>
           </div>
+
+          {showDailyAllowance ? (
+            <DailyAllowanceCard
+              accounts={moneyAccounts}
+              isBalanceHidden={isBalanceHidden}
+              isPreferenceLoading={isLivingPreferenceLoading}
+              isPreferenceUnsynced={isLivingPreferenceUnsynced}
+              isSandboxMode={isSandboxMode}
+              onOpenCommitments={onOpenCommitments}
+              onSelectionChange={onLivingAccountIdsChange}
+              result={dailyAllowanceResult}
+              selectedAccountIds={livingAccountIds}
+            />
+          ) : null}
 
           <dl className="rb-vault-spine__metrics">
             <div>

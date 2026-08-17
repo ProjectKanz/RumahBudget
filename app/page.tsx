@@ -25,6 +25,7 @@ import SystemDiagnostics from "@/src/components/system-diagnostics";
 import SandboxControls from "@/src/components/sandbox-controls";
 import CommandK from "@/src/components/command-k";
 import MoneyAllocationWatch from "@/src/components/money-allocation-watch";
+import { calculateDailyAllowance } from "@/src/lib/daily-allowance";
 import { calculateFinanceSnapshot } from "@/src/lib/finance-calculations";
 import {
   getCalendarMonthKey,
@@ -32,6 +33,10 @@ import {
   getRecentCalendarMonths,
 } from "@/src/lib/calendar-period";
 import { formatCurrency } from "@/src/lib/format";
+import {
+  getLivingAccountStorageKey,
+  parseLivingAccountIds,
+} from "@/src/lib/living-account-preferences";
 import {
   buildOfflineQueueInsert,
   createOfflineQueueItem,
@@ -45,6 +50,10 @@ import {
   getRecurringOccurrenceKey,
   shouldProcessRecurringCommitment,
 } from "@/src/lib/recurring-schedule";
+import {
+  getMillisecondsUntilNextJakartaDay,
+  getPayCycle,
+} from "@/src/lib/pay-cycle";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import {
   AUTH_SESSION_RESTORE_TIMEOUT_MS,
@@ -250,6 +259,8 @@ type SupabaseExpenseRow = {
   description?: string | null;
   transaction_date?: string | null;
   created_at?: string | null;
+  recurring_commitment_id?: string | null;
+  recurring_period?: string | null;
 };
 
 type SupabaseIncomeRow = {
@@ -398,6 +409,11 @@ export default function Home() {
   const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccount[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [netHourlyWage, setNetHourlyWage] = useState<number>(0);
+  const [livingAccountIds, setLivingAccountIds] = useState<string[]>([]);
+  const [isLivingPreferenceLoading, setIsLivingPreferenceLoading] =
+    useState(false);
+  const [isLivingPreferenceUnsynced, setIsLivingPreferenceUnsynced] =
+    useState(false);
   const [expenseError, setExpenseError] = useState("");
   const [incomeError, setIncomeError] = useState("");
   const [emailReportError, setEmailReportError] = useState("");
@@ -438,6 +454,7 @@ export default function Home() {
   const [recurringScanTimestamp, setRecurringScanTimestamp] = useState(() =>
     Date.now(),
   );
+  const [financialNow, setFinancialNow] = useState(() => Date.now());
   const attemptedRecurringOccurrences = useRef(new Set<string>());
   const offlineSyncUsers = useRef(new Set<string>());
   const mobileMoreTriggerRef = useRef<HTMLButtonElement>(null);
@@ -615,6 +632,8 @@ export default function Home() {
         category: expense.category ?? "Other",
         paymentMethod: expense.payment_method ?? "Unknown",
         note: expense.note ?? "",
+        recurringCommitmentId: expense.recurring_commitment_id ?? undefined,
+        recurringPeriod: expense.recurring_period ?? undefined,
       }));
 
       setExpenses(nextExpenses);
@@ -926,6 +945,70 @@ export default function Home() {
       setNetHourlyWage(localWage ? Number(localWage) : 0);
     } finally {
       timeout.clear();
+    }
+  }, [authUser]);
+
+  const loadLivingAccountPreferences = useCallback(async () => {
+    if (!authUser) {
+      setLivingAccountIds([]);
+      setIsLivingPreferenceLoading(false);
+      setIsLivingPreferenceUnsynced(false);
+      return;
+    }
+
+    setIsLivingPreferenceLoading(true);
+    const storageKey = getLivingAccountStorageKey(authUser.id);
+    const loadLocalPreference = () =>
+      parseLivingAccountIds(window.localStorage.getItem(storageKey));
+
+    if (!supabase) {
+      setLivingAccountIds(loadLocalPreference());
+      setIsLivingPreferenceUnsynced(true);
+      setIsLivingPreferenceLoading(false);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+    try {
+      const { data, error } = await supabase
+        .from("report_preferences")
+        .select("living_account_ids")
+        .eq("user_id", authUser.id)
+        .abortSignal(timeout.signal)
+        .maybeSingle();
+
+      if (error) {
+        setLivingAccountIds(loadLocalPreference());
+        setIsLivingPreferenceUnsynced(true);
+        if (
+          error.code !== "42703" &&
+          !error.message?.includes("living_account_ids")
+        ) {
+          console.error("Error loading living-account preferences:", error.message);
+        }
+        return;
+      }
+
+      if (!data) {
+        setLivingAccountIds(loadLocalPreference());
+        setIsLivingPreferenceUnsynced(true);
+        return;
+      }
+
+      const remoteIds = parseLivingAccountIds(data.living_account_ids);
+      setLivingAccountIds(remoteIds);
+      window.localStorage.setItem(storageKey, JSON.stringify(remoteIds));
+      setIsLivingPreferenceUnsynced(false);
+    } catch (error) {
+      setLivingAccountIds(loadLocalPreference());
+      setIsLivingPreferenceUnsynced(true);
+      console.error(
+        "Error loading living-account preferences:",
+        getSupabaseErrorMessage(error, "Preference request failed."),
+      );
+    } finally {
+      timeout.clear();
+      setIsLivingPreferenceLoading(false);
     }
   }, [authUser]);
 
@@ -1451,6 +1534,8 @@ export default function Home() {
         setMoneyAccounts([]);
         setTransfers([]);
         setNetHourlyWage(0);
+        setLivingAccountIds([]);
+        setIsLivingPreferenceUnsynced(false);
         setIsOnboardingOpen(false);
         setOnboardingStep(0);
       });
@@ -1464,6 +1549,7 @@ export default function Home() {
       void loadMoneyAccountsFromSupabase();
       void loadTransfersFromSupabase();
       void loadPreferencesFromSupabase();
+      void loadLivingAccountPreferences();
       void loadCommitmentsFromSupabase();
     });
   }, [
@@ -1474,6 +1560,7 @@ export default function Home() {
     loadMoneyAccountsFromSupabase,
     loadTransfersFromSupabase,
     loadPreferencesFromSupabase,
+    loadLivingAccountPreferences,
     loadCommitmentsFromSupabase,
   ]);
 
@@ -1494,6 +1581,20 @@ export default function Home() {
 
     return () => window.clearTimeout(timeoutId);
   }, [recurringScanTimestamp]);
+
+  useEffect(() => {
+    const refreshFinancialNow = () => setFinancialNow(Date.now());
+    const timeoutId = window.setTimeout(
+      refreshFinancialNow,
+      getMillisecondsUntilNextJakartaDay(new Date(financialNow)) + 100,
+    );
+
+    window.addEventListener("focus", refreshFinancialNow);
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.removeEventListener("focus", refreshFinancialNow);
+    };
+  }, [financialNow]);
 
   // Scan and trigger Auto-Deduct once per commitment occurrence.
   useEffect(() => {
@@ -1694,6 +1795,31 @@ export default function Home() {
   }, [financeSnapshot.monthlyIncome, isSandboxMode, sandboxTransactions]);
 
   const moneyAccountBalances = financeSnapshot.accountBalances;
+  const currentPayCycle = useMemo(
+    () => getPayCycle(new Date(financialNow)),
+    [financialNow],
+  );
+  const dailyAllowanceResult = useMemo(
+    () =>
+      calculateDailyAllowance({
+        accountBalances: moneyAccountBalances,
+        accounts: moneyAccounts,
+        commitments,
+        expenses: activeExpenses,
+        livingAccountIds,
+        payCycle: currentPayCycle,
+      }),
+    [
+      activeExpenses,
+      commitments,
+      currentPayCycle,
+      livingAccountIds,
+      moneyAccountBalances,
+      moneyAccounts,
+    ],
+  );
+  const isCurrentSummaryMonth =
+    selectedMonthKey === currentPayCycle.todayKey.slice(0, 7);
 
   const accountNamesById = useMemo(
     () =>
@@ -2300,6 +2426,58 @@ export default function Home() {
     return true;
   }
 
+  async function saveLivingAccountIds(nextIds: string[]) {
+    if (!authUser) return;
+
+    const normalizedIds = parseLivingAccountIds(nextIds);
+    const storageKey = getLivingAccountStorageKey(authUser.id);
+    setLivingAccountIds(normalizedIds);
+    window.localStorage.setItem(storageKey, JSON.stringify(normalizedIds));
+
+    if (!supabase) {
+      setIsLivingPreferenceUnsynced(true);
+      return;
+    }
+
+    setIsLivingPreferenceLoading(true);
+    const timeout = createSupabaseTimeout();
+    try {
+      const { error } = await supabase
+        .from("report_preferences")
+        .upsert(
+          {
+            living_account_ids: normalizedIds,
+            updated_at: new Date().toISOString(),
+            user_id: authUser.id,
+          },
+          { onConflict: "user_id" },
+        )
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setIsLivingPreferenceUnsynced(true);
+        if (
+          error.code !== "42703" &&
+          !error.message?.includes("living_account_ids")
+        ) {
+          console.error("Error saving living-account preferences:", error.message);
+        }
+        return;
+      }
+
+      setIsLivingPreferenceUnsynced(false);
+    } catch (error) {
+      setIsLivingPreferenceUnsynced(true);
+      console.error(
+        "Error saving living-account preferences:",
+        getSupabaseErrorMessage(error, "Preference save failed."),
+      );
+    } finally {
+      timeout.clear();
+      setIsLivingPreferenceLoading(false);
+    }
+  }
+
   async function addMoneyAccount(account: {
     accountType: MoneyAccountType;
     initialBalance: number;
@@ -2882,16 +3060,29 @@ export default function Home() {
                     "dashboard-charts",
                   )}
                   decisionChecks={decisionChecks}
+                  dailyAllowanceResult={dailyAllowanceResult}
                   expenses={monthlyExpenses}
                   highlightClassName={getSectionHighlightClass("overview")}
                   isBalanceHidden={isBalanceHidden}
                   isSandboxMode={isSandboxMode}
+                  isLivingPreferenceLoading={isLivingPreferenceLoading}
+                  isLivingPreferenceUnsynced={isLivingPreferenceUnsynced}
+                  livingAccountIds={livingAccountIds}
                   monthlyStatus={monthlyStatus}
                   moneyAccounts={moneyAccounts}
                   netHourlyWage={netHourlyWage}
                   onOpenQuickAdd={(tab) => {
                     setQuickAddTab(tab);
                     openView("add");
+                  }}
+                  onLivingAccountIdsChange={saveLivingAccountIds}
+                  onOpenCommitments={() => {
+                    openView("settings");
+                    window.setTimeout(() => {
+                      document
+                        .getElementById("commitments-section")
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }, 100);
                   }}
                   onOpenView={openView}
                   onToggleBalanceVisibility={() =>
@@ -2905,6 +3096,7 @@ export default function Home() {
                   recentActivity={recentActivity}
                   remainingBalance={remainingBalance}
                   safePlannedSpendAmount={safePlannedSpendAmount}
+                  showDailyAllowance={isCurrentSummaryMonth}
                   setPlannedSpend={setPlannedSpend}
                   spendGaugePercent={spendGaugePercent}
                   spendSignal={spendSignal}
