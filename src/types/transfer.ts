@@ -7,4 +7,5 @@ export type Transfer = {
   note: string;
   createdAt: number;
   transactionDate?: string;
+  affectsDailyAllowance?: boolean;
 };

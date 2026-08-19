@@ -49,6 +49,7 @@ export default function ExpenseForm({
   );
   const [description, setDescription] = useState("");
   const [note, setNote] = useState("");
+  const [affectsDailyAllowance, setAffectsDailyAllowance] = useState(true);
   const [transactionDate, setTransactionDate] = useState(() =>
     toLocalDateInputValue(),
   );
@@ -97,6 +98,7 @@ export default function ExpenseForm({
       createdAt: transactionTimestamp,
       description: trimmedDescription,
       transactionDate,
+      affectsDailyAllowance,
       amount: numericAmount,
       category,
       paymentMethod,
@@ -121,6 +123,7 @@ export default function ExpenseForm({
     setAmount("");
     setDescription("");
     setNote("");
+    setAffectsDailyAllowance(true);
     setError("");
   }
 
@@ -246,6 +249,20 @@ export default function ExpenseForm({
             value={note}
             onChange={(event) => setNote(event.target.value)}
           />
+        </label>
+
+        <label className="flex min-h-11 items-center gap-3 border border-white/10 px-3 py-2 text-sm text-slate-200 sm:col-span-2">
+          <input
+            checked={affectsDailyAllowance}
+            type="checkbox"
+            onChange={(event) => setAffectsDailyAllowance(event.target.checked)}
+          />
+          <span>
+            <span className="block font-bold">Hitung sebagai pemakaian harian</span>
+            <span className="block text-xs text-slate-400">
+              Matikan untuk pengeluaran besar yang tidak ingin mengurangi sisa hari ini.
+            </span>
+          </span>
         </label>
 
         {error ? (

@@ -274,6 +274,7 @@ type SupabaseExpenseRow = {
   created_at?: string | null;
   recurring_commitment_id?: string | null;
   recurring_period?: string | null;
+  affects_daily_allowance?: boolean | null;
 };
 
 type SupabaseIncomeRow = {
@@ -286,6 +287,7 @@ type SupabaseIncomeRow = {
   note?: string | null;
   transaction_date?: string | null;
   created_at?: string | null;
+  affects_daily_allowance?: boolean | null;
 };
 
 type SupabaseEmailReportRow = {
@@ -330,6 +332,7 @@ type SupabaseTransferRow = {
   note?: string | null;
   transaction_date?: string | null;
   created_at?: string | null;
+  affects_daily_allowance?: boolean | null;
 };
 
 type SupabaseRecurringCommitmentRow = {
@@ -644,6 +647,7 @@ export default function Home() {
         owner: expense.owner ?? authUser.email ?? "Unknown",
         userId: expense.user_id ?? authUser.id,
         accountId: expense.account_id ?? "",
+        affectsDailyAllowance: expense.affects_daily_allowance !== false,
         createdAt: getTransactionTimestamp(
           expense.transaction_date,
           expense.created_at,
@@ -713,6 +717,7 @@ export default function Home() {
         owner: income.owner ?? authUser.email ?? "Unknown",
         userId: income.user_id ?? authUser.id,
         accountId: income.account_id ?? "",
+        affectsDailyAllowance: income.affects_daily_allowance !== false,
         createdAt: getTransactionTimestamp(
           income.transaction_date,
           income.created_at,
@@ -901,6 +906,7 @@ export default function Home() {
           userId: transfer.user_id ?? authUser.id,
           fromAccountId: transfer.from_account_id ?? "",
           toAccountId: transfer.to_account_id ?? "",
+          affectsDailyAllowance: transfer.affects_daily_allowance !== false,
           amount: Number(transfer.amount ?? 0),
           note: transfer.note ?? "",
           createdAt: getTransactionTimestamp(
@@ -1938,16 +1944,20 @@ export default function Home() {
         accounts: moneyAccounts,
         commitments,
         expenses: activeExpenses,
+        incomes: activeIncomes,
         livingAccountIds,
         payCycle: currentPayCycle,
+        transfers,
       }),
     [
       activeExpenses,
+      activeIncomes,
       commitments,
       currentPayCycle,
       livingAccountIds,
       moneyAccountBalances,
       moneyAccounts,
+      transfers,
     ],
   );
   const isCurrentSummaryMonth =
@@ -2256,6 +2266,7 @@ export default function Home() {
           type: "expense",
           data: {
             accountId: expense.accountId,
+            affectsDailyAllowance: expense.affectsDailyAllowance !== false,
             amount: expense.amount,
             category: expense.category,
             createdAt: expense.createdAt,
@@ -2293,6 +2304,7 @@ export default function Home() {
           user_id: authUser.id,
           owner: authUser.email,
           account_id: expense.accountId,
+          affects_daily_allowance: expense.affectsDailyAllowance !== false,
           amount: expense.amount,
           category: expense.category,
           client_entry_id: expense.id,
@@ -2381,6 +2393,7 @@ export default function Home() {
           type: "income",
           data: {
             accountId: income.accountId,
+            affectsDailyAllowance: income.affectsDailyAllowance !== false,
             amount: income.amount,
             createdAt: income.createdAt,
             note: income.note,
@@ -2416,6 +2429,7 @@ export default function Home() {
           user_id: authUser.id,
           owner: authUser.email,
           account_id: income.accountId,
+          affects_daily_allowance: income.affectsDailyAllowance !== false,
           amount: income.amount,
           client_entry_id: income.id,
           created_at: new Date(income.createdAt).toISOString(),
@@ -2811,6 +2825,7 @@ export default function Home() {
   }
 
   async function addTransfer(transfer: {
+    affectsDailyAllowance: boolean;
     amount: number;
     fromAccountId: string;
     note: string;
@@ -2844,6 +2859,7 @@ export default function Home() {
           userId: authUser.id,
           fromAccountId: transfer.fromAccountId,
           toAccountId: transfer.toAccountId,
+          affectsDailyAllowance: transfer.affectsDailyAllowance,
           amount: transfer.amount,
           note: transfer.note,
           createdAt,
@@ -2866,6 +2882,7 @@ export default function Home() {
         .from("transfers")
         .insert({
           user_id: authUser.id,
+          affects_daily_allowance: transfer.affectsDailyAllowance,
           from_account_id: transfer.fromAccountId,
           to_account_id: transfer.toAccountId,
           amount: transfer.amount,

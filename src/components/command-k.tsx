@@ -21,6 +21,7 @@ type CommandKProps = {
   addExpense: (expense: Expense) => Promise<boolean>;
   addIncome: (income: Income) => Promise<boolean>;
   addTransfer: (transfer: {
+    affectsDailyAllowance: boolean;
     amount: number;
     fromAccountId: string;
     note: string;

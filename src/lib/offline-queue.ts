@@ -2,6 +2,7 @@ const OFFLINE_QUEUE_STORAGE_PREFIX = "rumahbudget.offlineQueue.v2";
 
 type ExpenseQueueData = {
   accountId: string;
+  affectsDailyAllowance: boolean;
   amount: number;
   category: string;
   createdAt: number;
@@ -12,6 +13,7 @@ type ExpenseQueueData = {
 
 type IncomeQueueData = {
   accountId: string;
+  affectsDailyAllowance: boolean;
   amount: number;
   createdAt: number;
   note: string;
@@ -19,6 +21,7 @@ type IncomeQueueData = {
 };
 
 type TransferQueueData = {
+  affectsDailyAllowance: boolean;
   amount: number;
   createdAt: number;
   fromAccountId: string;
@@ -43,7 +46,7 @@ export type OfflineQueueItem = {
 
 type OfflineQueueInsert = {
   table: "expenses" | "incomes" | "transfers";
-  values: Record<string, string | number | null>;
+  values: Record<string, boolean | string | number | null>;
 };
 
 function assertNonEmpty(value: string, label: string) {
@@ -142,6 +145,7 @@ export function buildOfflineQueueInsert(
       table: "expenses",
       values: {
         account_id: item.data.accountId,
+        affects_daily_allowance: item.data.affectsDailyAllowance,
         amount: item.data.amount,
         category: item.data.category,
         client_entry_id: item.id,
@@ -161,6 +165,7 @@ export function buildOfflineQueueInsert(
       table: "incomes",
       values: {
         account_id: item.data.accountId,
+        affects_daily_allowance: item.data.affectsDailyAllowance,
         amount: item.data.amount,
         client_entry_id: item.id,
         created_at: createdAt,
@@ -176,6 +181,7 @@ export function buildOfflineQueueInsert(
   return {
     table: "transfers",
     values: {
+      affects_daily_allowance: item.data.affectsDailyAllowance,
       amount: item.data.amount,
       client_entry_id: item.id,
       created_at: createdAt,

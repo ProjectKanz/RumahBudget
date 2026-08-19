@@ -18,6 +18,7 @@ type TransferMoneyProps = {
   error: string;
   isEmbedded?: boolean;
   onAddTransfer: (transfer: {
+    affectsDailyAllowance: boolean;
     amount: number;
     fromAccountId: string;
     note: string;
@@ -36,6 +37,7 @@ export default function TransferMoney({
   const [toAccountId, setToAccountId] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [affectsDailyAllowance, setAffectsDailyAllowance] = useState(true);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const hasEnoughAccounts = accounts.length >= 2;
@@ -93,6 +95,7 @@ export default function TransferMoney({
     setFormError("");
 
     const didSave = await onAddTransfer({
+      affectsDailyAllowance,
       amount: numericAmount,
       fromAccountId: selectedFromAccountId,
       note: note.trim(),
@@ -107,6 +110,7 @@ export default function TransferMoney({
 
     setAmount("");
     setNote("");
+    setAffectsDailyAllowance(true);
   }
 
   const content = (
@@ -182,6 +186,21 @@ export default function TransferMoney({
             onChange={(event) => setNote(event.target.value)}
             placeholder="Optional note"
           />
+        </label>
+
+        <label className="flex min-h-11 items-center gap-3 border border-white/10 px-3 py-2 text-sm text-slate-200 sm:col-span-2">
+          <input
+            checked={affectsDailyAllowance}
+            disabled={!hasEnoughAccounts}
+            type="checkbox"
+            onChange={(event) => setAffectsDailyAllowance(event.target.checked)}
+          />
+          <span>
+            <span className="block font-bold">Masukkan perubahan saldo ke jatah mulai hari ini</span>
+            <span className="block text-xs text-slate-400">
+              Transfer antara dua akun kebutuhan hidup tetap netral.
+            </span>
+          </span>
         </label>
 
         {formError ? (

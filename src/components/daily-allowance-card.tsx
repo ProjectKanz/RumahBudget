@@ -86,11 +86,38 @@ export default function DailyAllowanceCard({
           <div className="mt-4">
             <p className="ledger-money text-3xl font-black text-lime-200">
               <NumberValue>
-                {formatMoney(result.dailyAllowance, isBalanceHidden)}
+                {formatMoney(result.remainingToday, isBalanceHidden)}
               </NumberValue>
             </p>
-            <p className="mt-1 text-sm text-slate-300">boleh dipakai hari ini</p>
+            <p className="mt-1 text-sm text-slate-300">sisa yang boleh dipakai hari ini</p>
           </div>
+
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-slate-400">Jatah awal hari ini</dt>
+              <dd className="mt-1 font-bold text-white">
+                {formatMoney(result.dailyAllowance, isBalanceHidden)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-400">Sudah dipakai hari ini</dt>
+              <dd className="mt-1 font-bold text-white">
+                {formatMoney(result.spentToday, isBalanceHidden)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-400">Sisa hari ini</dt>
+              <dd className="mt-1 font-bold text-lime-200">
+                {formatMoney(result.remainingToday, isBalanceHidden)}
+              </dd>
+            </div>
+          </dl>
+
+          {result.overspentToday > 0 ? (
+            <p className="ledger-notice ledger-notice--warning mt-4 border px-3 py-2 text-sm">
+              Pemakaian hari ini melebihi jatah sebesar {formatMoney(result.overspentToday, isBalanceHidden)}.
+            </p>
+          ) : null}
 
           {result.status === "no-disposable-balance" ? (
             <p className="ledger-notice ledger-notice--warning mt-4 border px-3 py-2 text-sm">

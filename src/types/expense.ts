@@ -6,6 +6,7 @@ export type Expense = {
   createdAt: number;
   description?: string;
   transactionDate?: string;
+  affectsDailyAllowance?: boolean;
   amount: number;
   category: string;
   paymentMethod: string;

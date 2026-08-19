@@ -16,6 +16,7 @@ function expenseItem({ id, userId, createdAt }) {
     type: "expense",
     data: {
       accountId: "bank",
+      affectsDailyAllowance: false,
       amount: 25_000,
       category: "Groceries",
       createdAt,
@@ -42,6 +43,7 @@ test("offline inserts retain the original transaction timestamp", () => {
   assert.equal(insert.values.created_at, new Date(createdAt).toISOString());
   assert.equal(insert.values.client_entry_id, "item-1");
   assert.equal(insert.values.description, "Rice and vegetables");
+  assert.equal(insert.values.affects_daily_allowance, false);
   assert.equal(insert.values.transaction_date, "2026-08-31");
   assert.equal(insert.values.user_id, "user-a");
 });
@@ -54,6 +56,7 @@ test("income and transfer inserts also retain their local transaction date", () 
     type: "income",
     data: {
       accountId: "bank",
+      affectsDailyAllowance: false,
       amount: 100_000,
       createdAt,
       note: "",
@@ -65,6 +68,7 @@ test("income and transfer inserts also retain their local transaction date", () 
     userId: "user-a",
     type: "transfer",
     data: {
+      affectsDailyAllowance: false,
       amount: 50_000,
       createdAt,
       fromAccountId: "bank",
@@ -79,8 +83,18 @@ test("income and transfer inserts also retain their local transaction date", () 
     "2026-09-01",
   );
   assert.equal(
+    buildOfflineQueueInsert(income, "user-a", "owner@example.com").values
+      .affects_daily_allowance,
+    false,
+  );
+  assert.equal(
     buildOfflineQueueInsert(transfer, "user-a", null).values.transaction_date,
     "2026-09-01",
+  );
+  assert.equal(
+    buildOfflineQueueInsert(transfer, "user-a", null).values
+      .affects_daily_allowance,
+    false,
   );
 });
 

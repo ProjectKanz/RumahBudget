@@ -36,6 +36,7 @@ export default function IncomeForm({
   const [source, setSource] = useState("");
   const [accountId, setAccountId] = useState("");
   const [note, setNote] = useState("");
+  const [affectsDailyAllowance, setAffectsDailyAllowance] = useState(true);
   const [transactionDate, setTransactionDate] = useState(() =>
     toLocalDateInputValue(),
   );
@@ -82,6 +83,7 @@ export default function IncomeForm({
       accountId: selectedAccountId,
       createdAt: transactionTimestamp,
       transactionDate,
+      affectsDailyAllowance,
       amount: numericAmount,
       source: trimmedSource,
       note: note.trim(),
@@ -105,6 +107,7 @@ export default function IncomeForm({
     setAmount("");
     setSource("");
     setNote("");
+    setAffectsDailyAllowance(true);
     setError("");
   }
 
@@ -193,6 +196,20 @@ export default function IncomeForm({
             value={note}
             onChange={(event) => setNote(event.target.value)}
           />
+        </label>
+
+        <label className="flex min-h-11 items-center gap-3 border border-white/10 px-3 py-2 text-sm text-slate-200 sm:col-span-2">
+          <input
+            checked={affectsDailyAllowance}
+            type="checkbox"
+            onChange={(event) => setAffectsDailyAllowance(event.target.checked)}
+          />
+          <span>
+            <span className="block font-bold">Masukkan ke perhitungan jatah mulai hari ini</span>
+            <span className="block text-xs text-slate-400">
+              Jika dimatikan, pemasukan baru memengaruhi pembagian mulai besok.
+            </span>
+          </span>
         </label>
 
         {error ? (
