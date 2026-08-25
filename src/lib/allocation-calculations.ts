@@ -267,7 +267,7 @@ export function validateInvestmentPurchase({
       return {
         ok: false,
         message:
-          "Buy price × quantity must match the invested amount (within 0.1%).",
+          "Buy price × quantity must match the invested amount (within 0.1%). Enter the amount before fees; the fee has its own field, and a broker statement usually shows the two already added together.",
       };
     }
   }

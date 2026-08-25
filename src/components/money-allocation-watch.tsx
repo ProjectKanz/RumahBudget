@@ -632,6 +632,19 @@ export default function MoneyAllocationWatch({
       )?.totalQuantity ?? 0)
     : 0;
   const lotPreview = isLotAsset ? parseLotInput(newInvestment.lots) : null;
+  // A broker statement reports the total actually paid, which already includes
+  // the fee. Asking for the gross separately meant the fee got counted twice and
+  // the price x quantity check rejected an otherwise correct entry. The gross is
+  // derivable, so it is computed rather than typed.
+  const lotGrossAmount =
+    lotPreview?.ok && parsePositiveNumber(newInvestment.price) > 0
+      ? parsePositiveNumber(newInvestment.price) * lotPreview.shares
+      : 0;
+  const lotSettlementAmount =
+    lotGrossAmount > 0
+      ? lotGrossAmount +
+        (isSellSide ? -1 : 1) * Math.max(0, Number(newInvestment.fee || 0))
+      : 0;
 
   function saveInvestmentTransaction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -640,7 +653,9 @@ export default function MoneyAllocationWatch({
 
     const asset = state.assets.find((item) => item.id === newInvestment.assetId);
     const price = parsePositiveNumber(newInvestment.price);
-    const amountIdr = parsePositiveNumber(newInvestment.amountIdr);
+    const amountIdr = isLotAsset
+      ? lotGrossAmount
+      : parsePositiveNumber(newInvestment.amountIdr);
     const fee = Number(newInvestment.fee || 0);
     const sourceBucketId =
       newInvestment.sourceBucketId || investmentCashBucketId;
@@ -1265,10 +1280,27 @@ export default function MoneyAllocationWatch({
                 {isSellSide ? "Sell price per share" : "Buy price per share"}
                 <SharpInput inputMode="decimal" min="0" type="number" value={newInvestment.price} onChange={(event) => setNewInvestment((current) => ({ ...current, price: event.target.value }))} placeholder={isLotAsset ? "9500" : "Price per unit"} />
               </label>
-              <label className={labelClassName}>
-                {isSellSide ? "Gross proceeds IDR" : "Amount invested IDR"}
-                <SharpInput inputMode="numeric" min="0" type="number" value={newInvestment.amountIdr} onChange={(event) => setNewInvestment((current) => ({ ...current, amountIdr: event.target.value }))} placeholder={isLotAsset ? "9500000" : "900000"} />
-              </label>
+              {isLotAsset ? (
+                <label className={labelClassName}>
+                  {isSellSide ? "Gross proceeds" : "Gross amount"} (price x shares)
+                  <SharpInput
+                    readOnly
+                    tabIndex={-1}
+                    type="text"
+                    value={lotGrossAmount > 0 ? formatCurrency(lotGrossAmount) : "Fill price and lots"}
+                  />
+                  <span className="mt-1 block text-xs text-slate-400">
+                    {lotSettlementAmount > 0
+                      ? `${isSellSide ? "Net received" : "Total paid"} incl. fee: ${formatCurrency(lotSettlementAmount)} - this is the figure your broker statement shows.`
+                      : "Calculated for you, so the fee is never counted twice."}
+                  </span>
+                </label>
+              ) : (
+                <label className={labelClassName}>
+                  {isSellSide ? "Gross proceeds IDR" : "Amount invested IDR"}
+                  <SharpInput inputMode="numeric" min="0" type="number" value={newInvestment.amountIdr} onChange={(event) => setNewInvestment((current) => ({ ...current, amountIdr: event.target.value }))} placeholder="900000" />
+                </label>
+              )}
               {isLotAsset ? (
                 <label className={labelClassName}>
                   Lots (1 lot = {SHARES_PER_LOT} shares)

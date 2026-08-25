@@ -387,3 +387,52 @@ test("a manual price overrides an older provider snapshot", () => {
 
   assert.equal(holding.currentPrice, 6_550);
 });
+
+test("a lot purchase carries its fee once, not twice", () => {
+  // A broker statement reports the settled total: gross plus fee. Entering that
+  // total as the gross amount double-counted the fee and failed validation.
+  const grossAmount = 5_000 * 300; // 3 lots at 5,000 per share
+  const fee = 2_250;
+
+  const validation = validateInvestmentPurchase({
+    amountIdr: grossAmount,
+    availableBalance: 10_000_000,
+    fee,
+    price: 5_000,
+    quantityInput: "300",
+  });
+
+  assert.equal(validation.ok, true);
+  // What actually leaves the bucket is the settled total the statement shows.
+  assert.equal(validation.movement, 1_502_250);
+  assert.equal(validation.quantity, 300);
+});
+
+test("passing the broker's settled total as the gross amount is rejected", () => {
+  const settledTotal = 5_000 * 300 + 2_250;
+
+  const validation = validateInvestmentPurchase({
+    amountIdr: settledTotal,
+    availableBalance: 10_000_000,
+    fee: 2_250,
+    price: 5_000,
+    quantityInput: "300",
+  });
+
+  assert.equal(validation.ok, false);
+  // The message has to say why, or the user just sees a correct entry refused.
+  assert.match(validation.message, /before fees/);
+});
+
+test("cost basis for a lot position includes the fee exactly once", () => {
+  const holding = calculatePortfolioHoldings(
+    [asset()],
+    [buy({ price: 5_000, amountIdr: 1_500_000, quantity: 300, fee: 2_250, date: "2025-09-10" })],
+    [priceSnapshot(4_200)],
+  )[0];
+
+  assert.equal(holding.totalQuantity, 300);
+  assert.equal(holding.totalCost, 1_502_250);
+  assert.equal(holding.currentValue, 1_260_000);
+  assert.equal(holding.unrealizedPnL, -242_250);
+});
