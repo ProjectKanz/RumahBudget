@@ -21,6 +21,7 @@ import {
   TerminalPanel,
 } from "@/src/components/cockpit-ui";
 import {
+  hasStoredContent,
   loadAllocationState,
   saveAllocationState,
 } from "@/src/lib/allocation-store";
@@ -336,11 +337,18 @@ export default function MoneyAllocationWatch({
         return;
       }
 
-      // Nothing stored yet for this account: keep whatever this browser holds so
-      // an existing local-only portfolio is uploaded rather than discarded.
+      const remote = normalizeState(userId, result.state);
+      // The account wins only when it actually holds entries. A browser opened
+      // first would otherwise upload bare seeded defaults, and the browser that
+      // holds the real portfolio would then adopt them and lose it.
+      const keepLocal =
+        !hasStoredContent(remote) && hasStoredContent(cached);
+
       applyState(
-        result.isEmpty ? cached : normalizeState(userId, result.state),
-        "",
+        result.isEmpty || keepLocal ? cached : remote,
+        keepLocal
+          ? "This browser holds allocation data that is not on your account yet. It will be uploaded with your next change."
+          : "",
       );
     }
 

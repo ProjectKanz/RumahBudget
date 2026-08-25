@@ -273,6 +273,23 @@ export function getRemovedIds(remoteIds: string[], localIds: string[]) {
   return remoteIds.filter((id) => id && !keep.has(id));
 }
 
+/**
+ * Whether a state holds anything the user actually entered, as opposed to the
+ * buckets, assets, and template every account is seeded with.
+ *
+ * Without this, opening the app in a fresh browser would upload bare defaults,
+ * and the next browser to load would see a non-empty account and replace its
+ * own real holdings with them.
+ */
+export function hasStoredContent(state: AllocationState) {
+  return (
+    state.incomeRecords.length > 0 ||
+    state.allocationRecords.length > 0 ||
+    state.investmentTransactions.length > 0 ||
+    state.priceSnapshots.length > 0
+  );
+}
+
 export async function loadAllocationState(
   client: AllocationStoreClient,
   userId: string,

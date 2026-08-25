@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   allocationCollections,
   getRemovedIds,
+  hasStoredContent,
   loadAllocationState,
   saveAllocationState,
 } from "../src/lib/allocation-store.ts";
@@ -245,4 +246,39 @@ test("every collection maps to its own table exactly once", () => {
   assert.equal(new Set(tables).size, tables.length);
   assert.equal(tables.length, 7);
   assert.ok(tables.every((table) => table.startsWith("allocation_")));
+});
+
+test("seeded defaults do not count as stored content", () => {
+  const seeded = emptyState({
+    buckets: [{ createdAt: 1, id: "living", name: "Living", type: "living", updatedAt: 1, userId }],
+    assets: [{ currency: "IDR", id: "asset-btc", name: "Bitcoin", symbol: "BTC", type: "crypto", userId }],
+    templates: [{ createdAt: 1, id: "template-a", isDefault: true, items: [], name: "Default", updatedAt: 1, userId }],
+  });
+
+  // Opening the app in a fresh browser must not look like a populated account.
+  assert.equal(hasStoredContent(seeded), false);
+});
+
+test("a single recorded buy makes an account authoritative", () => {
+  const withHoldings = emptyState({
+    investmentTransactions: [
+      {
+        amountIdr: 9_500_000,
+        assetId: "asset-bbca",
+        createdAt: 1,
+        date: "2026-08-20",
+        fee: 0,
+        id: "tx-1",
+        note: "",
+        price: 9_500,
+        quantity: 1_000,
+        type: "buy",
+        userId,
+      },
+    ],
+  });
+
+  assert.equal(hasStoredContent(withHoldings), true);
+  assert.equal(hasStoredContent(emptyState({ priceSnapshots: [{ id: "p" }] })), true);
+  assert.equal(hasStoredContent(emptyState()), false);
 });
