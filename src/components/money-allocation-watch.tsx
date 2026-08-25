@@ -20,13 +20,20 @@ import {
   StatusChip,
   TerminalPanel,
 } from "@/src/components/cockpit-ui";
+import {
+  loadAllocationState,
+  saveAllocationState,
+} from "@/src/lib/allocation-store";
+import type { AllocationStoreClient } from "@/src/lib/allocation-store";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
+import { supabase } from "@/src/lib/supabase";
 import { fetchLatestPrice, getMockPriceQuote } from "@/src/lib/price-provider";
 import { toLocalDateInputValue } from "@/src/lib/transaction-entry";
 import type {
   AllocationDraftItem,
   AllocationIncomeRecord,
   AllocationRecord,
+  AllocationState,
   AllocationTemplate,
   Bucket,
   BucketType,
@@ -51,16 +58,6 @@ type MoneyAllocationWatchProps = {
   accounts: MoneyAccount[];
   isBalanceHidden: boolean;
   userId: string;
-};
-
-type StorageState = {
-  assets: Asset[];
-  buckets: Bucket[];
-  incomeRecords: AllocationIncomeRecord[];
-  allocationRecords: AllocationRecord[];
-  investmentTransactions: InvestmentTransaction[];
-  priceSnapshots: PriceSnapshot[];
-  templates: AllocationTemplate[];
 };
 
 type ManualAllocationInput = Record<string, string>;
@@ -121,6 +118,15 @@ function makeId(prefix: string) {
 function parsePositiveNumber(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+/**
+ * The generated Supabase client type is far wider than this store needs, and
+ * matching it structurally exceeds TypeScript's instantiation depth. The store
+ * only ever calls select/upsert/delete, which this narrowing preserves.
+ */
+function asStoreClient(client: unknown) {
+  return client as AllocationStoreClient;
 }
 
 function getStorageKey(userId: string) {
@@ -193,7 +199,7 @@ function createDefaultTemplate(userId: string, buckets: Bucket[]): AllocationTem
   };
 }
 
-function createInitialState(userId: string): StorageState {
+function createInitialState(userId: string): AllocationState {
   const buckets = createDefaultBuckets(userId);
   return {
     assets: createDefaultAssets(userId),
@@ -206,15 +212,12 @@ function createInitialState(userId: string): StorageState {
   };
 }
 
-function safeParseState(userId: string, raw: string | null): StorageState {
+function normalizeState(
+  userId: string,
+  parsed: Partial<AllocationState>,
+): AllocationState {
   const fallback = createInitialState(userId);
-
-  if (!raw) {
-    return fallback;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<StorageState>;
+  {
     const buckets = Array.isArray(parsed.buckets) && parsed.buckets.length > 0 ? parsed.buckets : fallback.buckets;
     const templates = Array.isArray(parsed.templates) && parsed.templates.length > 0
       ? parsed.templates
@@ -229,8 +232,18 @@ function safeParseState(userId: string, raw: string | null): StorageState {
       priceSnapshots: Array.isArray(parsed.priceSnapshots) ? parsed.priceSnapshots : [],
       templates,
     };
+  }
+}
+
+function safeParseState(userId: string, raw: string | null): AllocationState {
+  if (!raw) {
+    return createInitialState(userId);
+  }
+
+  try {
+    return normalizeState(userId, JSON.parse(raw) as Partial<AllocationState>);
   } catch {
-    return fallback;
+    return createInitialState(userId);
   }
 }
 
@@ -239,7 +252,7 @@ export default function MoneyAllocationWatch({
   isBalanceHidden,
   userId,
 }: MoneyAllocationWatchProps) {
-  const [state, setState] = useState<StorageState>(() => createInitialState(userId));
+  const [state, setState] = useState<AllocationState>(() => createInitialState(userId));
   const [isLoaded, setIsLoaded] = useState(false);
   const [templateName, setTemplateName] = useState("Default 50 / 30 / 20");
   const [templatePercentages, setTemplatePercentages] = useState<Record<string, string>>({});
@@ -267,13 +280,17 @@ export default function MoneyAllocationWatch({
   const [priceNotice, setPriceNotice] = useState("");
   const [priceError, setPriceError] = useState("");
   const [isFetchingPrice, setIsFetchingPrice] = useState(false);
+  const [syncError, setSyncError] = useState("");
+  const [syncNotice, setSyncNotice] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
   const [backupNotice, setBackupNotice] = useState("");
   const [backupError, setBackupError] = useState("");
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    queueMicrotask(() => {
-      const nextState = safeParseState(userId, window.localStorage.getItem(getStorageKey(userId)));
+    let isActive = true;
+
+    function applyState(nextState: AllocationState, notice: string) {
       setState(nextState);
       setSelectedTemplateId(nextState.templates[0]?.id ?? "template-default-50-30-20");
       setTemplateName(nextState.templates[0]?.name ?? "Default 50 / 30 / 20");
@@ -287,8 +304,51 @@ export default function MoneyAllocationWatch({
             ]),
         ),
       );
+      setSyncNotice(notice);
       setIsLoaded(true);
-    });
+    }
+
+    async function hydrate() {
+      const cached = safeParseState(
+        userId,
+        window.localStorage.getItem(getStorageKey(userId)),
+      );
+      const client = supabase;
+
+      if (!client) {
+        applyState(
+          cached,
+          "Supabase is not configured, so allocation and portfolio data stays in this browser only.",
+        );
+        return;
+      }
+
+      const result = await loadAllocationState(asStoreClient(client), userId);
+      if (!isActive) {
+        return;
+      }
+
+      if (!result.ok) {
+        applyState(
+          cached,
+          `Could not load saved allocation data (${result.message}). Showing this browser's copy; changes will retry syncing.`,
+        );
+        return;
+      }
+
+      // Nothing stored yet for this account: keep whatever this browser holds so
+      // an existing local-only portfolio is uploaded rather than discarded.
+      applyState(
+        result.isEmpty ? cached : normalizeState(userId, result.state),
+        "",
+      );
+    }
+
+    void hydrate();
+
+    return () => {
+      isActive = false;
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -296,7 +356,34 @@ export default function MoneyAllocationWatch({
       return;
     }
 
+    // localStorage is now a cache and an offline fallback, not the record.
     window.localStorage.setItem(getStorageKey(userId), JSON.stringify(state));
+
+    const client = supabase;
+    if (!client) {
+      return;
+    }
+
+    // Debounced so a burst of edits becomes one write-through.
+    const timer = window.setTimeout(() => {
+      setIsSyncing(true);
+      void saveAllocationState(asStoreClient(client), userId, state)
+        .then((result) => {
+          setSyncError(result.ok ? "" : result.message);
+        })
+        .catch((error: unknown) => {
+          setSyncError(
+            error instanceof Error ? error.message : "Allocation sync failed.",
+          );
+        })
+        .finally(() => {
+          setIsSyncing(false);
+        });
+    }, 800);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [isLoaded, state, userId]);
 
   const selectedTemplate = useMemo(
@@ -704,7 +791,7 @@ export default function MoneyAllocationWatch({
         return;
       }
 
-      const nextState = parsed.state as StorageState;
+      const nextState = parsed.state as AllocationState;
       setState(nextState);
       setSelectedTemplateId(
         nextState.templates[0]?.id ?? "template-default-50-30-20",
@@ -765,7 +852,7 @@ export default function MoneyAllocationWatch({
               <StatusChip tone="amber">V3 BTC Latest</StatusChip>
             </div>
           }
-          description="Allocate incoming money into buckets first, then separately track what happens after investment cash is used to buy assets. Stored locally in this browser for V1/V2 safety. Core ledger tables are not changed."
+          description="Allocate incoming money into buckets first, then separately track what happens after investment cash is used to buy assets. Saved to your private Supabase tables, with this browser keeping a local copy as a fallback. Core ledger tables are not changed."
           eyebrow="Money Allocation + Portfolio Watch"
           title="Allocate income, watch buckets, and track portfolio P/L"
           tone="cyan"
@@ -823,6 +910,23 @@ export default function MoneyAllocationWatch({
             description="Already banked from closed and partially closed positions."
           />
         </div>
+
+        {syncError ? (
+          <Notice className="mt-5" tone="rose">
+            Not saved to your account yet: {syncError} Your changes are held in
+            this browser and will be retried on the next edit.
+          </Notice>
+        ) : syncNotice ? (
+          <Notice className="mt-5" tone="amber">
+            {syncNotice}
+          </Notice>
+        ) : (
+          <Notice className="mt-5" tone="lime">
+            {isSyncing
+              ? "Saving to your account..."
+              : "Saved to your account. Available from any browser you sign in on."}
+          </Notice>
+        )}
 
         <Notice className="mt-5" tone="amber">
           V3 safe live integration is limited to BTC via a server-side CoinGecko route. BBCA/BBRI stay manual until a reliable licensed IDX market-data provider is selected. No API keys are exposed. Core ledger accounts detected: {accounts.length}.

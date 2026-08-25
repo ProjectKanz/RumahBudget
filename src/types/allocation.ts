@@ -1,3 +1,9 @@
+import type {
+  Asset,
+  InvestmentTransaction,
+  PriceSnapshot,
+} from "@/src/types/portfolio";
+
 export type BucketType =
   | "living"
   | "emergency"
@@ -61,4 +67,19 @@ export type AllocationDraftItem = {
   bucketId: string;
   percentage: number;
   amount: number;
+};
+
+/**
+ * Everything the Allocation + Portfolio Watch view owns, as one unit. Shared
+ * because it is now persisted per collection to Supabase rather than serialized
+ * whole into localStorage.
+ */
+export type AllocationState = {
+  allocationRecords: AllocationRecord[];
+  assets: Asset[];
+  buckets: Bucket[];
+  incomeRecords: AllocationIncomeRecord[];
+  investmentTransactions: InvestmentTransaction[];
+  priceSnapshots: PriceSnapshot[];
+  templates: AllocationTemplate[];
 };
