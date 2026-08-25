@@ -3,6 +3,9 @@ import type { Income } from "@/src/types/income";
 import type { MoneyAccount } from "@/src/types/money-account";
 import type { RecurringCommitment } from "@/src/types/recurring-commitment";
 import type { PayCycle } from "@/src/lib/pay-cycle";
+// Relative on purpose: the "@/" alias only resolves through the Next bundler,
+// and these libs are executed directly by node --test.
+import { getCommitmentCycleStatus } from "./recurring-occurrence.ts";
 import type { Transfer } from "@/src/types/transfer";
 
 type DailyAllowanceInput = {
@@ -31,68 +34,6 @@ type DailyAllowanceValues = {
 export type DailyAllowanceResult =
   | ({ status: "ready" | "no-disposable-balance" } & DailyAllowanceValues)
   | { reason: string; status: "review-required" | "setup-required" };
-
-type DateKeyParts = {
-  day: number;
-  monthIndex: number;
-  year: number;
-};
-
-const DATE_KEY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-function parseDateKey(key: string): DateKeyParts | null {
-  const match = DATE_KEY_PATTERN.exec(key);
-  if (!match) return null;
-
-  const year = Number(match[1]);
-  const monthIndex = Number(match[2]) - 1;
-  const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, monthIndex, day));
-
-  if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== monthIndex ||
-    date.getUTCDate() !== day
-  ) {
-    return null;
-  }
-
-  return { day, monthIndex, year };
-}
-
-function formatDateKey(year: number, monthIndex: number, day: number) {
-  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-function getOccurrenceForCycle(
-  dueDay: number,
-  payCycle: PayCycle,
-): { dueDateKey: string; recurringPeriod: string } | null {
-  const start = parseDateKey(payCycle.cycleStartKey);
-  const end = parseDateKey(payCycle.cycleEndKey);
-  if (!start || !end) return null;
-
-  for (let offset = 0; offset <= 1; offset += 1) {
-    const month = new Date(Date.UTC(start.year, start.monthIndex + offset, 1));
-    const year = month.getUTCFullYear();
-    const monthIndex = month.getUTCMonth();
-    const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
-    const effectiveDay = Math.min(dueDay, lastDay);
-    const dueDateKey = formatDateKey(year, monthIndex, effectiveDay);
-
-    if (
-      dueDateKey >= payCycle.cycleStartKey &&
-      dueDateKey <= payCycle.cycleEndKey
-    ) {
-      return {
-        dueDateKey,
-        recurringPeriod: formatDateKey(year, monthIndex, 1),
-      };
-    }
-  }
-
-  return null;
-}
 
 function reviewRequired(reason: string): DailyAllowanceResult {
   return { reason, status: "review-required" };
@@ -134,7 +75,6 @@ export function calculateDailyAllowance({
     (left, right) => left.createdAt - right.createdAt,
   )[0];
   let reservedCommitments = 0;
-  let commitmentsPaidToday = 0;
 
   for (const currentCommitment of commitments) {
     if (
@@ -149,11 +89,15 @@ export function calculateDailyAllowance({
       );
     }
 
-    const occurrence = getOccurrenceForCycle(
-      currentCommitment.dueDay,
-      payCycle,
+    const relatedExpenses = expenses.filter(
+      (expense) => expense.recurringCommitmentId === currentCommitment.id,
     );
-    if (!occurrence) {
+    const cycleStatus = getCommitmentCycleStatus({
+      commitment: currentCommitment,
+      expenses: relatedExpenses,
+      payCycle,
+    });
+    if (!cycleStatus) {
       return reviewRequired(
         `Tanggal komitmen ${currentCommitment.name} perlu ditinjau.`,
       );
@@ -175,30 +119,13 @@ export function calculateDailyAllowance({
       continue;
     }
 
-    const relatedExpenses = expenses.filter(
-      (expense) =>
-        expense.recurringCommitmentId === currentCommitment.id,
-    );
     if (relatedExpenses.some((expense) => !expense.recurringPeriod)) {
       return reviewRequired(
         `Riwayat pembayaran ${currentCommitment.name} perlu ditinjau.`,
       );
     }
 
-    const isPaid = relatedExpenses.some(
-      (expense) => expense.recurringPeriod === occurrence.recurringPeriod,
-    );
-    if (!isPaid) {
-      reservedCommitments += currentCommitment.amount;
-    } else if (
-      relatedExpenses.some(
-        (expense) =>
-          expense.recurringPeriod === occurrence.recurringPeriod &&
-          expense.transactionDate === payCycle.todayKey,
-      )
-    ) {
-      commitmentsPaidToday += currentCommitment.amount;
-    }
+    reservedCommitments += cycleStatus.outstanding;
   }
 
   const disposableBalance = Math.max(0, livingBalance - reservedCommitments);
@@ -221,6 +148,13 @@ export function calculateDailyAllowance({
   );
   const todayExpenseTotal = todayExpenses.reduce(
     (total, expense) => total + expense.amount,
+    0,
+  );
+  // Any bill settled today has genuinely left the account, even when it paid off
+  // an earlier occurrence than the one this cycle reserves for.
+  const commitmentPaymentsToday = todayExpenses.reduce(
+    (total, expense) =>
+      total + (expense.recurringCommitmentId ? expense.amount : 0),
     0,
   );
   const todayIncomeTotal = todayIncomes.reduce(
@@ -255,7 +189,7 @@ export function calculateDailyAllowance({
       includedIncomeTotal +
       includedTransferNet -
       reservedCommitments -
-      commitmentsPaidToday,
+      commitmentPaymentsToday,
   );
   const dailyAllowance =
     Math.floor(spendableAtStartOfToday / remainingSpendableDays / 1_000) *

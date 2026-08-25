@@ -1,3 +1,4 @@
+import { isIdxSymbol, normalizeIdxSymbol } from "@/src/lib/idx-market";
 import type { AssetCurrency, PriceProviderId, PriceQuote } from "@/src/types/portfolio";
 
 const mockPrices: Record<string, { price: number; currency: AssetCurrency }> = {
@@ -11,7 +12,7 @@ export type PriceProviderResult =
   | { ok: false; message: string; source: PriceProviderId };
 
 export function getMockPriceQuote(symbol: string): PriceProviderResult {
-  const normalizedSymbol = symbol.trim().toUpperCase();
+  const normalizedSymbol = normalizeIdxSymbol(symbol);
   const mock = mockPrices[normalizedSymbol];
 
   if (!mock) {
@@ -35,44 +36,51 @@ export function getMockPriceQuote(symbol: string): PriceProviderResult {
   };
 }
 
-export async function fetchLatestPrice(symbol: string): Promise<PriceProviderResult> {
-  const normalizedSymbol = symbol.trim().toUpperCase();
+/**
+ * Every live lookup goes through our own route, so the browser never talks to a
+ * third-party market data host directly and no key is exposed.
+ */
+async function fetchQuoteFromRoute(
+  symbol: string,
+  source: PriceProviderId,
+): Promise<PriceProviderResult> {
+  try {
+    const response = await fetch(
+      `/api/prices/latest?symbol=${encodeURIComponent(symbol)}`,
+      { method: "GET" },
+    );
+    const payload = await response.json();
 
-  if (normalizedSymbol === "BTC") {
-    try {
-      const response = await fetch(`/api/prices/latest?symbol=${encodeURIComponent(normalizedSymbol)}`, {
-        method: "GET",
-      });
-      const payload = await response.json();
-
-      if (!response.ok || !payload?.ok) {
-        return {
-          ok: false,
-          message: payload?.message ?? "Latest price provider failed.",
-          source: "coingecko",
-        };
-      }
-
-      return {
-        ok: true,
-        quote: payload.quote as PriceQuote,
-      };
-    } catch {
+    if (!response.ok || !payload?.ok) {
       return {
         ok: false,
-        message: "Could not reach latest price route. Use manual price or mock price.",
-        source: "coingecko",
+        message: payload?.message ?? "Latest price provider failed.",
+        source,
       };
     }
-  }
 
-  if (normalizedSymbol === "BBCA" || normalizedSymbol === "BBRI") {
+    return { ok: true, quote: payload.quote as PriceQuote };
+  } catch {
     return {
       ok: false,
       message:
-        "Live IDX stock prices are not enabled. Use manual price for BBCA/BBRI until a reliable licensed market-data provider is selected.",
-      source: "unsupported",
+        "Could not reach the latest price route. Use manual price or mock price.",
+      source,
     };
+  }
+}
+
+export async function fetchLatestPrice(
+  symbol: string,
+): Promise<PriceProviderResult> {
+  const normalizedSymbol = normalizeIdxSymbol(symbol);
+
+  if (normalizedSymbol === "BTC") {
+    return await fetchQuoteFromRoute(normalizedSymbol, "coingecko");
+  }
+
+  if (isIdxSymbol(normalizedSymbol)) {
+    return await fetchQuoteFromRoute(normalizedSymbol, "idx");
   }
 
   return getMockPriceQuote(normalizedSymbol);

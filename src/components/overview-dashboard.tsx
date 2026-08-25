@@ -63,6 +63,7 @@ type OverviewDashboardProps = {
   isLivingPreferenceUnsynced: boolean;
   livingAccountIds: string[];
   monthlyStatus: MonthlyStatus;
+  monthlyTradingNet: number;
   moneyAccounts: MoneyAccount[];
   netHourlyWage: number;
   onOpenQuickAdd: (tab: "income" | "expense" | "transfer") => void;
@@ -82,8 +83,9 @@ type OverviewDashboardProps = {
   setPlannedSpend: (value: string) => void;
   spendGaugePercent: number;
   spendSignal: SpendSignal;
-  survivalRunwayMonths: number;
+  survivalRunwayMonths: number | null;
   totalBalance: number;
+  tradingBalance: number;
   totalExpense: number;
   totalIncome: number;
 };
@@ -110,9 +112,10 @@ function formatMoney(value: number, hidden: boolean) {
   return hidden ? hiddenBalanceLabel : formatCurrency(value);
 }
 
-function formatRunway(months: number) {
-  if (!Number.isFinite(months) || months === Infinity) {
-    return "Tanpa batas";
+function formatRunway(months: number | null) {
+  // An empty ledger is unknown, not an unlimited reserve.
+  if (months === null || !Number.isFinite(months)) {
+    return "Belum cukup data";
   }
 
   return `${months.toFixed(1)} bulan`;
@@ -146,6 +149,7 @@ export default function OverviewDashboard({
   isLivingPreferenceUnsynced,
   livingAccountIds,
   monthlyStatus,
+  monthlyTradingNet,
   moneyAccounts,
   netHourlyWage,
   onOpenQuickAdd,
@@ -167,6 +171,7 @@ export default function OverviewDashboard({
   spendSignal,
   survivalRunwayMonths,
   totalBalance,
+  tradingBalance,
   totalExpense,
   totalIncome,
 }: OverviewDashboardProps) {
@@ -180,6 +185,9 @@ export default function OverviewDashboard({
   const runwayLabel = isBalanceHidden
     ? hiddenBalanceLabel
     : formatRunway(survivalRunwayMonths);
+  // Trading moves Saldo total without ever touching Arus bersih, so it needs its
+  // own line rather than showing up as an unexplained balance change.
+  const hasTradingActivity = tradingBalance !== 0 || monthlyTradingNet !== 0;
 
   return (
     <section
@@ -245,9 +253,35 @@ export default function OverviewDashboard({
               </dd>
             </div>
             <div>
-              <dt>Runway</dt>
+              <dt>Runway kas rumah tangga</dt>
               <dd>{runwayLabel}</dd>
             </div>
+            {hasTradingActivity ? (
+              <>
+                <div>
+                  <dt>Hasil trading — {periodLabel}</dt>
+                  <dd
+                    className={
+                      monthlyTradingNet < 0
+                        ? "ledger-money--expense"
+                        : "ledger-money--income"
+                    }
+                  >
+                    <NumberValue>
+                      {formatMoney(monthlyTradingNet, isBalanceHidden)}
+                    </NumberValue>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Kas trading (di luar runway)</dt>
+                  <dd>
+                    <NumberValue>
+                      {formatMoney(tradingBalance, isBalanceHidden)}
+                    </NumberValue>
+                  </dd>
+                </div>
+              </>
+            ) : null}
             <div>
               <dt>Rata-rata pengeluaran</dt>
               <dd>{formatMoney(averageMonthlyBurn, isBalanceHidden)}</dd>

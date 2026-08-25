@@ -2,7 +2,7 @@
 
 Use this script to record a concise portfolio demo for LinkedIn, GitHub, or a project case study page. The tone should be confident, practical, and honest. Avoid overselling the app as a finished commercial banking product.
 
-Recommended demo boundary: focus on auth, accounts, income, expenses, transfers, dashboard metrics, transaction history, reports, privacy mode, and the Scenario Sandbox. Treat Telegram, recurring commitment auto-deduct, and offline queueing as experimental extensions unless the demo database is configured for them.
+Recommended demo boundary: focus on auth, accounts, income, expenses, transfers, dashboard metrics, transaction history, reports, privacy mode, and the Scenario Sandbox. Treat recurring commitment auto-deduct and offline queueing as experimental extensions unless the demo database is configured for them.
 
 ## 3-Minute Demo Script
 
@@ -142,7 +142,7 @@ Send a test email only if the environment is configured.
 
 Open Settings.
 
-"Settings includes email report preferences, recurring commitments, onboarding controls, wage-based spending context, and optional Telegram setup. Scheduled reporting is connected to Vercel Cron, currently as a dry-run testing endpoint."
+"Settings includes email report preferences, recurring commitments, onboarding controls, and wage-based spending context. Scheduled reporting is connected to Vercel Cron, currently as a dry-run testing endpoint."
 
 "Next steps would be verified-domain email delivery, production scheduled reports, finalized migration docs for extension features, category budgets, exports, and maybe family workspace support."
 
@@ -310,7 +310,7 @@ Suggested narration:
 
 "Design-wise, I moved away from a standard dashboard template and built a darker cyberpunk cockpit interface with neon accents, compact navigation, glass panels, and monospace financial numbers."
 
-"This is still not a finished commercial banking product. Email sending is in Resend testing mode, scheduled reports are dry-run, Telegram and recurring commitments are experimental extensions, and there is no bank integration, no receipt scanner, and no native mobile app. But as a portfolio project, it demonstrates full-stack execution across product design, frontend architecture, private data, financial logic, simulation, reporting, automation, and deployment."
+"This is still not a finished commercial banking product. Email sending is in Resend testing mode, scheduled reports are dry-run, recurring commitments are an experimental extension, and there is no bank integration, no receipt scanner, and no native mobile app. But as a portfolio project, it demonstrates full-stack execution across product design, frontend architecture, private data, financial logic, simulation, reporting, automation, and deployment."
 
 ## Demo Prep Checklist
 
@@ -320,5 +320,5 @@ Suggested narration:
 - Keep `.env.local` closed during recording.
 - Do not show API keys, Supabase dashboard secrets, Resend keys, or Vercel environment values.
 - Mention testing limitations clearly when showing email or cron features.
-- Mention Telegram, recurring commitments, and offline queueing as extensions unless they are part of the prepared demo path.
+- Mention recurring commitments and offline queueing as extensions unless they are part of the prepared demo path.
 - Keep the recording focused on product flow, not code internals.

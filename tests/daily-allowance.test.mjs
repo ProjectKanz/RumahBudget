@@ -342,3 +342,93 @@ test("stale selected IDs with no active account return setup", () => {
     "setup-required",
   );
 });
+
+// --- commitment reservations measured against real payments -----------------
+
+// 30 August 2026 WIB: 26 spendable days left in the 25 Aug -> 24 Sep cycle.
+const midCycle = getPayCycle(new Date("2026-08-30T05:00:00.000Z"));
+
+function midCycleAllowance({ balance, commitments = [], expenses = [] }) {
+  return calculateDailyAllowance({
+    accountBalances: { bca: balance },
+    accounts: [account("bca", 0, 1, "BCA")],
+    commitments,
+    expenses,
+    incomes: [],
+    livingAccountIds: ["bca"],
+    payCycle: midCycle,
+    transfers: [],
+  });
+}
+
+function todayPayment(amount, recurringPeriod) {
+  return recurringExpense(recurringPeriod, {
+    amount,
+    transactionDate: midCycle.todayKey,
+  });
+}
+
+// The daily budget must never promise more than the free balance can fund.
+function assertAllowanceMatchesDisposable(result) {
+  assert.equal(
+    result.dailyAllowance,
+    Math.floor(
+      result.disposableBalance / result.remainingSpendableDays / 1_000,
+    ) * 1_000,
+  );
+}
+
+test("settling an older period today removes that money from today's budget", () => {
+  // A late payment for a previous occurrence, while this cycle is still unpaid.
+  const result = midCycleAllowance({
+    balance: 9_500_000,
+    commitments: [commitment({ amount: 500_000, dueDay: 5 })],
+    expenses: [todayPayment(500_000, "2026-08-01")],
+  });
+
+  assert.equal(result.remainingSpendableDays, 26);
+  assert.equal(result.reservedCommitments, 500_000);
+  assert.equal(result.disposableBalance, 9_000_000);
+  // Money that actually left today is gone, so the budget is 9m / 26, not 9.5m / 26.
+  assert.equal(result.dailyAllowance, 346_000);
+  assertAllowanceMatchesDisposable(result);
+});
+
+test("a bill paid above plan is reserved at the amount actually paid", () => {
+  const result = midCycleAllowance({
+    balance: 9_350_000,
+    commitments: [commitment({ amount: 500_000, dueDay: 5 })],
+    expenses: [todayPayment(650_000, "2026-09-01")],
+  });
+
+  assert.equal(result.reservedCommitments, 0);
+  assert.equal(result.disposableBalance, 9_350_000);
+  // The planned 500k used to be subtracted instead of the real 650k.
+  assert.equal(result.dailyAllowance, 359_000);
+  assertAllowanceMatchesDisposable(result);
+});
+
+test("a partial payment reserves only the remainder", () => {
+  const result = midCycleAllowance({
+    balance: 9_800_000,
+    commitments: [commitment({ amount: 500_000, dueDay: 5 })],
+    expenses: [todayPayment(200_000, "2026-09-01")],
+  });
+
+  assert.equal(result.reservedCommitments, 300_000);
+  assert.equal(result.disposableBalance, 9_500_000);
+  assert.equal(result.dailyAllowance, 365_000);
+  assertAllowanceMatchesDisposable(result);
+});
+
+test("a bill paid on time for this cycle holds nothing back", () => {
+  const result = midCycleAllowance({
+    balance: 9_500_000,
+    commitments: [commitment({ amount: 500_000, dueDay: 5 })],
+    expenses: [todayPayment(500_000, "2026-09-01")],
+  });
+
+  assert.equal(result.reservedCommitments, 0);
+  assert.equal(result.disposableBalance, 9_500_000);
+  assertAllowanceMatchesDisposable(result);
+});

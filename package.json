@@ -8,14 +8,18 @@
     "start": "next start",
     "lint": "eslint",
     "test:allocation": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/allocation-calculations.test.mjs",
+    "test:allocation-store": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/allocation-store.test.mjs tests/allocation-migration.test.mjs",
     "test:budget-domain": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/budget-domain.test.mjs",
     "test:cron-security": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/cron-security.test.mjs",
     "test:data-integrity": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/offline-queue.test.mjs tests/recurring-schedule.test.mjs",
     "test:daily-allowance": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/pay-cycle.test.mjs tests/daily-allowance.test.mjs tests/living-account-preferences.test.mjs",
     "test:finance": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/finance-calculations.test.mjs",
     "test:trading": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/trading-calculations.test.mjs",
-    "test:trading-migration": "node --test tests/trading-migration.test.mjs",
-    "test:telegram-security": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/telegram-security.test.mjs"
+    "test:idx-market": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/idx-market.test.mjs",
+    "test:recurring-period": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/recurring-occurrence.test.mjs tests/recurring-period-migration.test.mjs",
+    "test:report-period": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/report-period.test.mjs",
+    "test:runway": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/runway.test.mjs",
+    "test:trading-migration": "node --test tests/trading-migration.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",

@@ -7,7 +7,13 @@ import {
   getLatestPriceByAsset,
   isAllocationStateOwnedByUser,
   validateInvestmentPurchase,
+  validateInvestmentSale,
 } from "@/src/lib/allocation-calculations";
+import {
+  SHARES_PER_LOT,
+  isLotTraded,
+  parseLotInput,
+} from "@/src/lib/idx-market";
 import {
   EmptyState,
   MetricCell,
@@ -20,13 +26,21 @@ import {
   StatusChip,
   TerminalPanel,
 } from "@/src/components/cockpit-ui";
+import {
+  hasStoredContent,
+  loadAllocationState,
+  saveAllocationState,
+} from "@/src/lib/allocation-store";
+import type { AllocationStoreClient } from "@/src/lib/allocation-store";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
+import { supabase } from "@/src/lib/supabase";
 import { fetchLatestPrice, getMockPriceQuote } from "@/src/lib/price-provider";
 import { toLocalDateInputValue } from "@/src/lib/transaction-entry";
 import type {
   AllocationDraftItem,
   AllocationIncomeRecord,
   AllocationRecord,
+  AllocationState,
   AllocationTemplate,
   Bucket,
   BucketType,
@@ -53,16 +67,6 @@ type MoneyAllocationWatchProps = {
   userId: string;
 };
 
-type StorageState = {
-  assets: Asset[];
-  buckets: Bucket[];
-  incomeRecords: AllocationIncomeRecord[];
-  allocationRecords: AllocationRecord[];
-  investmentTransactions: InvestmentTransaction[];
-  priceSnapshots: PriceSnapshot[];
-  templates: AllocationTemplate[];
-};
-
 type ManualAllocationInput = Record<string, string>;
 
 type NewInvestmentForm = {
@@ -70,9 +74,11 @@ type NewInvestmentForm = {
   amountIdr: string;
   date: string;
   fee: string;
+  lots: string;
   note: string;
   price: string;
   quantity: string;
+  side: "buy" | "sell";
   sourceBucketId: string;
 };
 
@@ -121,6 +127,15 @@ function makeId(prefix: string) {
 function parsePositiveNumber(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+/**
+ * The generated Supabase client type is far wider than this store needs, and
+ * matching it structurally exceeds TypeScript's instantiation depth. The store
+ * only ever calls select/upsert/delete, which this narrowing preserves.
+ */
+function asStoreClient(client: unknown) {
+  return client as AllocationStoreClient;
 }
 
 function getStorageKey(userId: string) {
@@ -193,7 +208,7 @@ function createDefaultTemplate(userId: string, buckets: Bucket[]): AllocationTem
   };
 }
 
-function createInitialState(userId: string): StorageState {
+function createInitialState(userId: string): AllocationState {
   const buckets = createDefaultBuckets(userId);
   return {
     assets: createDefaultAssets(userId),
@@ -206,15 +221,12 @@ function createInitialState(userId: string): StorageState {
   };
 }
 
-function safeParseState(userId: string, raw: string | null): StorageState {
+function normalizeState(
+  userId: string,
+  parsed: Partial<AllocationState>,
+): AllocationState {
   const fallback = createInitialState(userId);
-
-  if (!raw) {
-    return fallback;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<StorageState>;
+  {
     const buckets = Array.isArray(parsed.buckets) && parsed.buckets.length > 0 ? parsed.buckets : fallback.buckets;
     const templates = Array.isArray(parsed.templates) && parsed.templates.length > 0
       ? parsed.templates
@@ -229,8 +241,18 @@ function safeParseState(userId: string, raw: string | null): StorageState {
       priceSnapshots: Array.isArray(parsed.priceSnapshots) ? parsed.priceSnapshots : [],
       templates,
     };
+  }
+}
+
+function safeParseState(userId: string, raw: string | null): AllocationState {
+  if (!raw) {
+    return createInitialState(userId);
+  }
+
+  try {
+    return normalizeState(userId, JSON.parse(raw) as Partial<AllocationState>);
   } catch {
-    return fallback;
+    return createInitialState(userId);
   }
 }
 
@@ -239,7 +261,7 @@ export default function MoneyAllocationWatch({
   isBalanceHidden,
   userId,
 }: MoneyAllocationWatchProps) {
-  const [state, setState] = useState<StorageState>(() => createInitialState(userId));
+  const [state, setState] = useState<AllocationState>(() => createInitialState(userId));
   const [isLoaded, setIsLoaded] = useState(false);
   const [templateName, setTemplateName] = useState("Default 50 / 30 / 20");
   const [templatePercentages, setTemplatePercentages] = useState<Record<string, string>>({});
@@ -257,9 +279,11 @@ export default function MoneyAllocationWatch({
     amountIdr: "",
     date: todayIsoDate(),
     fee: "0",
+    lots: "",
     note: "",
     price: "",
     quantity: "",
+    side: "buy",
     sourceBucketId: "investment-cash",
   });
   const [manualPriceAssetId, setManualPriceAssetId] = useState("asset-btc");
@@ -267,13 +291,17 @@ export default function MoneyAllocationWatch({
   const [priceNotice, setPriceNotice] = useState("");
   const [priceError, setPriceError] = useState("");
   const [isFetchingPrice, setIsFetchingPrice] = useState(false);
+  const [syncError, setSyncError] = useState("");
+  const [syncNotice, setSyncNotice] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
   const [backupNotice, setBackupNotice] = useState("");
   const [backupError, setBackupError] = useState("");
   const backupInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    queueMicrotask(() => {
-      const nextState = safeParseState(userId, window.localStorage.getItem(getStorageKey(userId)));
+    let isActive = true;
+
+    function applyState(nextState: AllocationState, notice: string) {
       setState(nextState);
       setSelectedTemplateId(nextState.templates[0]?.id ?? "template-default-50-30-20");
       setTemplateName(nextState.templates[0]?.name ?? "Default 50 / 30 / 20");
@@ -287,8 +315,58 @@ export default function MoneyAllocationWatch({
             ]),
         ),
       );
+      setSyncNotice(notice);
       setIsLoaded(true);
-    });
+    }
+
+    async function hydrate() {
+      const cached = safeParseState(
+        userId,
+        window.localStorage.getItem(getStorageKey(userId)),
+      );
+      const client = supabase;
+
+      if (!client) {
+        applyState(
+          cached,
+          "Supabase is not configured, so allocation and portfolio data stays in this browser only.",
+        );
+        return;
+      }
+
+      const result = await loadAllocationState(asStoreClient(client), userId);
+      if (!isActive) {
+        return;
+      }
+
+      if (!result.ok) {
+        applyState(
+          cached,
+          `Could not load saved allocation data (${result.message}). Showing this browser's copy; changes will retry syncing.`,
+        );
+        return;
+      }
+
+      const remote = normalizeState(userId, result.state);
+      // The account wins only when it actually holds entries. A browser opened
+      // first would otherwise upload bare seeded defaults, and the browser that
+      // holds the real portfolio would then adopt them and lose it.
+      const keepLocal =
+        !hasStoredContent(remote) && hasStoredContent(cached);
+
+      applyState(
+        result.isEmpty || keepLocal ? cached : remote,
+        keepLocal
+          ? "This browser holds allocation data that is not on your account yet. It will be uploaded with your next change."
+          : "",
+      );
+    }
+
+    void hydrate();
+
+    return () => {
+      isActive = false;
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -296,7 +374,34 @@ export default function MoneyAllocationWatch({
       return;
     }
 
+    // localStorage is now a cache and an offline fallback, not the record.
     window.localStorage.setItem(getStorageKey(userId), JSON.stringify(state));
+
+    const client = supabase;
+    if (!client) {
+      return;
+    }
+
+    // Debounced so a burst of edits becomes one write-through.
+    const timer = window.setTimeout(() => {
+      setIsSyncing(true);
+      void saveAllocationState(asStoreClient(client), userId, state)
+        .then((result) => {
+          setSyncError(result.ok ? "" : result.message);
+        })
+        .catch((error: unknown) => {
+          setSyncError(
+            error instanceof Error ? error.message : "Allocation sync failed.",
+          );
+        })
+        .finally(() => {
+          setIsSyncing(false);
+        });
+    }, 800);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [isLoaded, state, userId]);
 
   const selectedTemplate = useMemo(
@@ -374,6 +479,9 @@ export default function MoneyAllocationWatch({
   const totalPortfolioValue = holdings.reduce((total, holding) => total + holding.currentValue, 0);
   const totalPortfolioPnl = totalPortfolioValue - totalInvested;
   const totalPortfolioPnlPercent = totalInvested > 0 ? (totalPortfolioPnl / totalInvested) * 100 : 0;
+  // Gains that have already been banked are a separate fact from paper gains.
+  // Folding them together is what let a closed position keep showing a profit.
+  const totalRealizedPnl = holdings.reduce((total, holding) => total + holding.realizedPnL, 0);
   const latestPrices = useMemo(() => getLatestPriceByAsset(state.priceSnapshots), [state.priceSnapshots]);
   const recentAllocations = state.allocationRecords
     .slice()
@@ -511,6 +619,20 @@ export default function MoneyAllocationWatch({
     setAllocationNotice(shouldAllocateNow ? "Incoming money allocated and bucket balances updated." : "Incoming money saved to Unallocated Cash.");
   }
 
+  const selectedInvestmentAsset = state.assets.find(
+    (item) => item.id === newInvestment.assetId,
+  );
+  const isLotAsset = selectedInvestmentAsset
+    ? isLotTraded(selectedInvestmentAsset)
+    : false;
+  const isSellSide = newInvestment.side === "sell";
+  const selectedHeldQuantity = selectedInvestmentAsset
+    ? (holdings.find(
+        (holding) => holding.assetId === selectedInvestmentAsset.id,
+      )?.totalQuantity ?? 0)
+    : 0;
+  const lotPreview = isLotAsset ? parseLotInput(newInvestment.lots) : null;
+
   function saveInvestmentTransaction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPriceError("");
@@ -536,13 +658,38 @@ export default function MoneyAllocationWatch({
       return;
     }
 
-    const validation = validateInvestmentPurchase({
-      amountIdr,
-      availableBalance: bucketBalances[sourceBucket.id] ?? 0,
-      fee,
-      price,
-      quantityInput: newInvestment.quantity,
-    });
+    // IDX equities are quoted per share but ordered in whole lots. Reading the
+    // lot count as a share count is the difference between a 95,000 position
+    // and a 9,500,000 one, so the two are never conflated.
+    let quantityInput = newInvestment.quantity;
+    if (isLotTraded(asset)) {
+      const lotResult = parseLotInput(newInvestment.lots);
+      if (!lotResult.ok) {
+        setPriceError(lotResult.message);
+        return;
+      }
+      quantityInput = String(lotResult.shares);
+    }
+
+    const isSell = newInvestment.side === "sell";
+    const heldQuantity =
+      holdings.find((holding) => holding.assetId === asset.id)?.totalQuantity ?? 0;
+
+    const validation = isSell
+      ? validateInvestmentSale({
+          amountIdr,
+          availableQuantity: heldQuantity,
+          fee,
+          price,
+          quantityInput,
+        })
+      : validateInvestmentPurchase({
+          amountIdr,
+          availableBalance: bucketBalances[sourceBucket.id] ?? 0,
+          fee,
+          price,
+          quantityInput,
+        });
     if (!validation.ok) {
       setPriceError(validation.message);
       return;
@@ -553,7 +700,7 @@ export default function MoneyAllocationWatch({
       userId,
       assetId: asset.id,
       date: newInvestment.date || todayIsoDate(),
-      type: "buy",
+      type: isSell ? "sell" : "buy",
       price,
       amountIdr,
       quantity: validation.quantity,
@@ -571,12 +718,13 @@ export default function MoneyAllocationWatch({
       ...current,
       amountIdr: "",
       fee: "0",
+      lots: "",
       note: "",
       price: "",
       quantity: "",
     }));
     setPriceNotice(
-      `Recorded ${asset.symbol} buy transaction. Current market price was left unchanged.`,
+      `Recorded ${asset.symbol} ${isSell ? "sell" : "buy"} transaction. Current market price was left unchanged.`,
     );
   }
 
@@ -701,7 +849,7 @@ export default function MoneyAllocationWatch({
         return;
       }
 
-      const nextState = parsed.state as StorageState;
+      const nextState = parsed.state as AllocationState;
       setState(nextState);
       setSelectedTemplateId(
         nextState.templates[0]?.id ?? "template-default-50-30-20",
@@ -762,7 +910,7 @@ export default function MoneyAllocationWatch({
               <StatusChip tone="amber">V3 BTC Latest</StatusChip>
             </div>
           }
-          description="Allocate incoming money into buckets first, then separately track what happens after investment cash is used to buy assets. Stored locally in this browser for V1/V2 safety. Core ledger tables are not changed."
+          description="Allocate incoming money into buckets first, then separately track what happens after investment cash is used to buy assets. Saved to your private Supabase tables, with this browser keeping a local copy as a fallback. Core ledger tables are not changed."
           eyebrow="Money Allocation + Portfolio Watch"
           title="Allocate income, watch buckets, and track portfolio P/L"
           tone="cyan"
@@ -805,10 +953,41 @@ export default function MoneyAllocationWatch({
             }
             description="Unrealized only. Not guaranteed and depends on price inputs."
           />
+          <MetricCell
+            label="Realized P/L"
+            tone={
+              isBalanceHidden ? "cyan" : totalRealizedPnl >= 0 ? "lime" : "rose"
+            }
+            value={
+              <NumberValue>
+                {isBalanceHidden
+                  ? hiddenBalanceLabel
+                  : formatCurrency(totalRealizedPnl)}
+              </NumberValue>
+            }
+            description="Already banked from closed and partially closed positions."
+          />
         </div>
 
+        {syncError ? (
+          <Notice className="mt-5" tone="rose">
+            Not saved to your account yet: {syncError} Your changes are held in
+            this browser and will be retried on the next edit.
+          </Notice>
+        ) : syncNotice ? (
+          <Notice className="mt-5" tone="amber">
+            {syncNotice}
+          </Notice>
+        ) : (
+          <Notice className="mt-5" tone="lime">
+            {isSyncing
+              ? "Saving to your account..."
+              : "Saved to your account. Available from any browser you sign in on."}
+          </Notice>
+        )}
+
         <Notice className="mt-5" tone="amber">
-          V3 safe live integration is limited to BTC via a server-side CoinGecko route. BBCA/BBRI stay manual until a reliable licensed IDX market-data provider is selected. No API keys are exposed. Core ledger accounts detected: {accounts.length}.
+          Live prices are fetched server-side only: BTC through CoinGecko, IDX tickers such as BBCA and BBRI through Yahoo Finance. Both are delayed, unofficial, and not guaranteed, so a manual price always wins if it disagrees with your broker. No API keys are exposed. Core ledger accounts detected: {accounts.length}.
         </Notice>
         <div className="mt-4 flex flex-wrap gap-3">
           <SharpButton
@@ -1047,11 +1226,26 @@ export default function MoneyAllocationWatch({
           <SectionHeader
             eyebrow="Portfolio Tracker"
             title="Manual buys and price watch"
-            description="Record buys separately from allocation. Manual/current prices calculate holdings and unrealized P/L."
+            description="Record buys and sells separately from allocation. Manual/current prices calculate holdings and unrealized P/L. IDX stocks are entered in lots."
             tone="cyan"
           />
           <form className="mt-5 grid gap-4" onSubmit={saveInvestmentTransaction}>
             <div className="grid gap-4 sm:grid-cols-2">
+              <label className={labelClassName}>
+                Transaction type
+                <SharpSelect
+                  value={newInvestment.side}
+                  onChange={(event) =>
+                    setNewInvestment((current) => ({
+                      ...current,
+                      side: event.target.value === "sell" ? "sell" : "buy",
+                    }))
+                  }
+                >
+                  <option value="buy">Buy</option>
+                  <option value="sell">Sell</option>
+                </SharpSelect>
+              </label>
               <label className={labelClassName}>
                 Asset
                 <SharpSelect value={newInvestment.assetId} onChange={(event) => setNewInvestment((current) => ({ ...current, assetId: event.target.value }))}>
@@ -1059,27 +1253,39 @@ export default function MoneyAllocationWatch({
                 </SharpSelect>
               </label>
               <label className={labelClassName}>
-                Buy date
+                {isSellSide ? "Sell date" : "Buy date"}
                 <SharpInput type="date" value={newInvestment.date} onChange={(event) => setNewInvestment((current) => ({ ...current, date: event.target.value }))} />
               </label>
               <label className={labelClassName}>
-                Buy price
-                <SharpInput inputMode="decimal" min="0" type="number" value={newInvestment.price} onChange={(event) => setNewInvestment((current) => ({ ...current, price: event.target.value }))} placeholder="Price per unit" />
+                {isSellSide ? "Sell price per share" : "Buy price per share"}
+                <SharpInput inputMode="decimal" min="0" type="number" value={newInvestment.price} onChange={(event) => setNewInvestment((current) => ({ ...current, price: event.target.value }))} placeholder={isLotAsset ? "9500" : "Price per unit"} />
               </label>
               <label className={labelClassName}>
-                Amount invested IDR
-                <SharpInput inputMode="numeric" min="0" type="number" value={newInvestment.amountIdr} onChange={(event) => setNewInvestment((current) => ({ ...current, amountIdr: event.target.value }))} placeholder="900000" />
+                {isSellSide ? "Gross proceeds IDR" : "Amount invested IDR"}
+                <SharpInput inputMode="numeric" min="0" type="number" value={newInvestment.amountIdr} onChange={(event) => setNewInvestment((current) => ({ ...current, amountIdr: event.target.value }))} placeholder={isLotAsset ? "9500000" : "900000"} />
               </label>
-              <label className={labelClassName}>
-                Quantity / units optional
-                <SharpInput inputMode="decimal" min="0" type="number" value={newInvestment.quantity} onChange={(event) => setNewInvestment((current) => ({ ...current, quantity: event.target.value }))} placeholder="Auto-calculated if empty" />
-              </label>
+              {isLotAsset ? (
+                <label className={labelClassName}>
+                  Lots (1 lot = {SHARES_PER_LOT} shares)
+                  <SharpInput inputMode="numeric" min="1" step="1" type="number" value={newInvestment.lots} onChange={(event) => setNewInvestment((current) => ({ ...current, lots: event.target.value }))} placeholder="10" />
+                  <span className="mt-1 block text-xs text-slate-400">
+                    {lotPreview?.ok
+                      ? `${lotPreview.lots} lot = ${lotPreview.shares.toLocaleString("id-ID")} shares`
+                      : "IDX orders are whole lots."}
+                  </span>
+                </label>
+              ) : (
+                <label className={labelClassName}>
+                  Quantity / units optional
+                  <SharpInput inputMode="decimal" min="0" type="number" value={newInvestment.quantity} onChange={(event) => setNewInvestment((current) => ({ ...current, quantity: event.target.value }))} placeholder="Auto-calculated if empty" />
+                </label>
+              )}
               <label className={labelClassName}>
                 Fee
                 <SharpInput inputMode="numeric" min="0" type="number" value={newInvestment.fee} onChange={(event) => setNewInvestment((current) => ({ ...current, fee: event.target.value }))} />
               </label>
               <label className={labelClassName}>
-                Source bucket
+                {isSellSide ? "Proceeds go to bucket" : "Source bucket"}
                 <SharpSelect value={newInvestment.sourceBucketId} onChange={(event) => setNewInvestment((current) => ({ ...current, sourceBucketId: event.target.value }))}>
                   {state.buckets.map((bucket) => <option key={bucket.id} value={bucket.id}>{bucket.name}</option>)}
                 </SharpSelect>
@@ -1089,7 +1295,20 @@ export default function MoneyAllocationWatch({
                 <SharpInput value={newInvestment.note} onChange={(event) => setNewInvestment((current) => ({ ...current, note: event.target.value }))} placeholder="Optional" />
               </label>
             </div>
-            <SharpButton type="submit" variant="primary">Record Buy Transaction</SharpButton>
+            {isSellSide ? (
+              <Notice tone="amber">
+                Holding available to sell:{" "}
+                {isBalanceHidden
+                  ? hiddenBalanceLabel
+                  : isLotAsset
+                    ? `${(selectedHeldQuantity / SHARES_PER_LOT).toLocaleString("id-ID")} lot (${selectedHeldQuantity.toLocaleString("id-ID")} shares)`
+                    : selectedHeldQuantity.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")}
+                . Fees are deducted from proceeds on both legs.
+              </Notice>
+            ) : null}
+            <SharpButton type="submit" variant="primary">
+              {isSellSide ? "Record Sell Transaction" : "Record Buy Transaction"}
+            </SharpButton>
           </form>
 
           <form className="mt-5 grid gap-4 border border-white/10 bg-white/[0.03] p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end" onSubmit={saveManualPrice}>
@@ -1130,7 +1349,7 @@ export default function MoneyAllocationWatch({
           }
           eyebrow="Portfolio Watch"
           title="Holdings, prices, and recent allocation history"
-          description="BTC latest price can be fetched safely through the server route. BBCA/BBRI should use manual price for now."
+          description="Prices are fetched through the server route. Delayed and unofficial, so enter a manual price when it matters."
           tone="amber"
         />
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
@@ -1174,7 +1393,14 @@ export default function MoneyAllocationWatch({
                       </div>
                     ) : null}
                   </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                  {holding.hasInvalidHistory ? (
+                    <Notice className="mt-4" tone="amber">
+                      This asset has sales recorded for more units than were ever
+                      bought. Fix the transaction history before trusting these
+                      figures.
+                    </Notice>
+                  ) : null}
+                  <div className="mt-4 grid gap-3 sm:grid-cols-5">
                     <MiniStat label="Units" value={isBalanceHidden ? hiddenBalanceLabel : holding.totalQuantity.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} />
                     <MiniStat label="Avg buy" value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.averagePrice)} />
                     <MiniStat label="Current value" value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.currentValue)} />
@@ -1185,6 +1411,17 @@ export default function MoneyAllocationWatch({
                         isBalanceHidden
                           ? "text-white"
                           : holding.unrealizedPnL >= 0
+                            ? "text-lime-200"
+                            : "text-rose-200"
+                      }
+                    />
+                    <MiniStat
+                      label="Realized P/L"
+                      value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.realizedPnL)}
+                      valueClassName={
+                        isBalanceHidden
+                          ? "text-white"
+                          : holding.realizedPnL >= 0
                             ? "text-lime-200"
                             : "text-rose-200"
                       }

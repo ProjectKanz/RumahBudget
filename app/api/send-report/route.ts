@@ -4,6 +4,21 @@ import {
   buildDetailedHtmlReport,
   AccountRow,
 } from "@/src/lib/email-templates";
+import {
+  calculateFinanceSnapshot,
+  getHouseholdIncomes,
+} from "@/src/lib/finance-calculations";
+import {
+  mapAccountRows,
+  mapExpenseRows,
+  mapIncomeRows,
+  mapTradingResultRows,
+  mapTransferRows,
+} from "@/src/lib/ledger-rows";
+import {
+  createPeriodFromKeys,
+  summarizeReportPeriod,
+} from "@/src/lib/report-period";
 
 export const runtime = "nodejs";
 
@@ -90,26 +105,6 @@ function isReportPayload(value: unknown): value is ReportPayload {
     endTime - startTime <= 31 * 24 * 60 * 60 * 1000 &&
     textFields.every((field) => (payload[field] as string).length <= 500)
   );
-}
-
-function getJakartaDateKey(value: unknown) {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  const parts = new Intl.DateTimeFormat("en-US", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: "Asia/Jakarta",
-    year: "numeric",
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function getErrorMessage(error: unknown) {
@@ -280,81 +275,66 @@ export async function POST(request: Request) {
       accounts = accountsData;
     }
 
-    // Fetch all incomes, expenses, and transfers to compute correct balances
-    const [allIncomesRes, allExpensesRes, allTransfersRes] = await Promise.all([
-      supabase.from("incomes").select("*").eq("user_id", user.id),
-      supabase.from("expenses").select("*").eq("user_id", user.id),
-      supabase.from("transfers").select("*").eq("user_id", user.id),
-    ]);
-
-    const allIncomes = allIncomesRes.data || [];
-    const allExpenses = allExpensesRes.data || [];
-    const allTransfers = allTransfersRes.data || [];
+    // Every ledger table the dashboard reads, so the email can run the same
+    // calculation instead of a reduced copy of it.
+    const [allIncomesRes, allExpensesRes, allTransfersRes, allTradingRes] =
+      await Promise.all([
+        supabase.from("incomes").select("*").eq("user_id", user.id),
+        supabase.from("expenses").select("*").eq("user_id", user.id),
+        supabase.from("transfers").select("*").eq("user_id", user.id),
+        supabase.from("trading_results").select("*").eq("user_id", user.id),
+      ]);
 
     if (allIncomesRes.error || allExpensesRes.error || allTransfersRes.error) {
       throw new Error("Unable to load complete owner-scoped report data.");
     }
 
-    // Calculate balances
-    accounts.forEach((acc) => {
-      balances[acc.id] = Number(acc.initial_balance || 0);
+    const period = createPeriodFromKeys(
+      body.reportType === "Weekly Report" ? "weekly" : "monthly",
+      body.periodStart,
+      body.periodEnd,
+    );
+    if (!period) {
+      throw new Error("Report period is not a valid date range.");
+    }
+
+    // A missing trading_results table is not fatal: the segment is optional, and
+    // a report without it is still correct for a ledger that never used it.
+    const mappedAccounts = mapAccountRows(accounts, user.id);
+    const mappedIncomes = mapIncomeRows(allIncomesRes.data || [], user.id);
+    const mappedExpenses = mapExpenseRows(allExpensesRes.data || [], user.id);
+    const mappedTransfers = mapTransferRows(allTransfersRes.data || [], user.id);
+    const mappedTradingResults = allTradingRes.error
+      ? []
+      : mapTradingResultRows(allTradingRes.data || [], user.id);
+
+    const snapshot = calculateFinanceSnapshot({
+      accounts: mappedAccounts,
+      expenses: mappedExpenses,
+      incomes: mappedIncomes,
+      tradingResults: mappedTradingResults,
+      transfers: mappedTransfers,
     });
-    allIncomes.forEach((inc) => {
-      if (inc.account_id && inc.account_id in balances) {
-        balances[inc.account_id] += Number(inc.amount || 0);
-      }
-    });
-    allExpenses.forEach((exp) => {
-      if (exp.account_id && exp.account_id in balances) {
-        balances[exp.account_id] -= Number(exp.amount || 0);
-      }
-    });
-    allTransfers.forEach((tf) => {
-      if (tf.to_account_id && tf.to_account_id in balances) {
-        balances[tf.to_account_id] += Number(tf.amount || 0);
-      }
-      if (tf.from_account_id && tf.from_account_id in balances) {
-        balances[tf.from_account_id] -= Number(tf.amount || 0);
-      }
+    Object.assign(balances, snapshot.accountBalances);
+
+    // Income that was migrated into the Trading ledger is no longer household
+    // income. Counting it here is what made emailed totals exceed the app's.
+    const householdIncomes = getHouseholdIncomes(
+      mappedIncomes,
+      mappedTradingResults,
+    );
+
+    const summary = summarizeReportPeriod({
+      expenses: mappedExpenses,
+      incomes: householdIncomes,
+      period,
     });
 
-    // Filter for current period
-    const periodIncomes = allIncomes.filter((inc) => {
-      const dateKey =
-        typeof inc.transaction_date === "string"
-          ? inc.transaction_date
-          : getJakartaDateKey(inc.created_at);
-      return dateKey >= body.periodStart && dateKey <= body.periodEnd;
-    });
-
-    const periodExpenses = allExpenses.filter((exp) => {
-      const dateKey =
-        typeof exp.transaction_date === "string"
-          ? exp.transaction_date
-          : getJakartaDateKey(exp.created_at);
-      return dateKey >= body.periodStart && dateKey <= body.periodEnd;
-    });
-
-    // Recalculate totals for accuracy
-    numIncome = periodIncomes.reduce((sum, inc) => sum + Number(inc.amount || 0), 0);
-    numExpense = periodExpenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
-    numNet = numIncome - numExpense;
-
-    // Category breakdown
-    const categoryTotals: Record<string, number> = {};
-    periodExpenses.forEach((exp) => {
-      const cat = exp.category || "Other";
-      categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(exp.amount || 0);
-    });
-    sortedCategories = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
-
-    // Source breakdown
-    const sourceTotals: Record<string, number> = {};
-    periodIncomes.forEach((inc) => {
-      const src = inc.source || "Other Inflow";
-      sourceTotals[src] = (sourceTotals[src] || 0) + Number(inc.amount || 0);
-    });
-    sortedSources = Object.entries(sourceTotals).sort((a, b) => b[1] - a[1]);
+    numIncome = summary.totalIncome;
+    numExpense = summary.totalExpense;
+    numNet = summary.netCashflow;
+    sortedCategories = summary.sortedCategories;
+    sortedSources = summary.sortedSources;
   } catch (err) {
     console.error("Graceful database query error in send-report route:", err);
     const message = getErrorMessage(err);

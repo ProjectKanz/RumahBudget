@@ -131,9 +131,21 @@ export default function SurvivalMatrix({
       }
     });
 
-    let totalSimulatedRunwayMonths = 0;
+    let totalSimulatedRunwayMonths: number | null = 0;
     
-    if (currentSimulatedTotal <= 0) {
+    if (simulatedExpense <= 0) {
+      // Without a measured burn rate there is nothing to deplete against, so the
+      // honest reading is "unknown" rather than an unlimited reserve.
+      timelineEvents.push({
+        month: 0,
+        type: "info",
+        title: "Not Enough Spending History",
+        description:
+          "No measured burn rate yet. Record expenses for a few days before trusting this stress test.",
+        balances: { ...simulatedBalances },
+      });
+      totalSimulatedRunwayMonths = null;
+    } else if (currentSimulatedTotal <= 0) {
       // Immediate insolvency
       timelineEvents.push({
         month: 0,
@@ -233,6 +245,15 @@ export default function SurvivalMatrix({
   // Determine system health status based on runway
   const runwayStatus = useMemo(() => {
     const months = simulation.totalSimulatedRunwayMonths;
+    if (months === null) {
+      return {
+        label: "INSUFFICIENT DATA",
+        description:
+          "No measured burn rate yet. This stress test needs recorded spending first.",
+        tone: "neutral" as const,
+        bgClass: "border-white/20 bg-white/5 text-slate-200",
+      };
+    }
     if (months === Infinity) {
       return {
         label: "OPTIMAL SHIELD",
@@ -282,7 +303,7 @@ export default function SurvivalMatrix({
             </h2>
             
             <p className="mt-3 text-sm leading-6 text-slate-400">
-              Simulate high-impact emergencies to test your reserve durability. See which accounts dry up first under stress.
+              Simulate high-impact emergencies to test your reserve durability. See which accounts dry up first under stress. Trading accounts are excluded: a broker balance is not the cash that covers daily bills.
             </p>
 
             <div className="mt-6 space-y-6">
@@ -442,9 +463,11 @@ export default function SurvivalMatrix({
                   <span className="text-3xl font-black font-mono">
                     {isBalanceHidden
                       ? hiddenBalanceLabel
-                      : simulation.totalSimulatedRunwayMonths === Infinity
-                        ? "∞ MON"
-                        : `${simulation.totalSimulatedRunwayMonths.toFixed(1)} MON`}
+                      : simulation.totalSimulatedRunwayMonths === null
+                        ? "— MON"
+                        : simulation.totalSimulatedRunwayMonths === Infinity
+                          ? "∞ MON"
+                          : `${simulation.totalSimulatedRunwayMonths.toFixed(1)} MON`}
                   </span>
                 </div>
                 <p className="text-xs mt-2 opacity-90 leading-relaxed">
@@ -537,6 +560,7 @@ export default function SurvivalMatrix({
 
             {/* Bottom status alert warning */}
             {!isBalanceHidden &&
+            simulation.totalSimulatedRunwayMonths !== null &&
             simulation.totalSimulatedRunwayMonths !== Infinity &&
             simulation.totalSimulatedRunwayMonths < 3 ? (
               <SystemReading className="mt-5 border-rose-500/30 bg-rose-500/5">

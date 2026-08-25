@@ -25,7 +25,6 @@ type ReportPreferenceRow = {
   monthly_enabled?: boolean | null;
   recipient_email?: string | null;
   net_hourly_wage?: number | null;
-  telegram_chat_id?: string | null;
 };
 
 type ReportPreferencePayload = {
@@ -77,26 +76,6 @@ export default function EmailReportPreferences({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  // Telegram Integration Console States
-  const [telegramBotToken, setTelegramBotToken] = useState("");
-  const [telegramChatId, setTelegramChatId] = useState("");
-  const [telegramWebhookStatus, setTelegramWebhookStatus] = useState("");
-  const [isRegisteringWebhook, setIsRegisteringWebhook] = useState(false);
-  const [telegramMessage, setTelegramMessage] = useState("");
-
-  const [isLocalhost, setIsLocalhost] = useState(false);
-  const [webhookOverrideUrl, setWebhookOverrideUrl] = useState("");
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      queueMicrotask(() => {
-        setIsLocalhost(window.location.origin.startsWith("http://localhost"));
-        const localOverrideUrl = window.localStorage.getItem(`rumahbudget.webhook_override_url.${user.id}`) ?? "";
-        setWebhookOverrideUrl(localOverrideUrl);
-      });
-    }
-  }, [user.id]);
-
   useEffect(() => {
     let isMounted = true;
 
@@ -115,20 +94,18 @@ export default function EmailReportPreferences({
       let data: ReportPreferenceRow | null = null;
       let loadError: { message: string; code?: string } | null = null;
       let isWageSupported = true;
-      let isTelegramSupported = true;
 
       try {
         const res = await supabase
           .from("report_preferences")
-          .select("weekly_enabled, monthly_enabled, recipient_email, net_hourly_wage, telegram_chat_id")
+          .select("weekly_enabled, monthly_enabled, recipient_email, net_hourly_wage")
           .eq("user_id", user.id)
           .abortSignal(timeout.signal)
           .maybeSingle();
 
         if (res.error) {
-          if (res.error.code === "42703" || (res.error.message && (res.error.message.includes("net_hourly_wage") || res.error.message.includes("telegram")))) {
+          if (res.error.code === "42703" || (res.error.message && res.error.message.includes("net_hourly_wage"))) {
             isWageSupported = false;
-            isTelegramSupported = false;
             const fallbackRes = await supabase
               .from("report_preferences")
               .select("weekly_enabled, monthly_enabled, recipient_email")
@@ -175,13 +152,6 @@ export default function EmailReportPreferences({
         setNetHourlyWage(safeLoadedWage);
         onWageChange?.(safeLoadedWage);
 
-        let loadedChatId = "";
-        if (isTelegramSupported && data && typeof data.telegram_chat_id === "string") {
-          loadedChatId = data.telegram_chat_id;
-        } else {
-          loadedChatId = window.localStorage.getItem(`rumahbudget.telegram_chat_id.${user.id}`) ?? "";
-        }
-        setTelegramChatId(loadedChatId);
       } catch (err) {
         if (!isMounted) {
           return;
@@ -323,118 +293,7 @@ export default function EmailReportPreferences({
     setMessage("Email report settings saved.");
   }
 
-  async function handleRegisterWebhook() {
-    const trimmedBotToken = telegramBotToken.trim();
-
-    if (!trimmedBotToken) {
-      setTelegramWebhookStatus("Error: Bot Token cannot be empty.");
-      return;
-    }
-
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    if (origin.startsWith("http://localhost") && !webhookOverrideUrl.trim()) {
-      setTelegramWebhookStatus(
-        "Error: You must provide your ngrok/tunnel URL or test on the live Vercel link when running on localhost."
-      );
-      return;
-    }
-
-    const baseUrl = (webhookOverrideUrl.trim() || origin).replace(/\/+$/, "");
-    if (!baseUrl.startsWith("https://")) {
-      setTelegramWebhookStatus("Error: Webhook URL must start with https://");
-      return;
-    }
-
-    if (!supabase) {
-      setTelegramWebhookStatus(`Error: ${missingSupabaseEnvMessage}`);
-      return;
-    }
-
-    setIsRegisteringWebhook(true);
-    setTelegramWebhookStatus("");
-
-    try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError || !userData.user) {
-        setTelegramWebhookStatus("Error: Please log out, log back in, then register the webhook again.");
-        return;
-      }
-
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-
-      if (sessionError || !accessToken) {
-        setTelegramWebhookStatus("Error: Please sign in again before registering the webhook.");
-        return;
-      }
-
-      const res = await fetch("/api/telegram/register-webhook", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          baseUrl,
-          botToken: trimmedBotToken,
-        }),
-      });
-      const data = await res.json();
-
-      if (data.ok) {
-        window.localStorage.setItem(`rumahbudget.webhook_override_url.${user.id}`, webhookOverrideUrl.trim());
-        setTelegramBotToken("");
-        setTelegramWebhookStatus(`Success: Webhook registered and token saved. ${data.description || ""}`);
-      } else {
-        setTelegramWebhookStatus(`Error: ${data.error || data.description || "Failed to register webhook."}`);
-      }
-    } catch (err) {
-      setTelegramWebhookStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setIsRegisteringWebhook(false);
-    }
-  }
-
-  const [startCommand, setStartCommand] = useState("");
-  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
-
-  async function generateStartCommand() {
-    if (!supabase) {
-      setTelegramMessage(missingSupabaseEnvMessage);
-      return;
-    }
-
-    setIsGeneratingLink(true);
-    setTelegramMessage("");
-    try {
-      const { data, error: sessionError } = await supabase.auth.getSession();
-      const accessToken = data.session?.access_token;
-      if (sessionError || !accessToken) {
-        setTelegramMessage("Please sign in again before generating a link command.");
-        return;
-      }
-
-      const response = await fetch("/api/telegram/link-token", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const result = await response.json();
-      if (!response.ok || typeof result.startCommand !== "string") {
-        setTelegramMessage(result.error || "Failed to generate Telegram link command.");
-        return;
-      }
-
-      setStartCommand(result.startCommand);
-      setTelegramMessage("Link command generated. It expires in 15 minutes.");
-    } catch (err) {
-      setTelegramMessage(err instanceof Error ? err.message : "Failed to generate Telegram link command.");
-    } finally {
-      setIsGeneratingLink(false);
-    }
-  }
-
   return (
-    <>
       <section
         className="mx-auto w-full max-w-5xl px-5 pb-6 sm:px-6"
         id="email-settings"
@@ -622,132 +481,5 @@ export default function EmailReportPreferences({
           ) : null}
         </TerminalPanel>
       </section>
-
-      {/* Telegram Integration Console */}
-      <section
-        className="mx-auto w-full max-w-5xl px-5 pb-12 sm:px-6"
-        id="telegram-settings"
-      >
-        <TerminalPanel className="!p-5 sm:!p-6 border-cyan-500/25 bg-black/40">
-          <SectionHeader
-            description="Configure your Telegram Bot and register webhooks to log expenses and check runway directly from chat."
-            eyebrow="Telegram Integration"
-            title="Telegram Integration Console"
-            tone="cyan"
-          />
-
-          {isLocalhost && (
-            <Notice className="mt-6" tone="amber">
-              Local Testing Notice: Telegram requires a secure HTTPS webhook URL. Since you are running on localhost, Telegram cannot access your local server directly. Please provide a Webhook Tunnel URL (such as an ngrok HTTPS URL) below.
-            </Notice>
-          )}
-
-          <div className="mt-6 space-y-5">
-            <label className="block text-sm font-medium text-slate-300">
-              Telegram Bot Token
-              <SharpInput
-                type="password"
-                autoComplete="off"
-                value={telegramBotToken}
-                disabled={isLoading || isRegisteringWebhook}
-                onChange={(event) => {
-                  setTelegramBotToken(event.target.value);
-                  setTelegramMessage("");
-                }}
-                placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
-              />
-            </label>
-
-            <label className="block text-sm font-medium text-slate-300">
-              Webhook Tunnel URL (NGROK)
-              <SharpInput
-                type="text"
-                value={webhookOverrideUrl}
-                disabled={isLoading || isRegisteringWebhook}
-                onChange={(event) => {
-                  const val = event.target.value;
-                  setWebhookOverrideUrl(val);
-                  if (typeof window !== "undefined") {
-                    window.localStorage.setItem(`rumahbudget.webhook_override_url.${user.id}`, val);
-                  }
-                  setTelegramMessage("");
-                }}
-                placeholder="https://your-ngrok-subdomain.ngrok-free.app"
-              />
-            </label>
-
-            <div className="flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center">
-              <SharpButton
-                type="button"
-                variant="ghost"
-                disabled={isRegisteringWebhook || !telegramBotToken.trim()}
-                onClick={handleRegisterWebhook}
-                className="border-fuchsia-500/40 text-fuchsia-200 hover:bg-fuchsia-500/10"
-              >
-                {isRegisteringWebhook ? "Registering..." : "Register Webhook"}
-              </SharpButton>
-            </div>
-          </div>
-
-          {telegramMessage ? (
-            <Notice className="mt-5" tone="lime">
-              {telegramMessage}
-            </Notice>
-          ) : null}
-
-          {telegramWebhookStatus ? (
-            <Notice
-              className="mt-5"
-              tone={telegramWebhookStatus.startsWith("Success") ? "lime" : "rose"}
-            >
-              {telegramWebhookStatus}
-            </Notice>
-          ) : null}
-
-          <div className="mt-6 border-t border-white/10 pt-5 space-y-4">
-            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-cyan-300">
-              Bot Invitation Helper
-            </h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              To link your Telegram account, copy the command below and send it to your bot.
-            </p>
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-white/15 bg-white/[0.02] p-4 font-mono text-sm">
-              <span className="text-slate-200 break-all select-all">
-                {startCommand || "Generate a short-lived link command when you are ready to connect."}
-              </span>
-              <SharpButton
-                type="button"
-                className="!py-1 !px-3 text-xs border-cyan-500/40 text-cyan-200 shrink-0"
-                disabled={isGeneratingLink}
-                onClick={() => {
-                  if (!startCommand) {
-                    void generateStartCommand();
-                    return;
-                  }
-                  navigator.clipboard.writeText(startCommand);
-                  setTelegramMessage("Link command copied to clipboard!");
-                }}
-              >
-                {isGeneratingLink ? "Generating..." : startCommand ? "Copy Command" : "Generate Command"}
-              </SharpButton>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span>Status:</span>
-              {telegramChatId ? (
-                <span className="text-lime-300 font-bold uppercase">
-                  Connected
-                </span>
-              ) : (
-                <span className="text-rose-400 font-bold uppercase">
-                  Disconnected (Waiting for /start command)
-                </span>
-              )}
-            </div>
-          </div>
-        </TerminalPanel>
-      </section>
-    </>
   );
 }
