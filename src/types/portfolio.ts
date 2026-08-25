@@ -1,6 +1,11 @@
 export type AssetType = "stock" | "crypto" | "cash" | "other";
 export type AssetCurrency = "IDR" | "USD";
-export type PriceProviderId = "manual" | "mock" | "coingecko" | "unsupported";
+export type PriceProviderId =
+  | "manual"
+  | "mock"
+  | "coingecko"
+  | "idx"
+  | "unsupported";
 
 export type Asset = {
   id: string;

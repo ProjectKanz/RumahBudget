@@ -49,7 +49,7 @@ RumahBudget focuses on turning those questions into a compact cockpit-style work
 - Command palette for fast cockpit navigation and quick entry.
 - Live guided onboarding.
 - Cyberpunk cockpit-style view navigation: Overview, Accounts, Add, Transactions, Reports, Sandbox, and Settings.
-- Money Allocation + Portfolio Watch view for local/manual allocation templates, bucket balances, manual portfolio transactions, manual price snapshots, mock/static price checks, and safe BTC latest-price fetching through a server-side route.
+- Money Allocation + Portfolio Watch view for local/manual allocation templates, bucket balances, manual portfolio transactions, manual price snapshots, mock/static price checks, IDX lot-based stock entry, and delayed BTC and IDX latest-price fetching through a server-side route.
 
 ## Portfolio Demo Scope
 

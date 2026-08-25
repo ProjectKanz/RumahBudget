@@ -7,7 +7,13 @@ import {
   getLatestPriceByAsset,
   isAllocationStateOwnedByUser,
   validateInvestmentPurchase,
+  validateInvestmentSale,
 } from "@/src/lib/allocation-calculations";
+import {
+  SHARES_PER_LOT,
+  isLotTraded,
+  parseLotInput,
+} from "@/src/lib/idx-market";
 import {
   EmptyState,
   MetricCell,
@@ -68,9 +74,11 @@ type NewInvestmentForm = {
   amountIdr: string;
   date: string;
   fee: string;
+  lots: string;
   note: string;
   price: string;
   quantity: string;
+  side: "buy" | "sell";
   sourceBucketId: string;
 };
 
@@ -271,9 +279,11 @@ export default function MoneyAllocationWatch({
     amountIdr: "",
     date: todayIsoDate(),
     fee: "0",
+    lots: "",
     note: "",
     price: "",
     quantity: "",
+    side: "buy",
     sourceBucketId: "investment-cash",
   });
   const [manualPriceAssetId, setManualPriceAssetId] = useState("asset-btc");
@@ -609,6 +619,20 @@ export default function MoneyAllocationWatch({
     setAllocationNotice(shouldAllocateNow ? "Incoming money allocated and bucket balances updated." : "Incoming money saved to Unallocated Cash.");
   }
 
+  const selectedInvestmentAsset = state.assets.find(
+    (item) => item.id === newInvestment.assetId,
+  );
+  const isLotAsset = selectedInvestmentAsset
+    ? isLotTraded(selectedInvestmentAsset)
+    : false;
+  const isSellSide = newInvestment.side === "sell";
+  const selectedHeldQuantity = selectedInvestmentAsset
+    ? (holdings.find(
+        (holding) => holding.assetId === selectedInvestmentAsset.id,
+      )?.totalQuantity ?? 0)
+    : 0;
+  const lotPreview = isLotAsset ? parseLotInput(newInvestment.lots) : null;
+
   function saveInvestmentTransaction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPriceError("");
@@ -634,13 +658,38 @@ export default function MoneyAllocationWatch({
       return;
     }
 
-    const validation = validateInvestmentPurchase({
-      amountIdr,
-      availableBalance: bucketBalances[sourceBucket.id] ?? 0,
-      fee,
-      price,
-      quantityInput: newInvestment.quantity,
-    });
+    // IDX equities are quoted per share but ordered in whole lots. Reading the
+    // lot count as a share count is the difference between a 95,000 position
+    // and a 9,500,000 one, so the two are never conflated.
+    let quantityInput = newInvestment.quantity;
+    if (isLotTraded(asset)) {
+      const lotResult = parseLotInput(newInvestment.lots);
+      if (!lotResult.ok) {
+        setPriceError(lotResult.message);
+        return;
+      }
+      quantityInput = String(lotResult.shares);
+    }
+
+    const isSell = newInvestment.side === "sell";
+    const heldQuantity =
+      holdings.find((holding) => holding.assetId === asset.id)?.totalQuantity ?? 0;
+
+    const validation = isSell
+      ? validateInvestmentSale({
+          amountIdr,
+          availableQuantity: heldQuantity,
+          fee,
+          price,
+          quantityInput,
+        })
+      : validateInvestmentPurchase({
+          amountIdr,
+          availableBalance: bucketBalances[sourceBucket.id] ?? 0,
+          fee,
+          price,
+          quantityInput,
+        });
     if (!validation.ok) {
       setPriceError(validation.message);
       return;
@@ -651,7 +700,7 @@ export default function MoneyAllocationWatch({
       userId,
       assetId: asset.id,
       date: newInvestment.date || todayIsoDate(),
-      type: "buy",
+      type: isSell ? "sell" : "buy",
       price,
       amountIdr,
       quantity: validation.quantity,
@@ -669,12 +718,13 @@ export default function MoneyAllocationWatch({
       ...current,
       amountIdr: "",
       fee: "0",
+      lots: "",
       note: "",
       price: "",
       quantity: "",
     }));
     setPriceNotice(
-      `Recorded ${asset.symbol} buy transaction. Current market price was left unchanged.`,
+      `Recorded ${asset.symbol} ${isSell ? "sell" : "buy"} transaction. Current market price was left unchanged.`,
     );
   }
 
@@ -937,7 +987,7 @@ export default function MoneyAllocationWatch({
         )}
 
         <Notice className="mt-5" tone="amber">
-          V3 safe live integration is limited to BTC via a server-side CoinGecko route. BBCA/BBRI stay manual until a reliable licensed IDX market-data provider is selected. No API keys are exposed. Core ledger accounts detected: {accounts.length}.
+          Live prices are fetched server-side only: BTC through CoinGecko, IDX tickers such as BBCA and BBRI through Yahoo Finance. Both are delayed, unofficial, and not guaranteed, so a manual price always wins if it disagrees with your broker. No API keys are exposed. Core ledger accounts detected: {accounts.length}.
         </Notice>
         <div className="mt-4 flex flex-wrap gap-3">
           <SharpButton
@@ -1176,11 +1226,26 @@ export default function MoneyAllocationWatch({
           <SectionHeader
             eyebrow="Portfolio Tracker"
             title="Manual buys and price watch"
-            description="Record buys separately from allocation. Manual/current prices calculate holdings and unrealized P/L."
+            description="Record buys and sells separately from allocation. Manual/current prices calculate holdings and unrealized P/L. IDX stocks are entered in lots."
             tone="cyan"
           />
           <form className="mt-5 grid gap-4" onSubmit={saveInvestmentTransaction}>
             <div className="grid gap-4 sm:grid-cols-2">
+              <label className={labelClassName}>
+                Transaction type
+                <SharpSelect
+                  value={newInvestment.side}
+                  onChange={(event) =>
+                    setNewInvestment((current) => ({
+                      ...current,
+                      side: event.target.value === "sell" ? "sell" : "buy",
+                    }))
+                  }
+                >
+                  <option value="buy">Buy</option>
+                  <option value="sell">Sell</option>
+                </SharpSelect>
+              </label>
               <label className={labelClassName}>
                 Asset
                 <SharpSelect value={newInvestment.assetId} onChange={(event) => setNewInvestment((current) => ({ ...current, assetId: event.target.value }))}>
@@ -1188,27 +1253,39 @@ export default function MoneyAllocationWatch({
                 </SharpSelect>
               </label>
               <label className={labelClassName}>
-                Buy date
+                {isSellSide ? "Sell date" : "Buy date"}
                 <SharpInput type="date" value={newInvestment.date} onChange={(event) => setNewInvestment((current) => ({ ...current, date: event.target.value }))} />
               </label>
               <label className={labelClassName}>
-                Buy price
-                <SharpInput inputMode="decimal" min="0" type="number" value={newInvestment.price} onChange={(event) => setNewInvestment((current) => ({ ...current, price: event.target.value }))} placeholder="Price per unit" />
+                {isSellSide ? "Sell price per share" : "Buy price per share"}
+                <SharpInput inputMode="decimal" min="0" type="number" value={newInvestment.price} onChange={(event) => setNewInvestment((current) => ({ ...current, price: event.target.value }))} placeholder={isLotAsset ? "9500" : "Price per unit"} />
               </label>
               <label className={labelClassName}>
-                Amount invested IDR
-                <SharpInput inputMode="numeric" min="0" type="number" value={newInvestment.amountIdr} onChange={(event) => setNewInvestment((current) => ({ ...current, amountIdr: event.target.value }))} placeholder="900000" />
+                {isSellSide ? "Gross proceeds IDR" : "Amount invested IDR"}
+                <SharpInput inputMode="numeric" min="0" type="number" value={newInvestment.amountIdr} onChange={(event) => setNewInvestment((current) => ({ ...current, amountIdr: event.target.value }))} placeholder={isLotAsset ? "9500000" : "900000"} />
               </label>
-              <label className={labelClassName}>
-                Quantity / units optional
-                <SharpInput inputMode="decimal" min="0" type="number" value={newInvestment.quantity} onChange={(event) => setNewInvestment((current) => ({ ...current, quantity: event.target.value }))} placeholder="Auto-calculated if empty" />
-              </label>
+              {isLotAsset ? (
+                <label className={labelClassName}>
+                  Lots (1 lot = {SHARES_PER_LOT} shares)
+                  <SharpInput inputMode="numeric" min="1" step="1" type="number" value={newInvestment.lots} onChange={(event) => setNewInvestment((current) => ({ ...current, lots: event.target.value }))} placeholder="10" />
+                  <span className="mt-1 block text-xs text-slate-400">
+                    {lotPreview?.ok
+                      ? `${lotPreview.lots} lot = ${lotPreview.shares.toLocaleString("id-ID")} shares`
+                      : "IDX orders are whole lots."}
+                  </span>
+                </label>
+              ) : (
+                <label className={labelClassName}>
+                  Quantity / units optional
+                  <SharpInput inputMode="decimal" min="0" type="number" value={newInvestment.quantity} onChange={(event) => setNewInvestment((current) => ({ ...current, quantity: event.target.value }))} placeholder="Auto-calculated if empty" />
+                </label>
+              )}
               <label className={labelClassName}>
                 Fee
                 <SharpInput inputMode="numeric" min="0" type="number" value={newInvestment.fee} onChange={(event) => setNewInvestment((current) => ({ ...current, fee: event.target.value }))} />
               </label>
               <label className={labelClassName}>
-                Source bucket
+                {isSellSide ? "Proceeds go to bucket" : "Source bucket"}
                 <SharpSelect value={newInvestment.sourceBucketId} onChange={(event) => setNewInvestment((current) => ({ ...current, sourceBucketId: event.target.value }))}>
                   {state.buckets.map((bucket) => <option key={bucket.id} value={bucket.id}>{bucket.name}</option>)}
                 </SharpSelect>
@@ -1218,7 +1295,20 @@ export default function MoneyAllocationWatch({
                 <SharpInput value={newInvestment.note} onChange={(event) => setNewInvestment((current) => ({ ...current, note: event.target.value }))} placeholder="Optional" />
               </label>
             </div>
-            <SharpButton type="submit" variant="primary">Record Buy Transaction</SharpButton>
+            {isSellSide ? (
+              <Notice tone="amber">
+                Holding available to sell:{" "}
+                {isBalanceHidden
+                  ? hiddenBalanceLabel
+                  : isLotAsset
+                    ? `${(selectedHeldQuantity / SHARES_PER_LOT).toLocaleString("id-ID")} lot (${selectedHeldQuantity.toLocaleString("id-ID")} shares)`
+                    : selectedHeldQuantity.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")}
+                . Fees are deducted from proceeds on both legs.
+              </Notice>
+            ) : null}
+            <SharpButton type="submit" variant="primary">
+              {isSellSide ? "Record Sell Transaction" : "Record Buy Transaction"}
+            </SharpButton>
           </form>
 
           <form className="mt-5 grid gap-4 border border-white/10 bg-white/[0.03] p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end" onSubmit={saveManualPrice}>
@@ -1259,7 +1349,7 @@ export default function MoneyAllocationWatch({
           }
           eyebrow="Portfolio Watch"
           title="Holdings, prices, and recent allocation history"
-          description="BTC latest price can be fetched safely through the server route. BBCA/BBRI should use manual price for now."
+          description="Prices are fetched through the server route. Delayed and unofficial, so enter a manual price when it matters."
           tone="amber"
         />
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
