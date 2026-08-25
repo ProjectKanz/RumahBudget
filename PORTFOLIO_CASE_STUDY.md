@@ -110,7 +110,7 @@ This setup demonstrates automation architecture while staying honest about the c
 
 The strongest demo path is the private money workflow: login, accounts, income, expenses, transfers, dashboard metrics, transaction history, reports, privacy mode, and the Scenario Sandbox. These features show the full product loop without relying on external setup beyond Supabase and the configured demo environment.
 
-Telegram, recurring commitment auto-deduct behavior, and offline queueing are useful extension features, but I present them as experimental unless the target demo database has all required tables and columns. This keeps the portfolio story honest and avoids implying that every integration is production-hardened.
+Recurring commitment auto-deduct behavior and offline queueing are useful extension features, but I present them as experimental unless the target demo database has all required tables and columns. This keeps the portfolio story honest and avoids implying that every integration is production-hardened.
 
 ## Challenges Solved
 
@@ -154,7 +154,7 @@ The Scenario Branching Sandbox lets users model future income, expenses, or tran
 - Add category budgets and spend limits.
 - Add historical balance charts per account.
 - Add CSV or PDF report export.
-- Finalize database migrations and QA for recurring commitments, Telegram, and offline sync.
+- Finalize database migrations and QA for recurring commitments and offline sync.
 - Add family/shared workspace support.
 - Add receipt scanning or OCR-assisted entry.
 - Improve small-screen cockpit density and touch ergonomics.
@@ -165,7 +165,7 @@ The Scenario Branching Sandbox lets users model future income, expenses, or tran
 - Email sending is still in Resend testing mode.
 - Real recipient email delivery requires a verified Resend domain.
 - Scheduled email is currently dry-run/testing.
-- Telegram and recurring commitment flows are extension features that need final migration documentation before being treated as production-ready.
+- Recurring commitment flows are extension features that need final migration documentation before being treated as production-ready.
 - No bank API integration.
 - No receipt scanner.
 - No native mobile app.

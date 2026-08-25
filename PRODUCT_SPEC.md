@@ -200,14 +200,12 @@ Status: Completed / portfolio documentation aligned
 - System Diagnostics for repeated expense and pressure patterns
 - Command palette for fast navigation and quick entry
 - Recurring commitments extension for subscriptions, rent, installments, and pay-later obligations
-- Optional Telegram extension for chat-based expense/income logging
 - Documentation now separates demo-ready core features from experimental extensions
 
 Limitations:
 
-- Telegram requires bot setup and supporting database columns
 - Recurring commitments require the `recurring_commitments` table
-- Extension fields such as `net_hourly_wage`, `telegram_bot_token`, and `telegram_chat_id` require database migration support
+- The extension field `net_hourly_wage` requires database migration support
 - Offline queueing should be tested carefully before being positioned as production-ready sync
 
 ### V0.6 Money Allocation + Portfolio Watch
@@ -248,7 +246,6 @@ Limitations:
 - Bank account integration
 - OCR
 - Complex financial planning
-- Production Telegram delivery until extension migrations and bot setup are finalized
 
 ## Default Categories
 
