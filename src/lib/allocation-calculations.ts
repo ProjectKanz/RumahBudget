@@ -29,10 +29,16 @@ export function calculateAllocationBucketBalances(
       return;
     }
 
-    const movement = transaction.amountIdr + transaction.fee;
+    // A fee is always money leaving, on both sides of the trade. Adding it to
+    // sell proceeds credited the bucket more than the sale actually returned, so
+    // a buy-then-sell round trip at an unchanged price created cash.
+    const movement =
+      transaction.type === "buy"
+        ? -(transaction.amountIdr + transaction.fee)
+        : transaction.amountIdr - transaction.fee;
+
     balances[transaction.sourceBucketId] =
-      (balances[transaction.sourceBucketId] ?? 0) +
-      (transaction.type === "buy" ? -movement : movement);
+      (balances[transaction.sourceBucketId] ?? 0) + movement;
   });
 
   return balances;
@@ -58,49 +64,81 @@ export function calculatePortfolioHoldings(
 ): PortfolioHolding[] {
   const latestPrices = getLatestPriceByAsset(priceSnapshots);
   const rawHoldings = assets.map((asset) => {
-    const assetTransactions = transactions.filter(
-      (transaction) => transaction.assetId === asset.id,
-    );
-    const totals = assetTransactions.reduce(
-      (nextTotals, transaction) => {
-        const direction = transaction.type === "buy" ? 1 : -1;
-        return {
-          quantity: nextTotals.quantity + direction * transaction.quantity,
-          cost:
-            nextTotals.cost +
-            direction * (transaction.amountIdr + transaction.fee),
-        };
-      },
-      { cost: 0, quantity: 0 },
-    );
-    const latestTransaction = assetTransactions.reduce<
-      InvestmentTransaction | undefined
-    >(
-      (latest, transaction) =>
-        !latest || transaction.createdAt > latest.createdAt
-          ? transaction
-          : latest,
-      undefined,
-    );
+    // Average cost is path dependent, so trades must be replayed in the order
+    // they happened rather than in whatever order the rows arrived.
+    const assetTransactions = transactions
+      .filter((transaction) => transaction.assetId === asset.id)
+      .sort((first, second) =>
+        first.date === second.date
+          ? first.createdAt - second.createdAt
+          : first.date < second.date
+            ? -1
+            : 1,
+      );
+
+    let quantity = 0;
+    let cost = 0;
+    let realizedPnL = 0;
+    let hasInvalidHistory = false;
+
+    for (const transaction of assetTransactions) {
+      const fee = Number.isFinite(transaction.fee) ? transaction.fee : 0;
+      const amountIdr = Number.isFinite(transaction.amountIdr)
+        ? transaction.amountIdr
+        : 0;
+      const tradeQuantity = Number.isFinite(transaction.quantity)
+        ? transaction.quantity
+        : 0;
+
+      if (transaction.type === "buy") {
+        quantity += tradeQuantity;
+        cost += amountIdr + fee;
+        continue;
+      }
+
+      // Selling releases a proportional slice of the cost basis. Subtracting the
+      // sale proceeds instead left the remaining position carrying a basis it
+      // never had, and a fully closed position kept reporting a phantom
+      // unrealized gain forever.
+      const averageCost = quantity > 0 ? cost / quantity : 0;
+      const soldQuantity = Math.min(tradeQuantity, Math.max(0, quantity));
+      if (tradeQuantity > quantity) {
+        hasInvalidHistory = true;
+      }
+
+      const releasedCost = averageCost * soldQuantity;
+      realizedPnL += amountIdr - fee - releasedCost;
+      quantity -= tradeQuantity;
+      cost -= releasedCost;
+
+      if (quantity <= 0) {
+        // Nothing is held any more, so nothing is invested any more.
+        cost = 0;
+      }
+    }
+
+    const latestTransaction = assetTransactions[assetTransactions.length - 1];
     const currentPrice =
       latestPrices[asset.id]?.price ?? latestTransaction?.price ?? 0;
-    const currentValue = Math.max(0, totals.quantity) * currentPrice;
-    const averagePrice = totals.quantity > 0 ? totals.cost / totals.quantity : 0;
-    const unrealizedPnL = currentValue - totals.cost;
+    const currentValue = Math.max(0, quantity) * currentPrice;
+    const averagePrice = quantity > 0 ? cost / quantity : 0;
+    const unrealizedPnL = quantity > 0 ? currentValue - cost : 0;
     const unrealizedPnLPercent =
-      totals.cost > 0 ? (unrealizedPnL / totals.cost) * 100 : 0;
+      cost > 0 ? (unrealizedPnL / cost) * 100 : 0;
 
     return {
       assetId: asset.id,
       symbol: asset.symbol,
       name: asset.name,
-      totalQuantity: totals.quantity,
-      totalCost: totals.cost,
+      totalQuantity: quantity,
+      totalCost: cost,
       averagePrice,
       currentPrice,
       currentValue,
+      realizedPnL,
       unrealizedPnL,
       unrealizedPnLPercent,
+      hasInvalidHistory,
       portfolioAllocationPercent: 0,
     };
   });
@@ -116,6 +154,66 @@ export function calculatePortfolioHoldings(
         ? (holding.currentValue / totalPortfolioValue) * 100
         : 0,
   }));
+}
+
+type ValidateInvestmentSaleInput = {
+  amountIdr: number;
+  availableQuantity: number;
+  fee: number;
+  price: number;
+  quantityInput: string;
+};
+
+/**
+ * Sells were never validated, so a mistyped quantity could drive a holding
+ * negative and credit the bucket with money that was never received.
+ */
+export function validateInvestmentSale({
+  amountIdr,
+  availableQuantity,
+  fee,
+  price,
+  quantityInput,
+}:
+ValidateInvestmentSaleInput):
+  | { ok: true; proceeds: number; quantity: number }
+  | { ok: false; message: string } {
+  if (
+    !Number.isFinite(price) ||
+    price <= 0 ||
+    !Number.isFinite(amountIdr) ||
+    amountIdr <= 0 ||
+    !Number.isFinite(fee) ||
+    fee < 0
+  ) {
+    return {
+      ok: false,
+      message: "Enter valid sell price, proceeds amount, and fee.",
+    };
+  }
+
+  const normalizedQuantity = quantityInput.trim();
+  const typedQuantity = normalizedQuantity ? Number(normalizedQuantity) : null;
+  if (
+    typedQuantity === null ||
+    !Number.isFinite(typedQuantity) ||
+    typedQuantity <= 0
+  ) {
+    return { ok: false, message: "Enter the quantity you are selling." };
+  }
+
+  if (!Number.isFinite(availableQuantity) || typedQuantity > availableQuantity) {
+    return {
+      ok: false,
+      message: "You cannot sell more than you currently hold.",
+    };
+  }
+
+  if (fee >= amountIdr) {
+    return { ok: false, message: "Fee cannot be equal to or above proceeds." };
+  }
+
+  return { ok: true, proceeds: amountIdr - fee, quantity: typedQuantity };
 }
 
 type ValidateInvestmentPurchaseInput = {

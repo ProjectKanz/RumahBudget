@@ -374,6 +374,9 @@ export default function MoneyAllocationWatch({
   const totalPortfolioValue = holdings.reduce((total, holding) => total + holding.currentValue, 0);
   const totalPortfolioPnl = totalPortfolioValue - totalInvested;
   const totalPortfolioPnlPercent = totalInvested > 0 ? (totalPortfolioPnl / totalInvested) * 100 : 0;
+  // Gains that have already been banked are a separate fact from paper gains.
+  // Folding them together is what let a closed position keep showing a profit.
+  const totalRealizedPnl = holdings.reduce((total, holding) => total + holding.realizedPnL, 0);
   const latestPrices = useMemo(() => getLatestPriceByAsset(state.priceSnapshots), [state.priceSnapshots]);
   const recentAllocations = state.allocationRecords
     .slice()
@@ -805,6 +808,20 @@ export default function MoneyAllocationWatch({
             }
             description="Unrealized only. Not guaranteed and depends on price inputs."
           />
+          <MetricCell
+            label="Realized P/L"
+            tone={
+              isBalanceHidden ? "cyan" : totalRealizedPnl >= 0 ? "lime" : "rose"
+            }
+            value={
+              <NumberValue>
+                {isBalanceHidden
+                  ? hiddenBalanceLabel
+                  : formatCurrency(totalRealizedPnl)}
+              </NumberValue>
+            }
+            description="Already banked from closed and partially closed positions."
+          />
         </div>
 
         <Notice className="mt-5" tone="amber">
@@ -1174,7 +1191,14 @@ export default function MoneyAllocationWatch({
                       </div>
                     ) : null}
                   </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                  {holding.hasInvalidHistory ? (
+                    <Notice className="mt-4" tone="amber">
+                      This asset has sales recorded for more units than were ever
+                      bought. Fix the transaction history before trusting these
+                      figures.
+                    </Notice>
+                  ) : null}
+                  <div className="mt-4 grid gap-3 sm:grid-cols-5">
                     <MiniStat label="Units" value={isBalanceHidden ? hiddenBalanceLabel : holding.totalQuantity.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} />
                     <MiniStat label="Avg buy" value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.averagePrice)} />
                     <MiniStat label="Current value" value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.currentValue)} />
@@ -1185,6 +1209,17 @@ export default function MoneyAllocationWatch({
                         isBalanceHidden
                           ? "text-white"
                           : holding.unrealizedPnL >= 0
+                            ? "text-lime-200"
+                            : "text-rose-200"
+                      }
+                    />
+                    <MiniStat
+                      label="Realized P/L"
+                      value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.realizedPnL)}
+                      valueClassName={
+                        isBalanceHidden
+                          ? "text-white"
+                          : holding.realizedPnL >= 0
                             ? "text-lime-200"
                             : "text-rose-200"
                       }

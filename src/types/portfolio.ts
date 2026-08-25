@@ -47,6 +47,8 @@ export type PortfolioHolding = {
   averagePrice: number;
   currentPrice: number;
   currentValue: number;
+  realizedPnL: number;
+  hasInvalidHistory: boolean;
   unrealizedPnL: number;
   unrealizedPnLPercent: number;
   portfolioAllocationPercent: number;
