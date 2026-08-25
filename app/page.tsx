@@ -60,6 +60,14 @@ import {
   shouldProcessRecurringCommitment,
 } from "@/src/lib/recurring-schedule";
 import {
+  DAYS_PER_MONTH,
+  calculateBurnProfile,
+  calculateFlowProfile,
+  calculateRunwayDays,
+  calculateRunwayMonths,
+  splitBalancesByPurpose,
+} from "@/src/lib/runway";
+import {
   getMillisecondsUntilNextJakartaDay,
   getPayCycle,
 } from "@/src/lib/pay-cycle";
@@ -1990,43 +1998,57 @@ export default function Home() {
     return actual;
   }, [financeSnapshot.totalBalance, isSandboxMode, sandboxTransactions]);
 
-  const averageMonthlyBurn = useMemo(() => {
-    if (activeExpenses.length === 0 && (!isSandboxMode || sandboxTransactions.filter(t => t.type === "expense").length === 0)) {
-      return 0;
-    }
+  const recurringSandboxOutflow = useMemo(
+    () =>
+      isSandboxMode
+        ? sandboxTransactions
+            .filter((tx) => tx.type === "expense" && tx.timing === "recurring")
+            .reduce((sum, tx) => sum + tx.amount, 0)
+        : 0,
+    [isSandboxMode, sandboxTransactions],
+  );
 
-    const monthlyBurnMap = new Map<string, number>();
-    activeExpenses.forEach((expense) => {
-      if (expense.createdAt <= 0) return;
-      const date = new Date(expense.createdAt);
-      const key = `${date.getFullYear()}-${date.getMonth()}`;
-      monthlyBurnMap.set(key, (monthlyBurnMap.get(key) || 0) + expense.amount);
-    });
+  const burnProfile = useMemo(
+    () => calculateBurnProfile({ expenses: activeExpenses, now: new Date(financialNow) }),
+    [activeExpenses, financialNow],
+  );
 
-    const recurringSandboxOutflow = isSandboxMode
-      ? sandboxTransactions
-          .filter((tx) => tx.type === "expense" && tx.timing === "recurring")
-          .reduce((sum, tx) => sum + tx.amount, 0)
-      : 0;
+  // One burn rate feeds every reading, so the monthly and daily runways on the
+  // Overview can never disagree with each other.
+  const averageDailyBurn =
+    burnProfile.averageDailyBurn + recurringSandboxOutflow / DAYS_PER_MONTH;
+  const averageMonthlyBurn =
+    burnProfile.averageMonthlyBurn + recurringSandboxOutflow;
 
-    if (monthlyBurnMap.size === 0) {
-      return recurringSandboxOutflow;
-    }
+  // Measured over the same window as the burn rate. The stress test used to
+  // compare one month of income against a lifetime spending average.
+  const averageMonthlyIncome = useMemo(
+    () =>
+      calculateFlowProfile({
+        entries: activeIncomes,
+        now: new Date(financialNow),
+      }).averageMonthlyBurn,
+    [activeIncomes, financialNow],
+  );
 
-    const totalAllExpenses = Array.from(monthlyBurnMap.values()).reduce(
-      (sum, val) => sum + val,
-      0,
-    );
+  const householdAccounts = useMemo(
+    () => moneyAccounts.filter((account) => account.purpose !== "trading"),
+    [moneyAccounts],
+  );
+  const { householdBalance, tradingBalance } = useMemo(
+    () => splitBalancesByPurpose(moneyAccounts, moneyAccountBalances),
+    [moneyAccountBalances, moneyAccounts],
+  );
 
-    return (totalAllExpenses / monthlyBurnMap.size) + recurringSandboxOutflow;
-  }, [activeExpenses, isSandboxMode, sandboxTransactions]);
-
-  const survivalRunwayMonths = useMemo(() => {
-    if (averageMonthlyBurn === 0) {
-      return Infinity;
-    }
-    return totalBalance / averageMonthlyBurn;
-  }, [totalBalance, averageMonthlyBurn]);
+  // Runway spends household cash. A broker balance is real money but it is not
+  // what pays next week's groceries, so it is reported separately instead.
+  const runwayBalance = isSandboxMode
+    ? householdBalance + (totalBalance - financeSnapshot.totalBalance)
+    : householdBalance;
+  const survivalRunwayMonths = calculateRunwayMonths(
+    runwayBalance,
+    averageMonthlyBurn,
+  );
 
   const remainingBalance = totalIncome - totalExpense;
   const cashflowPeriodLabel = selectedMonth?.label ?? "selected period";
@@ -2072,30 +2094,23 @@ export default function Home() {
     Number.isFinite(plannedSpendAmount) && plannedSpendAmount > 0
       ? plannedSpendAmount
       : 0;
-  const balanceAfterPlannedSpend = totalBalance - safePlannedSpendAmount;
-  const dailyBurnEstimate = totalExpense > 0 ? totalExpense / 30 : 0;
-  const runwayDays =
-    dailyBurnEstimate > 0
-      ? Math.max(0, Math.floor(totalBalance / dailyBurnEstimate))
-      : null;
+  const balanceAfterPlannedSpend = runwayBalance - safePlannedSpendAmount;
+  const runwayDays = calculateRunwayDays(runwayBalance, averageDailyBurn);
   const projectedMonthlyExpenses = totalExpense + safePlannedSpendAmount;
   const projectedNetCashflow = totalIncome - projectedMonthlyExpenses;
-  const projectedDailyBurn =
-    projectedMonthlyExpenses > 0 ? projectedMonthlyExpenses / 30 : 0;
-  const projectedRunwayDays =
-    projectedDailyBurn > 0
-      ? Math.max(
-          0,
-          Math.floor(Math.max(0, balanceAfterPlannedSpend) / projectedDailyBurn),
-        )
-      : null;
+  // A one-off purchase shortens the runway by draining the reserve; it does not
+  // permanently raise the burn rate, so the same rate is used on both sides.
+  const projectedRunwayDays = calculateRunwayDays(
+    balanceAfterPlannedSpend,
+    averageDailyBurn,
+  );
   const spendGaugePercent =
-    totalBalance > 0
+    runwayBalance > 0
       ? Math.max(
           0,
           Math.min(
             100,
-            Math.round((balanceAfterPlannedSpend / totalBalance) * 100),
+            Math.round((balanceAfterPlannedSpend / runwayBalance) * 100),
           ),
         )
       : 0;
@@ -3327,6 +3342,7 @@ export default function Home() {
                   isLivingPreferenceUnsynced={isLivingPreferenceUnsynced}
                   livingAccountIds={livingAccountIds}
                   monthlyStatus={monthlyStatus}
+                  monthlyTradingNet={financeSnapshot.monthlyTradingNet}
                   moneyAccounts={moneyAccounts}
                   netHourlyWage={netHourlyWage}
                   onOpenQuickAdd={(tab) => {
@@ -3357,6 +3373,7 @@ export default function Home() {
                   showDailyAllowance={isCurrentSummaryMonth}
                   setPlannedSpend={setPlannedSpend}
                   spendGaugePercent={spendGaugePercent}
+                  tradingBalance={tradingBalance}
                   spendSignal={spendSignal}
                   survivalRunwayMonths={survivalRunwayMonths}
                   totalBalance={totalBalance}
@@ -3449,10 +3466,12 @@ export default function Home() {
                 ) : null}
 
                 <SurvivalMatrix
-                  accounts={moneyAccounts}
+                  accounts={householdAccounts}
                   accountBalances={moneyAccountBalances}
                   averageMonthlyBurn={averageMonthlyBurn}
-                  monthlyIncome={totalIncome}
+                  monthlyIncome={
+                    isSandboxMode ? totalIncome : averageMonthlyIncome
+                  }
                   isBalanceHidden={isBalanceHidden}
                 />
 
