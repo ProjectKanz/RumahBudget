@@ -54,6 +54,7 @@ export type PortfolioHolding = {
   currentValue: number;
   realizedPnL: number;
   hasInvalidHistory: boolean;
+  hasMarketPrice: boolean;
   unrealizedPnL: number;
   unrealizedPnLPercent: number;
   portfolioAllocationPercent: number;

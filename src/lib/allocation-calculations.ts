@@ -118,8 +118,14 @@ export function calculatePortfolioHoldings(
     }
 
     const latestTransaction = assetTransactions[assetTransactions.length - 1];
-    const currentPrice =
-      latestPrices[asset.id]?.price ?? latestTransaction?.price ?? 0;
+    const marketPrice = latestPrices[asset.id]?.price;
+    // Without a quote there is no market price, only the price of the most
+    // recent trade. That is still the best value estimate available, but calling
+    // the gap between it and average cost "unrealized P/L" invents a number: it
+    // measures nothing but fees and the spread between two of the user's own
+    // buys. Callers are told which one they are looking at.
+    const hasMarketPrice = marketPrice !== undefined && marketPrice > 0;
+    const currentPrice = marketPrice ?? latestTransaction?.price ?? 0;
     const currentValue = Math.max(0, quantity) * currentPrice;
     const averagePrice = quantity > 0 ? cost / quantity : 0;
     const unrealizedPnL = quantity > 0 ? currentValue - cost : 0;
@@ -135,6 +141,7 @@ export function calculatePortfolioHoldings(
       averagePrice,
       currentPrice,
       currentValue,
+      hasMarketPrice,
       realizedPnL,
       unrealizedPnL,
       unrealizedPnLPercent,

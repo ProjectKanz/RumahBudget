@@ -13,6 +13,7 @@ import {
   SHARES_PER_LOT,
   isLotTraded,
   parseLotInput,
+  sharesToLots,
 } from "@/src/lib/idx-market";
 import {
   EmptyState,
@@ -471,6 +472,22 @@ export default function MoneyAllocationWatch({
   const emergencyTarget = emergencyBucket?.targetAmount ?? 0;
   const emergencyProgress = emergencyTarget > 0 ? Math.min(100, (emergencyBalance / emergencyTarget) * 100) : 0;
 
+  const bucketlessAssetsById = useMemo(
+    () => new Map(state.assets.map((item) => [item.id, item])),
+    [state.assets],
+  );
+  const sortedInvestmentTransactions = useMemo(
+    () =>
+      [...state.investmentTransactions].sort((first, second) =>
+        first.date === second.date
+          ? second.createdAt - first.createdAt
+          : first.date < second.date
+            ? 1
+            : -1,
+      ),
+    [state.investmentTransactions],
+  );
+
   const holdings = useMemo(
     () => calculatePortfolioHoldings(state.assets, state.investmentTransactions, state.priceSnapshots),
     [state.assets, state.investmentTransactions, state.priceSnapshots],
@@ -808,6 +825,19 @@ export default function MoneyAllocationWatch({
     // nothing they could see.
     setPriceNotice(
       `${asset.symbol} price updated to ${formatCurrency(result.quote.price)} from ${result.quote.source}. ${result.quote.limitation ?? ""}`.trim(),
+    );
+  }
+
+  function deleteInvestmentTransaction(transactionId: string) {
+    setPriceError("");
+    setState((current) => ({
+      ...current,
+      investmentTransactions: current.investmentTransactions.filter(
+        (transaction) => transaction.id !== transactionId,
+      ),
+    }));
+    setPriceNotice(
+      "Trade removed. Its cost and fee were returned to the source bucket.",
     );
   }
 
@@ -1441,7 +1471,7 @@ export default function MoneyAllocationWatch({
                     <MiniStat label="Units" value={isBalanceHidden ? hiddenBalanceLabel : holding.totalQuantity.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} />
                     <MiniStat label="Avg buy" value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.averagePrice)} />
                     <MiniStat
-                      label="Current price"
+                      label={holding.hasMarketPrice ? "Current price" : "Last trade price"}
                       value={
                         isBalanceHidden
                           ? hiddenBalanceLabel
@@ -1453,10 +1483,16 @@ export default function MoneyAllocationWatch({
                     <MiniStat label="Current value" value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.currentValue)} />
                     <MiniStat
                       label="Unrealized P/L"
-                      value={isBalanceHidden ? hiddenBalanceLabel : `${formatCurrency(holding.unrealizedPnL)} (${holding.unrealizedPnLPercent.toFixed(1)}%)`}
-                      valueClassName={
+                      value={
                         isBalanceHidden
-                          ? "text-white"
+                          ? hiddenBalanceLabel
+                          : !holding.hasMarketPrice
+                            ? "Fetch a price"
+                            : `${formatCurrency(holding.unrealizedPnL)} (${holding.unrealizedPnLPercent.toFixed(1)}%)`
+                      }
+                      valueClassName={
+                        isBalanceHidden || !holding.hasMarketPrice
+                          ? "text-slate-400"
                           : holding.unrealizedPnL >= 0
                             ? "text-lime-200"
                             : "text-rose-200"
@@ -1490,6 +1526,56 @@ export default function MoneyAllocationWatch({
                 </article>
               );
             })}
+          </div>
+
+          <div className="mt-5 border border-white/10 bg-black/25 p-4">
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-slate-300">
+              Recorded trades
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              A mistyped date or amount used to be permanent. Removing a trade
+              returns its cost and fee to the source bucket, so you can record it
+              again correctly.
+            </p>
+            {sortedInvestmentTransactions.length === 0 ? (
+              <EmptyState>No buys or sells recorded yet.</EmptyState>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {sortedInvestmentTransactions.map((transaction) => {
+                  const tradeAsset = bucketlessAssetsById.get(transaction.assetId);
+                  const lotTraded = tradeAsset ? isLotTraded(tradeAsset) : false;
+                  const settled =
+                    transaction.amountIdr +
+                    (transaction.type === "sell" ? -transaction.fee : transaction.fee);
+
+                  return (
+                    <li
+                      className="flex flex-wrap items-center justify-between gap-3 border border-white/10 bg-white/[0.02] px-3 py-2"
+                      key={transaction.id}
+                    >
+                      <div className="text-sm text-slate-200">
+                        <span className="font-bold uppercase">
+                          {transaction.type} {tradeAsset?.symbol ?? transaction.assetId}
+                        </span>
+                        <span className="ml-2 text-slate-400">{transaction.date}</span>
+                        <span className="mt-1 block text-xs text-slate-400">
+                          {isBalanceHidden
+                            ? hiddenBalanceLabel
+                            : `${lotTraded ? `${sharesToLots(transaction.quantity)} lot (${transaction.quantity} shares)` : transaction.quantity} @ ${formatCurrency(transaction.price)} · fee ${formatCurrency(transaction.fee)} · settled ${formatCurrency(settled)}`}
+                        </span>
+                      </div>
+                      <SharpButton
+                        className="!py-1 !px-3 text-xs border-rose-500/40 text-rose-200"
+                        onClick={() => deleteInvestmentTransaction(transaction.id)}
+                        type="button"
+                      >
+                        Remove
+                      </SharpButton>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
 
           <div className="border border-white/10 bg-black/25 p-4">

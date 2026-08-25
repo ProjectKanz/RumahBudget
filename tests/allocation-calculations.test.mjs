@@ -436,3 +436,30 @@ test("cost basis for a lot position includes the fee exactly once", () => {
   assert.equal(holding.currentValue, 1_260_000);
   assert.equal(holding.unrealizedPnL, -242_250);
 });
+
+test("a position with no quote is marked as having no market price", () => {
+  // Falling back to the last trade price is a reasonable value estimate, but the
+  // gap between it and average cost is not a profit or loss, so callers must be
+  // able to tell the two situations apart.
+  const withoutQuote = calculatePortfolioHoldings([asset()], [buy()], [])[0];
+  const withQuote = calculatePortfolioHoldings([asset()], [buy()], [priceSnapshot(150)])[0];
+
+  assert.equal(withoutQuote.hasMarketPrice, false);
+  assert.equal(withoutQuote.currentPrice, 100); // the buy price, not a quote
+  assert.equal(withQuote.hasMarketPrice, true);
+  assert.equal(withQuote.currentPrice, 150);
+});
+
+test("the fallback price comes from the most recent trade, not the first", () => {
+  const holding = calculatePortfolioHoldings(
+    [asset()],
+    [
+      buy({ id: "b1", date: "2025-08-11", price: 3_750, amountIdr: 1_125_000, quantity: 300, fee: 0 }),
+      buy({ id: "b2", date: "2025-10-07", price: 3_690, amountIdr: 738_000, quantity: 200, fee: 0 }),
+    ],
+    [],
+  )[0];
+
+  assert.equal(holding.hasMarketPrice, false);
+  assert.equal(holding.currentPrice, 3_690);
+});
