@@ -367,3 +367,23 @@ test("sale validation rejects missing quantity and impossible fees", () => {
   });
   assert.equal(swallowedByFee.ok, false);
 });
+
+test("a fetched market price shows up even before anything is held", () => {
+  // Pressing "Fetch Latest" on an empty position must still surface the quote.
+  // Every other figure on the card is legitimately zero at that point, so the
+  // price itself is the only evidence the fetch did anything.
+  const holding = calculatePortfolioHoldings([asset()], [], [priceSnapshot(6_400)])[0];
+
+  assert.equal(holding.totalQuantity, 0);
+  assert.equal(holding.currentValue, 0);
+  assert.equal(holding.currentPrice, 6_400);
+});
+
+test("a manual price overrides an older provider snapshot", () => {
+  const provider = { ...priceSnapshot(6_400), id: "price-idx", timestamp: 10, isManual: false };
+  const manual = { ...priceSnapshot(6_550), id: "price-manual", timestamp: 20, isManual: true };
+
+  const holding = calculatePortfolioHoldings([asset()], [buy()], [provider, manual])[0];
+
+  assert.equal(holding.currentPrice, 6_550);
+});

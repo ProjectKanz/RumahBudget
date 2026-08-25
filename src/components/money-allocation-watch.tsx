@@ -788,7 +788,12 @@ export default function MoneyAllocationWatch({
       ...current,
       priceSnapshots: [snapshot, ...current.priceSnapshots],
     }));
-    setPriceNotice(`${asset.symbol} price updated from ${result.quote.source}. ${result.quote.limitation ?? ""}`.trim());
+    // Name the figure. This notice renders above the form while the Fetch button
+    // sits down in the holdings list, so "price updated" alone told the user
+    // nothing they could see.
+    setPriceNotice(
+      `${asset.symbol} price updated to ${formatCurrency(result.quote.price)} from ${result.quote.source}. ${result.quote.limitation ?? ""}`.trim(),
+    );
   }
 
   function exportLocalBackup() {
@@ -1400,9 +1405,19 @@ export default function MoneyAllocationWatch({
                       figures.
                     </Notice>
                   ) : null}
-                  <div className="mt-4 grid gap-3 sm:grid-cols-5">
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
                     <MiniStat label="Units" value={isBalanceHidden ? hiddenBalanceLabel : holding.totalQuantity.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} />
                     <MiniStat label="Avg buy" value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.averagePrice)} />
+                    <MiniStat
+                      label="Current price"
+                      value={
+                        isBalanceHidden
+                          ? hiddenBalanceLabel
+                          : holding.currentPrice > 0
+                            ? formatCurrency(holding.currentPrice)
+                            : "—"
+                      }
+                    />
                     <MiniStat label="Current value" value={isBalanceHidden ? hiddenBalanceLabel : formatCurrency(holding.currentValue)} />
                     <MiniStat
                       label="Unrealized P/L"
