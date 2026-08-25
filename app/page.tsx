@@ -68,6 +68,10 @@ import {
   splitBalancesByPurpose,
 } from "@/src/lib/runway";
 import {
+  getCommitmentCycleStatus,
+  getDaysUntilDue,
+} from "@/src/lib/recurring-occurrence";
+import {
   getMillisecondsUntilNextJakartaDay,
   getPayCycle,
 } from "@/src/lib/pay-cycle";
@@ -405,20 +409,6 @@ function getSupabaseErrorMessage(error: unknown, fallbackMessage: string) {
   }
 
   return error instanceof Error ? error.message : fallbackMessage;
-}
-
-function isCurrentMonthString(dateStr: string | null | undefined): boolean {
-  if (!dateStr) {
-    return false;
-  }
-
-  const date = new Date(dateStr);
-  const today = new Date();
-
-  return (
-    date.getFullYear() === today.getFullYear() &&
-    date.getMonth() === today.getMonth()
-  );
 }
 
 function getTransactionTimestamp(
@@ -1851,33 +1841,6 @@ export default function Home() {
     [],
   );
 
-  const approachingCommitments = useMemo(() => {
-    const today = new Date();
-    const currentDay = today.getDate();
-
-    return commitments.filter((commitment) => {
-      if (
-        !Number.isInteger(commitment.dueDay) ||
-        commitment.dueDay < 1 ||
-        commitment.dueDay > 31
-      ) {
-        return false;
-      }
-
-      if (commitment.isAutoDeduct || commitment.disableReminders) {
-        return false;
-      }
-
-      if (isCurrentMonthString(commitment.lastProcessed)) {
-        return false;
-      }
-
-      return (
-        getEffectiveRecurringDueDay(commitment.dueDay, today) - currentDay <= 3
-      );
-    });
-  }, [commitments]);
-
   const financeSnapshot = useMemo(
     () =>
       calculateFinanceSnapshot({
@@ -1968,6 +1931,34 @@ export default function Home() {
       transfers,
     ],
   );
+  // Reminders follow the pay cycle, not the calendar month. Keyed to the month
+  // it happened to be viewed in, a bill due on the 16th read as overdue on the
+  // 25th even though its next occurrence was three weeks away.
+  const approachingCommitments = useMemo(
+    () =>
+      commitments.filter((commitment) => {
+        if (commitment.isAutoDeduct || commitment.disableReminders) {
+          return false;
+        }
+
+        const status = getCommitmentCycleStatus({
+          commitment,
+          expenses: activeExpenses,
+          payCycle: currentPayCycle,
+        });
+        if (!status || status.isPaid) {
+          return false;
+        }
+
+        const daysUntilDue = getDaysUntilDue(
+          status.occurrence.dueDateKey,
+          currentPayCycle.todayKey,
+        );
+        return daysUntilDue !== null && daysUntilDue <= 3;
+      }),
+    [activeExpenses, commitments, currentPayCycle],
+  );
+
   const isCurrentSummaryMonth =
     selectedMonthKey === currentPayCycle.todayKey.slice(0, 7);
 
