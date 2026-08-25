@@ -13,6 +13,7 @@
     "test:cron-security": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/cron-security.test.mjs",
     "test:data-integrity": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/offline-queue.test.mjs tests/recurring-schedule.test.mjs",
     "test:daily-allowance": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/pay-cycle.test.mjs tests/daily-allowance.test.mjs tests/living-account-preferences.test.mjs",
+    "test:day-summary": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/day-summary.test.mjs",
     "test:finance": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/finance-calculations.test.mjs",
     "test:trading": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/trading-calculations.test.mjs",
     "test:idx-market": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/idx-market.test.mjs",

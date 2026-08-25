@@ -17,6 +17,7 @@ import {
   EXPENSE_CATEGORY_OPTIONS,
   PAYMENT_METHOD_OPTIONS,
 } from "@/src/lib/expense-options";
+import { summarizeDay } from "@/src/lib/day-summary";
 import { calculateLifeEnergyHours } from "@/src/lib/life-energy";
 import {
   localDateInputToTimestamp,
@@ -104,6 +105,7 @@ type TransactionHistoryProps = {
   isBalanceHidden: boolean;
   isLoading?: boolean;
   netHourlyWage?: number;
+  todayKey: string;
   onUpdateTransaction?: (
     update: LedgerTransactionUpdate,
   ) => Promise<boolean>;
@@ -139,6 +141,7 @@ export default function TransactionHistory({
   isLoading = false,
   netHourlyWage = 0,
   onUpdateTransaction,
+  todayKey,
 }: TransactionHistoryProps) {
   const [filter, setFilter] = useState<TransactionFilter>("All");
   const [query, setQuery] = useState("");
@@ -152,6 +155,13 @@ export default function TransactionHistory({
   );
   const [editError, setEditError] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // Gross spending overstates a day where something was fronted and reimbursed:
+  // both legs are real rows, but the pair nets to nothing.
+  const todaySummary = useMemo(
+    () => summarizeDay({ dateKey: todayKey, expenses, incomes }),
+    [expenses, incomes, todayKey],
+  );
 
   const transactions = useMemo(() => {
     const accountNames = new Map(
@@ -553,6 +563,60 @@ export default function TransactionHistory({
           title="Ledger records"
           tone="cyan"
         />
+
+        <div className="mt-5 border border-white/10 bg-black/25 p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-slate-300">
+              Hari ini · {todayKey}
+            </p>
+            <p className="text-xs text-slate-500">
+              Seluruh akun, di luar filter. Transfer antar akun sendiri tidak dihitung.
+            </p>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className="border border-white/10 bg-white/[0.02] px-3 py-2">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Keluar</p>
+              <p className="mt-1 text-lg font-black text-rose-200">
+                <NumberValue>
+                  {isBalanceHidden ? hiddenBalanceLabel : formatCurrency(todaySummary.expenseTotal)}
+                </NumberValue>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {todaySummary.expenseCount} pengeluaran
+              </p>
+            </div>
+            <div className="border border-white/10 bg-white/[0.02] px-3 py-2">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Masuk</p>
+              <p className="mt-1 text-lg font-black text-lime-200">
+                <NumberValue>
+                  {isBalanceHidden ? hiddenBalanceLabel : formatCurrency(todaySummary.incomeTotal)}
+                </NumberValue>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {todaySummary.incomeCount} pemasukan
+              </p>
+            </div>
+            <div className="border border-cyan-300/25 bg-cyan-300/[0.06] px-3 py-2">
+              <p className="text-xs uppercase tracking-[0.14em] text-cyan-200">
+                Benar-benar keluar
+              </p>
+              <p
+                className={`mt-1 text-lg font-black ${
+                  todaySummary.netOutflow > 0 ? "text-rose-200" : "text-lime-200"
+                }`}
+              >
+                <NumberValue>
+                  {isBalanceHidden ? hiddenBalanceLabel : formatCurrency(todaySummary.netOutflow)}
+                </NumberValue>
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                {todaySummary.offsetTotal > 0
+                  ? `${formatCurrency(todaySummary.offsetTotal)} tertutup pemasukan hari ini.`
+                  : "Belum ada pemasukan yang menutup pengeluaran hari ini."}
+              </p>
+            </div>
+          </div>
+        </div>
 
         {!isBalanceHidden ? (
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

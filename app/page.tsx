@@ -3598,6 +3598,7 @@ export default function Home() {
                   isExpenseLoading || isIncomeLoading || isTransferLoading
                 }
                 netHourlyWage={netHourlyWage}
+                todayKey={currentPayCycle.todayKey}
                 isBalanceHidden={isBalanceHidden}
               />
             ) : null}
