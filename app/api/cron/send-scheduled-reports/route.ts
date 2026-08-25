@@ -2,14 +2,24 @@ import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import {
   buildDetailedHtmlReport,
-  getWeekStart,
-  getWeekEnd,
   getCategoryLabel,
 } from "@/src/lib/email-templates";
 import {
   isAuthorizedCronRequest,
   prepareCronResultsForResponse,
 } from "@/src/lib/cron-security";
+import {
+  calculateFinanceSnapshot,
+  getHouseholdIncomes,
+} from "@/src/lib/finance-calculations";
+import {
+  mapAccountRows,
+  mapExpenseRows,
+  mapIncomeRows,
+  mapTradingResultRows,
+  mapTransferRows,
+} from "@/src/lib/ledger-rows";
+import { getWeekPeriod, summarizeReportPeriod } from "@/src/lib/report-period";
 
 export const runtime = "nodejs";
 
@@ -40,12 +50,6 @@ type ReportPreferenceRow = {
   monthly_enabled?: boolean | null;
   recipient_email?: string | null;
 };
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -202,15 +206,16 @@ export async function GET(request: Request) {
   const weeklyPreferences = preferences.filter(
     (preference) => preference.weekly_enabled && preference.user_id,
   );
-  const weekStart = getWeekStart(new Date());
-  const weekEnd = getWeekEnd(weekStart);
+  // The scheduled run used to bucket by server time (UTC on Vercel) and filter
+  // on created_at, while the manual route used Jakarta days and transaction_date.
+  // The same transaction could land in two different weeks depending on which
+  // path sent the report.
+  const period = getWeekPeriod(new Date());
   const results = [];
 
   for (const preference of weeklyPreferences) {
     const userId = preference.user_id as string;
-    const periodLabel = `${dateFormatter.format(weekStart)} - ${dateFormatter.format(
-      weekEnd,
-    )}`;
+    const periodLabel = period.label;
 
     try {
       // Get user email
@@ -218,12 +223,14 @@ export async function GET(request: Request) {
       const accountEmail = authUser?.user?.email || preference.recipient_email || "user@email.com";
 
       // Fetch all accounts, incomes, expenses, and transfers for the user
-      const [accountsRes, incomesRes, expensesRes, transfersRes] = await Promise.all([
-        supabase.from("money_accounts").select("*").eq("user_id", userId).eq("is_archived", false),
-        supabase.from("incomes").select("*").eq("user_id", userId),
-        supabase.from("expenses").select("*").eq("user_id", userId),
-        supabase.from("transfers").select("*").eq("user_id", userId),
-      ]);
+      const [accountsRes, incomesRes, expensesRes, transfersRes, tradingRes] =
+        await Promise.all([
+          supabase.from("money_accounts").select("*").eq("user_id", userId).eq("is_archived", false),
+          supabase.from("incomes").select("*").eq("user_id", userId),
+          supabase.from("expenses").select("*").eq("user_id", userId),
+          supabase.from("transfers").select("*").eq("user_id", userId),
+          supabase.from("trading_results").select("*").eq("user_id", userId),
+        ]);
 
       if (accountsRes.error) throw new Error(accountsRes.error.message);
       if (incomesRes.error) throw new Error(incomesRes.error.message);
@@ -231,65 +238,37 @@ export async function GET(request: Request) {
       if (transfersRes.error) throw new Error(transfersRes.error.message);
 
       const accounts = accountsRes.data || [];
-      const balances: Record<string, number> = {};
+      const mappedAccounts = mapAccountRows(accounts, userId);
+      const mappedIncomes = mapIncomeRows(incomesRes.data || [], userId);
+      const mappedExpenses = mapExpenseRows(expensesRes.data || [], userId);
+      const mappedTransfers = mapTransferRows(transfersRes.data || [], userId);
+      const mappedTradingResults = tradingRes.error
+        ? []
+        : mapTradingResultRows(tradingRes.data || [], userId);
 
-      // Compute current balances
-      accounts.forEach((acc) => {
-        balances[acc.id] = Number(acc.initial_balance || 0);
+      const snapshot = calculateFinanceSnapshot({
+        accounts: mappedAccounts,
+        expenses: mappedExpenses,
+        incomes: mappedIncomes,
+        tradingResults: mappedTradingResults,
+        transfers: mappedTransfers,
       });
-      (incomesRes.data || []).forEach((inc) => {
-        if (inc.account_id && inc.account_id in balances) {
-          balances[inc.account_id] += Number(inc.amount || 0);
-        }
-      });
-      (expensesRes.data || []).forEach((exp) => {
-        if (exp.account_id && exp.account_id in balances) {
-          balances[exp.account_id] -= Number(exp.amount || 0);
-        }
-      });
-      (transfersRes.data || []).forEach((tf) => {
-        if (tf.to_account_id && tf.to_account_id in balances) {
-          balances[tf.to_account_id] += Number(tf.amount || 0);
-        }
-        if (tf.from_account_id && tf.from_account_id in balances) {
-          balances[tf.from_account_id] -= Number(tf.amount || 0);
-        }
-      });
+      const balances = snapshot.accountBalances;
 
-      // Filter period incomes & expenses
-      const periodIncomes = (incomesRes.data || []).filter((inc) => {
-        const d = inc.created_at ? new Date(inc.created_at).getTime() : 0;
-        return d >= weekStart.getTime() && d <= weekEnd.getTime();
+      const summary = summarizeReportPeriod({
+        expenses: mappedExpenses,
+        incomes: getHouseholdIncomes(mappedIncomes, mappedTradingResults),
+        period,
       });
-
-      const periodExpenses = (expensesRes.data || []).filter((exp) => {
-        const d = exp.created_at ? new Date(exp.created_at).getTime() : 0;
-        return d >= weekStart.getTime() && d <= weekEnd.getTime();
-      });
-
-      const totalIncome = periodIncomes.reduce((sum, inc) => sum + Number(inc.amount || 0), 0);
-      const totalExpense = periodExpenses.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
-      const netCashflow = totalIncome - totalExpense;
-
-      // Category breakdown
-      const categoryTotals: Record<string, number> = {};
-      periodExpenses.forEach((exp) => {
-        const cat = exp.category || "Other";
-        categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(exp.amount || 0);
-      });
-      const sortedCategories = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
+      const totalIncome = summary.totalIncome;
+      const totalExpense = summary.totalExpense;
+      const netCashflow = summary.netCashflow;
+      const sortedCategories = summary.sortedCategories;
+      const sortedSources = summary.sortedSources;
       const topCategoryEntry = sortedCategories[0];
       const topCategory = topCategoryEntry
         ? getCategoryLabel(topCategoryEntry[0])
         : "None yet";
-
-      // Source breakdown
-      const sourceTotals: Record<string, number> = {};
-      periodIncomes.forEach((inc) => {
-        const src = inc.source || "Other Inflow";
-        sourceTotals[src] = (sourceTotals[src] || 0) + Number(inc.amount || 0);
-      });
-      const sortedSources = Object.entries(sourceTotals).sort((a, b) => b[1] - a[1]);
 
       const statusObj = getFinancialStatus(totalIncome, totalExpense);
       const recommendation = getRecommendation(statusObj.label, topCategory, totalIncome);

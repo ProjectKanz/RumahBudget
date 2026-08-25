@@ -3652,7 +3652,10 @@ export default function Home() {
                   )}
                   incomes={activeIncomes}
                   isBalanceHidden={isBalanceHidden}
-                  referenceDate={selectedMonth?.start.getTime() ?? 0}
+                  now={financialNow}
+                  referenceDate={
+                    selectedMonth?.start.getTime() ?? financialNow
+                  }
                   onReportSent={loadEmailReportsFromSupabase}
                 />
 

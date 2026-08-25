@@ -10,6 +10,10 @@ import {
   TerminalPanel,
 } from "@/src/components/cockpit-ui";
 import { formatCurrency, hiddenBalanceLabel } from "@/src/lib/format";
+import {
+  getReportPeriod,
+  summarizeReportPeriod,
+} from "@/src/lib/report-period";
 import { missingSupabaseEnvMessage, supabase } from "@/src/lib/supabase";
 import {
   clearSupabaseAuthStorage,
@@ -32,15 +36,10 @@ type ReportPreviewProps = {
   highlightClassName?: string;
   incomes: Income[];
   isBalanceHidden: boolean;
+  now: number;
   referenceDate: number;
   onReportSent?: () => void | Promise<void>;
 };
-
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
 
 const categoryLabels = new Map([
   ["Belanja Dapur", "Groceries"],
@@ -50,44 +49,6 @@ const categoryLabels = new Map([
   ["Kesehatan", "Health"],
   ["Lainnya", "Other"],
 ]);
-
-function getWeekStart(date: Date) {
-  const weekStart = new Date(date);
-  const day = weekStart.getDay();
-  const daysFromMonday = day === 0 ? 6 : day - 1;
-
-  weekStart.setDate(weekStart.getDate() - daysFromMonday);
-  weekStart.setHours(0, 0, 0, 0);
-
-  return weekStart;
-}
-
-function getWeekEnd(weekStart: Date) {
-  const weekEnd = new Date(weekStart);
-
-  weekEnd.setDate(weekEnd.getDate() + 6);
-  weekEnd.setHours(23, 59, 59, 999);
-
-  return weekEnd;
-}
-
-function getMonthStart(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function getMonthEnd(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
-}
-
-function isInPeriod(createdAt: number, startDate: Date, endDate: Date) {
-  return createdAt >= startDate.getTime() && createdAt <= endDate.getTime();
-}
-
-function toLocalDateKey(date: Date) {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
 
 function getFinancialStatus(totalIncome: number, totalExpense: number) {
   const expenseRatio = totalIncome > 0 ? totalExpense / totalIncome : 0;
@@ -156,6 +117,7 @@ export default function ReportPreview({
   highlightClassName = "",
   incomes,
   isBalanceHidden,
+  now,
   referenceDate,
   onReportSent,
 }: ReportPreviewProps) {
@@ -165,61 +127,38 @@ export default function ReportPreview({
   const [sendError, setSendError] = useState("");
 
   const report = useMemo(() => {
-    const today = new Date(referenceDate);
-    const startDate =
-      reportType === "weekly" ? getWeekStart(today) : getMonthStart(today);
-    const endDate =
-      reportType === "weekly" ? getWeekEnd(startDate) : getMonthEnd(today);
-
-    const periodExpenses = expenses.filter((expense) =>
-      isInPeriod(expense.createdAt, startDate, endDate),
-    );
-    const periodIncomes = incomes.filter((income) =>
-      isInPeriod(income.createdAt, startDate, endDate),
-    );
-
-    const totalExpense = periodExpenses.reduce(
-      (total, expense) => total + expense.amount,
-      0,
-    );
-    const totalIncome = periodIncomes.reduce(
-      (total, income) => total + income.amount,
-      0,
-    );
-    const netCashflow = totalIncome - totalExpense;
-
-    const categoryTotals = periodExpenses.reduce<Record<string, number>>(
-      (totals, expense) => ({
-        ...totals,
-        [expense.category]: (totals[expense.category] ?? 0) + expense.amount,
-      }),
-      {},
-    );
-
-    const topCategoryEntry = Object.entries(categoryTotals).sort(
-      ([, firstAmount], [, secondAmount]) => secondAmount - firstAmount,
-    )[0];
-
-    const status = getFinancialStatus(totalIncome, totalExpense);
-    const topCategory = topCategoryEntry?.[0]
-      ? (categoryLabels.get(topCategoryEntry[0]) ?? topCategoryEntry[0])
+    // A weekly report always describes the week containing today. It used to be
+    // derived from the first day of whichever month the selector was showing,
+    // so on the 25th it reported a week that had ended three weeks earlier.
+    const period = getReportPeriod({
+      monthReference: referenceDate ? new Date(referenceDate) : undefined,
+      now: new Date(now),
+      type: reportType,
+    });
+    const summary = summarizeReportPeriod({ expenses, incomes, period });
+    const status = getFinancialStatus(summary.totalIncome, summary.totalExpense);
+    const topCategoryKey = summary.sortedCategories[0]?.[0];
+    const topCategory = topCategoryKey
+      ? (categoryLabels.get(topCategoryKey) ?? topCategoryKey)
       : "None yet";
-    const reportName =
-      reportType === "weekly" ? "Weekly Report" : "Monthly Report";
-    const periodLabel = `${dateFormatter.format(startDate)} - ${dateFormatter.format(endDate)}`;
 
     return {
-      reportName,
-      periodLabel,
-      label: `${reportName}: ${periodLabel}`,
-      totalIncome,
-      totalExpense,
-      remainingBalance: netCashflow,
+      label: `${period.reportName}: ${period.label}`,
+      period,
+      periodLabel: period.label,
+      recommendation: getRecommendation(
+        status.label,
+        topCategory,
+        summary.totalIncome,
+      ),
+      remainingBalance: summary.netCashflow,
+      reportName: period.reportName,
       status,
       topCategory,
-      recommendation: getRecommendation(status.label, topCategory, totalIncome),
+      totalExpense: summary.totalExpense,
+      totalIncome: summary.totalIncome,
     };
-  }, [expenses, incomes, referenceDate, reportType]);
+  }, [expenses, incomes, now, referenceDate, reportType]);
 
   async function sendReport() {
     setIsSending(true);
@@ -269,16 +208,8 @@ export default function ReportPreview({
         body: JSON.stringify({
           reportType: report.reportName,
           periodLabel: report.periodLabel,
-          periodStart: toLocalDateKey(
-            reportType === "weekly"
-              ? getWeekStart(new Date(referenceDate))
-              : getMonthStart(new Date(referenceDate)),
-          ),
-          periodEnd: toLocalDateKey(
-            reportType === "weekly"
-              ? getWeekEnd(getWeekStart(new Date(referenceDate)))
-              : getMonthEnd(new Date(referenceDate)),
-          ),
+          periodStart: report.period.startKey,
+          periodEnd: report.period.endKey,
           totalIncome: formatCurrency(report.totalIncome),
           totalExpense: formatCurrency(report.totalExpense),
           remainingBalance: formatCurrency(report.remainingBalance),

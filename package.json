@@ -15,6 +15,7 @@
     "test:finance": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/finance-calculations.test.mjs",
     "test:trading": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/trading-calculations.test.mjs",
     "test:recurring-period": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/recurring-occurrence.test.mjs tests/recurring-period-migration.test.mjs",
+    "test:report-period": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/report-period.test.mjs",
     "test:runway": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/runway.test.mjs",
     "test:trading-migration": "node --test tests/trading-migration.test.mjs"
   },
