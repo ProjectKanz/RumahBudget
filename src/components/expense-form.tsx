@@ -7,6 +7,7 @@ import {
   SharpSelect,
   TerminalPanel,
 } from "@/src/components/cockpit-ui";
+import type { BudgetLine } from "@/src/types/budget-line";
 import type { Expense } from "@/src/types/expense";
 import type { MoneyAccount } from "@/src/types/money-account";
 import {
@@ -22,8 +23,14 @@ import { FormEvent, useState } from "react";
 
 const labelClassName = "text-sm font-medium text-slate-300";
 
+/** Empty string is the form value for "not classified"; it saves as null. */
+const UNCATEGORIZED_BUDGET_LINE_VALUE = "";
+
 type ExpenseFormProps = {
   accountLabel: string;
+  /** Active spending lines only. Empty when they fail to load, which must
+   *  still leave the form fully usable. */
+  budgetLines?: BudgetLine[];
   isEmbedded?: boolean;
   moneyAccounts: MoneyAccount[];
   onAddExpense: (expense: Expense) => Promise<boolean>;
@@ -33,6 +40,7 @@ type ExpenseFormProps = {
 
 export default function ExpenseForm({
   accountLabel,
+  budgetLines = [],
   isEmbedded = false,
   moneyAccounts,
   onAddExpense,
@@ -48,6 +56,9 @@ export default function ExpenseForm({
     PAYMENT_METHOD_OPTIONS[0].value,
   );
   const [description, setDescription] = useState("");
+  const [budgetLineId, setBudgetLineId] = useState(
+    UNCATEGORIZED_BUDGET_LINE_VALUE,
+  );
   const [note, setNote] = useState("");
   const [affectsDailyAllowance, setAffectsDailyAllowance] = useState(true);
   const [transactionDate, setTransactionDate] = useState(() =>
@@ -95,6 +106,7 @@ export default function ExpenseForm({
       owner: accountLabel,
       userId: "",
       accountId: selectedAccountId,
+      budgetLineId: budgetLineId || undefined,
       createdAt: transactionTimestamp,
       description: trimmedDescription,
       transactionDate,
@@ -122,6 +134,7 @@ export default function ExpenseForm({
 
     setAmount("");
     setDescription("");
+    setBudgetLineId(UNCATEGORIZED_BUDGET_LINE_VALUE);
     setNote("");
     setAffectsDailyAllowance(true);
     setError("");
@@ -206,6 +219,24 @@ export default function ExpenseForm({
             {EXPENSE_CATEGORY_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
+              </option>
+            ))}
+          </SharpSelect>
+        </label>
+
+        <label className={labelClassName}>
+          Budget Line
+          <SharpSelect
+            name="budgetLine"
+            value={budgetLineId}
+            onChange={(event) => setBudgetLineId(event.target.value)}
+          >
+            <option value={UNCATEGORIZED_BUDGET_LINE_VALUE}>
+              Uncategorized
+            </option>
+            {budgetLines.map((line) => (
+              <option key={line.id} value={line.id}>
+                {line.name}
               </option>
             ))}
           </SharpSelect>

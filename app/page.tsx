@@ -3704,6 +3704,7 @@ export default function Home() {
                     {quickAddTab === "expense" ? (
                       <ExpenseForm
                         accountLabel={signedInEmail}
+                        budgetLines={assignableBudgetLines}
                         isEmbedded
                         moneyAccounts={moneyAccounts}
                         onAddExpense={addExpense}
