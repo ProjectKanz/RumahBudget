@@ -4,6 +4,8 @@ type ExpenseQueueData = {
   accountId: string;
   affectsDailyAllowance: boolean;
   amount: number;
+  /** Optional so items queued before Rencana Uang existed still replay cleanly. */
+  budgetLineId?: string;
   category: string;
   createdAt: number;
   description: string;
@@ -147,6 +149,7 @@ export function buildOfflineQueueInsert(
         account_id: item.data.accountId,
         affects_daily_allowance: item.data.affectsDailyAllowance,
         amount: item.data.amount,
+        budget_line_id: item.data.budgetLineId ?? null,
         category: item.data.category,
         client_entry_id: item.id,
         created_at: createdAt,

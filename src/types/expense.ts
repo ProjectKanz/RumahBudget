@@ -3,6 +3,7 @@ export type Expense = {
   owner: string;
   userId: string;
   accountId: string;
+  budgetLineId?: string;
   createdAt: number;
   description?: string;
   transactionDate?: string;

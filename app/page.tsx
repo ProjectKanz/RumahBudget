@@ -28,6 +28,13 @@ import CommandK from "@/src/components/command-k";
 import MoneyAllocationWatch from "@/src/components/money-allocation-watch";
 import { calculateDailyAllowance } from "@/src/lib/daily-allowance";
 import {
+  BUDGET_LINE_CONFLICT_TARGET,
+  buildBudgetLineSeedRows,
+  getAssignableBudgetLines,
+  isAssignableBudgetLineId,
+  mapBudgetLineRows,
+} from "@/src/lib/budget-line-store";
+import {
   calculateFinanceSnapshot,
   getHouseholdIncomes,
 } from "@/src/lib/finance-calculations";
@@ -82,6 +89,7 @@ import {
   isRecoverableSupabaseAuthError,
   withTimeout,
 } from "@/src/lib/supabase-auth-recovery";
+import type { BudgetLine } from "@/src/types/budget-line";
 import type { EmailReport } from "@/src/types/email-report";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
@@ -287,6 +295,7 @@ type SupabaseExpenseRow = {
   recurring_commitment_id?: string | null;
   recurring_period?: string | null;
   affects_daily_allowance?: boolean | null;
+  budget_line_id?: string | null;
 };
 
 type SupabaseIncomeRow = {
@@ -433,6 +442,8 @@ export default function Home() {
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [emailReports, setEmailReports] = useState<EmailReport[]>([]);
   const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccount[]>([]);
+  const [budgetLines, setBudgetLines] = useState<BudgetLine[]>([]);
+  const [budgetLineError, setBudgetLineError] = useState("");
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [tradingResults, setTradingResults] = useState<TradingResult[]>([]);
   const [netHourlyWage, setNetHourlyWage] = useState<number>(0);
@@ -659,6 +670,7 @@ export default function Home() {
               )
             : ""),
         amount: Number(expense.amount ?? 0),
+        budgetLineId: expense.budget_line_id ?? undefined,
         category: expense.category ?? "Other",
         paymentMethod: expense.payment_method ?? "Unknown",
         note: expense.note ?? "",
@@ -680,6 +692,126 @@ export default function Home() {
       setIsExpenseLoading(false);
     }
   }, [authUser]);
+
+  /**
+   * Budget lines are planning metadata, so a failure here must never take the
+   * ledger down with it: the error surfaces, the list stays empty, and every
+   * expense simply reads as Uncategorized.
+   */
+  const loadBudgetLinesFromSupabase = useCallback(async () => {
+    if (!authUser) {
+      setBudgetLines([]);
+      return;
+    }
+
+    if (!supabase) {
+      setBudgetLineError(missingSupabaseEnvMessage);
+      return;
+    }
+
+    const timeout = createSupabaseTimeout();
+
+    try {
+      // The unique index on (user_id, key) is what makes this idempotent, so
+      // seeding on every load can never duplicate a line. ignoreDuplicates
+      // leaves a name the owner renamed by hand untouched.
+      const { error: seedError } = await supabase
+        .from("budget_lines")
+        .upsert(buildBudgetLineSeedRows(authUser.id), {
+          onConflict: BUDGET_LINE_CONFLICT_TARGET,
+          ignoreDuplicates: true,
+        })
+        .abortSignal(timeout.signal);
+
+      if (seedError) {
+        setBudgetLineError(seedError.message);
+      }
+
+      const { data, error } = await supabase
+        .from("budget_lines")
+        .select("*")
+        .eq("user_id", authUser.id)
+        .abortSignal(timeout.signal);
+
+      if (error) {
+        setBudgetLineError(error.message);
+        return;
+      }
+
+      setBudgetLines(mapBudgetLineRows(data ?? [], authUser.id));
+      if (!seedError) {
+        setBudgetLineError("");
+      }
+    } catch (error) {
+      setBudgetLineError(
+        getSupabaseErrorMessage(
+          error,
+          "Failed to load budget lines from Supabase.",
+        ),
+      );
+    } finally {
+      timeout.clear();
+    }
+  }, [authUser]);
+
+  /**
+   * Reclassification only. Deliberately not routed through
+   * updateLedgerTransaction: nothing here may touch amount, date, account,
+   * category, description or note. Passing null clears back to Uncategorized.
+   */
+  const updateExpenseBudgetLine = useCallback(
+    async (expenseId: string, budgetLineId: string | null) => {
+      if (!authUser) {
+        setBudgetLineError("Please log in before changing a budget line.");
+        return false;
+      }
+
+      if (!supabase) {
+        setBudgetLineError(missingSupabaseEnvMessage);
+        return false;
+      }
+
+      if (budgetLineId && !isAssignableBudgetLineId(budgetLines, budgetLineId)) {
+        setBudgetLineError(
+          "Choose an active spending budget line, or clear it to Uncategorized.",
+        );
+        return false;
+      }
+
+      const timeout = createSupabaseTimeout();
+
+      try {
+        const { error } = await supabase
+          .from("expenses")
+          .update({ budget_line_id: budgetLineId })
+          .eq("id", expenseId)
+          .eq("user_id", authUser.id)
+          .abortSignal(timeout.signal);
+
+        if (error) {
+          setBudgetLineError(error.message);
+          return false;
+        }
+
+        // Reload rather than patch local state: a write that silently failed
+        // must not leave a correct-looking label on screen.
+        await loadExpensesFromSupabase();
+        setBudgetLineError("");
+        return true;
+      } catch (error) {
+        setBudgetLineError(
+          getSupabaseErrorMessage(
+            error,
+            "Failed to update the budget line for this expense.",
+          ),
+        );
+        return false;
+      } finally {
+        timeout.clear();
+      }
+    },
+    [authUser, budgetLines, loadExpensesFromSupabase],
+  );
 
   const loadIncomesFromSupabase = useCallback(async () => {
     setIsIncomeLoading(true);
@@ -1638,6 +1770,8 @@ export default function Home() {
         setMoneyAccounts([]);
         setTransfers([]);
         setTradingResults([]);
+        setBudgetLines([]);
+        setBudgetLineError("");
         setNetHourlyWage(0);
         setLivingAccountIds([]);
         setIsLivingPreferenceUnsynced(false);
@@ -1652,6 +1786,7 @@ export default function Home() {
       void loadIncomesFromSupabase();
       void loadEmailReportsFromSupabase();
       void loadMoneyAccountsFromSupabase();
+      void loadBudgetLinesFromSupabase();
       void loadTransfersFromSupabase();
       void loadTradingResultsFromSupabase();
       void loadPreferencesFromSupabase();
@@ -1660,6 +1795,7 @@ export default function Home() {
     });
   }, [
     authUser,
+    loadBudgetLinesFromSupabase,
     loadEmailReportsFromSupabase,
     loadExpensesFromSupabase,
     loadIncomesFromSupabase,
@@ -2026,6 +2162,12 @@ export default function Home() {
     () => moneyAccounts.filter((account) => account.purpose !== "trading"),
     [moneyAccounts],
   );
+  // Reserve lines exist in the schema for V2.3 but cannot receive an expense
+  // yet, so only active spending lines are ever offered.
+  const assignableBudgetLines = useMemo(
+    () => getAssignableBudgetLines(budgetLines),
+    [budgetLines],
+  );
   const { householdBalance, tradingBalance } = useMemo(
     () => splitBalancesByPurpose(moneyAccounts, moneyAccountBalances),
     [moneyAccountBalances, moneyAccounts],
@@ -2274,6 +2416,7 @@ export default function Home() {
             accountId: expense.accountId,
             affectsDailyAllowance: expense.affectsDailyAllowance !== false,
             amount: expense.amount,
+            budgetLineId: expense.budgetLineId,
             category: expense.category,
             createdAt: expense.createdAt,
             description: expense.description ?? "",
@@ -2312,6 +2455,7 @@ export default function Home() {
           account_id: expense.accountId,
           affects_daily_allowance: expense.affectsDailyAllowance !== false,
           amount: expense.amount,
+          budget_line_id: expense.budgetLineId ?? null,
           category: expense.category,
           client_entry_id: expense.id,
           created_at: new Date(expense.createdAt).toISOString(),
@@ -3593,7 +3737,11 @@ export default function Home() {
                 onDeleteIncome={deleteIncome}
                 onDeleteTransfer={deleteTransfer}
                 onUpdateTransaction={updateTransaction}
-                error={expenseError || incomeError || transferError}
+                budgetLines={assignableBudgetLines}
+                onUpdateExpenseBudgetLine={updateExpenseBudgetLine}
+                error={
+                  expenseError || incomeError || transferError || budgetLineError
+                }
                 isLoading={
                   isExpenseLoading || isIncomeLoading || isTransferLoading
                 }

@@ -24,6 +24,7 @@ import {
   timestampToLocalDateInputValue,
   type LedgerTransactionUpdate,
 } from "@/src/lib/transaction-entry";
+import type { BudgetLine } from "@/src/types/budget-line";
 import type { Expense } from "@/src/types/expense";
 import type { Income } from "@/src/types/income";
 import type { MoneyAccount } from "@/src/types/money-account";
@@ -55,6 +56,7 @@ type CombinedTransaction =
       accountId: string;
       accountName: string;
       category: string;
+      budgetLineId?: string;
       description: string;
       title: string;
       paymentMethod: string;
@@ -109,7 +111,87 @@ type TransactionHistoryProps = {
   onUpdateTransaction?: (
     update: LedgerTransactionUpdate,
   ) => Promise<boolean>;
+  budgetLines?: BudgetLine[];
+  onUpdateExpenseBudgetLine?: (
+    expenseId: string,
+    budgetLineId: string | null,
+  ) => Promise<boolean>;
 };
+
+const UNCATEGORIZED_BUDGET_LINE_VALUE = "";
+
+/**
+ * Reclassification control. The select is driven purely by the persisted value,
+ * never by local optimistic state: a rejected write leaves the old label on
+ * screen and surfaces the failure instead of quietly looking saved.
+ */
+function BudgetLineSelect({
+  budgetLineId,
+  budgetLines,
+  expenseId,
+  onUpdateExpenseBudgetLine,
+}: {
+  budgetLineId: string | undefined;
+  budgetLines: BudgetLine[];
+  expenseId: string;
+  onUpdateExpenseBudgetLine: (
+    expenseId: string,
+    budgetLineId: string | null,
+  ) => Promise<boolean>;
+}) {
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasFailed, setHasFailed] = useState(false);
+
+  const selectedValue = budgetLineId ?? UNCATEGORIZED_BUDGET_LINE_VALUE;
+  // An archived or otherwise unassignable line must still render its own name,
+  // otherwise the row would silently look Uncategorized.
+  const isMissingOption =
+    Boolean(budgetLineId) &&
+    !budgetLines.some((line) => line.id === budgetLineId);
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="text-xs uppercase tracking-wide text-slate-500">
+        Budget line
+      </span>
+      <SharpSelect
+        className="min-h-9 py-1 text-sm"
+        aria-label="Budget line"
+        disabled={isSaving}
+        value={selectedValue}
+        onChange={async (event) => {
+          const nextValue = event.target.value;
+          setIsSaving(true);
+          setHasFailed(false);
+
+          const didSave = await onUpdateExpenseBudgetLine(
+            expenseId,
+            nextValue === UNCATEGORIZED_BUDGET_LINE_VALUE ? null : nextValue,
+          );
+
+          setIsSaving(false);
+          setHasFailed(!didSave);
+        }}
+      >
+        <option value={UNCATEGORIZED_BUDGET_LINE_VALUE}>Uncategorized</option>
+        {isMissingOption ? (
+          <option value={selectedValue}>Unavailable line</option>
+        ) : null}
+        {budgetLines.map((line) => (
+          <option key={line.id} value={line.id}>
+            {line.name}
+          </option>
+        ))}
+      </SharpSelect>
+      {isSaving ? (
+        <span className="text-xs text-slate-500">Saving...</span>
+      ) : null}
+      {hasFailed ? (
+        <span className="text-xs text-rose-600">Not saved. Try again.</span>
+      ) : null}
+    </div>
+  );
+}
 
 function getTransactionDate(transactionDate: string | undefined, createdAt: number) {
   if (transactionDate) {
@@ -141,6 +223,8 @@ export default function TransactionHistory({
   isLoading = false,
   netHourlyWage = 0,
   onUpdateTransaction,
+  budgetLines = [],
+  onUpdateExpenseBudgetLine,
   todayKey,
 }: TransactionHistoryProps) {
   const [filter, setFilter] = useState<TransactionFilter>("All");
@@ -203,6 +287,7 @@ export default function TransactionHistory({
           accountId: expense.accountId,
           accountName: accountNames.get(expense.accountId) ?? "Unassigned",
           category,
+          budgetLineId: expense.budgetLineId,
           description,
           title: description || category,
           paymentMethod,
@@ -1059,6 +1144,17 @@ export default function TransactionHistory({
                       <p className="mt-2 text-sm text-slate-500">
                         {transaction.note}
                       </p>
+                    ) : null}
+
+                    {!isBalanceHidden &&
+                    transaction.type === "Expenses" &&
+                    onUpdateExpenseBudgetLine ? (
+                      <BudgetLineSelect
+                        budgetLineId={transaction.budgetLineId}
+                        budgetLines={budgetLines}
+                        expenseId={transaction.id}
+                        onUpdateExpenseBudgetLine={onUpdateExpenseBudgetLine}
+                      />
                     ) : null}
                   </div>
 

@@ -88,6 +88,7 @@ export function mapExpenseRows(rows: LedgerRow[], userId: string): Expense[] {
       accountId: text(row.account_id),
       affectsDailyAllowance: row.affects_daily_allowance !== false,
       amount: amount(row.amount),
+      budgetLineId: text(row.budget_line_id) || undefined,
       category: text(row.category, "Other"),
       createdAt: dateKeyToTimestamp(transactionDate),
       description: text(row.description),
